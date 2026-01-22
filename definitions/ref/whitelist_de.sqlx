@@ -1,0 +1,10 @@
+config {
+  type: "table",
+  schema: "rd_ref",
+  tags: ["ref"],
+  description: "Country-specific whitelist for public funders/assignees (Germany examples)."
+}
+
+SELECT 'grid.424150.6' AS org_id, 'DFG' AS label UNION ALL
+SELECT 'grid.453068.c', 'AiF' UNION ALL
+SELECT 'grid.453150.6', 'DBU'

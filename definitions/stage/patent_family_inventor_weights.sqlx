@@ -1,0 +1,32 @@
+config {
+  type: "table",
+  schema: "rd_stage_dev",
+  tags: ["stage"],
+  description: "Family × country inventor fractional weights w_inv (normalized over inventors with observed country)."
+}
+
+WITH inv_counts AS (
+  SELECT
+    p.family_id,
+    inv.address.country AS country_code,
+    COUNT(*) AS n_inventors_country
+  FROM `dimensions-ai.data_analytics.patents` p
+  CROSS JOIN UNNEST(p.inventors) AS inv
+  WHERE p.family_id IS NOT NULL
+    AND inv.address.country IS NOT NULL
+  GROUP BY 1, 2
+),
+totals AS (
+  SELECT
+    family_id,
+    SUM(n_inventors_country) AS n_inventors_total_observed
+  FROM inv_counts
+  GROUP BY 1
+)
+SELECT
+  i.family_id,
+  i.country_code,
+  SAFE_DIVIDE(i.n_inventors_country, t.n_inventors_total_observed) AS w_inv
+FROM inv_counts i
+JOIN totals t USING (family_id)
+WHERE t.n_inventors_total_observed > 0

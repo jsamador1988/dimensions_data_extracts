@@ -1,0 +1,26 @@
+config {
+  type: "table",
+  schema: "rd_stage_dev",
+  tags: ["stage"],
+  description: "Patent document-level parsed dates and earliest application date (priority vs filing)."
+}
+
+SELECT
+  p.family_id,
+  p.id AS patent_id,
+  p.jurisdiction,
+  SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date) AS priority_dt,
+  SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date) AS filing_dt,
+  CASE
+    WHEN SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date) IS NOT NULL
+     AND SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date) IS NOT NULL
+    THEN LEAST(
+      SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date),
+      SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date)
+    )
+    ELSE COALESCE(
+      SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date),
+      SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date)
+    )
+  END AS doc_earliest_app_dt
+FROM `dimensions-ai.data_analytics.patents` p

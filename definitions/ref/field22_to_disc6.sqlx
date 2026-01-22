@@ -1,0 +1,40 @@
+config {
+  type: "table",
+  schema: "rd_ref",
+  tags: ["ref"],
+  description: "field22 -> discipline6 mapping for grouped plots and aggregates."
+}
+
+-- 1) Agricultural sciences
+SELECT 'Agricultural, Veterinary and Food Sciences' AS field22, 'Agricultural Sciences' AS discipline6 UNION ALL
+
+-- 2) Natural sciences
+SELECT 'Biological Sciences', 'Natural Sciences' UNION ALL
+SELECT 'Chemical Sciences', 'Natural Sciences' UNION ALL
+SELECT 'Earth Sciences', 'Natural Sciences' UNION ALL
+SELECT 'Environmental Sciences', 'Natural Sciences' UNION ALL
+SELECT 'Mathematical Sciences', 'Natural Sciences' UNION ALL
+SELECT 'Physical Sciences', 'Natural Sciences' UNION ALL
+
+-- 3) Engineering & technology
+SELECT 'Engineering', 'Engineering and Technology' UNION ALL
+SELECT 'Information and Computing Sciences', 'Engineering and Technology' UNION ALL
+SELECT 'Built Environment and Design', 'Engineering and Technology' UNION ALL
+
+-- 4) Medical & health sciences
+SELECT 'Biomedical and Clinical Sciences', 'Medical and Health Sciences' UNION ALL
+SELECT 'Health Sciences', 'Medical and Health Sciences' UNION ALL
+
+-- 5) Social sciences
+SELECT 'Commerce, Management, Tourism and Services', 'Social Sciences' UNION ALL
+SELECT 'Economics', 'Social Sciences' UNION ALL
+SELECT 'Education', 'Social Sciences' UNION ALL
+SELECT 'Human Society', 'Social Sciences' UNION ALL
+SELECT 'Psychology', 'Social Sciences' UNION ALL
+
+-- 6) Humanities & arts
+SELECT 'Creative Arts and Writing', 'Humanities and the Arts' UNION ALL
+SELECT 'History, Heritage and Archaeology', 'Humanities and the Arts' UNION ALL
+SELECT 'Language, Communication and Culture', 'Humanities and the Arts' UNION ALL
+SELECT 'Law and Legal Studies', 'Humanities and the Arts' UNION ALL
+SELECT 'Philosophy and Religious Studies', 'Humanities and the Arts'

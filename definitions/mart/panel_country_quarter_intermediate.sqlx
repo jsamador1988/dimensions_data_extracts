@@ -1,0 +1,36 @@
+config {
+  type: "table",
+  schema: "rd_mart_dev",
+  tags: ["mart"],
+  description: "Intermediate country-quarter panel (currently patents inventor-weighted; publications placeholder)."
+}
+
+WITH pat_country_qtr AS (
+  SELECT
+    w.country_code,
+    a.family_app_qtr AS quarter,
+    SUM(w.w_inv) AS pat_inv_total_ctq
+  FROM ${ref("patent_family_inventor_weights")} w
+  JOIN ${ref("patent_family_anchor")} a
+    ON a.family_id = w.family_id
+  GROUP BY 1, 2
+),
+-- Placeholder publications until you build pub pipeline:
+pub_country_qtr AS (
+  SELECT
+    country_code,
+    quarter,
+    0.0 AS pub_total_ctq
+  FROM pat_country_qtr
+),
+all_keys AS (
+  SELECT country_code, quarter FROM pat_country_qtr
+)
+SELECT
+  k.country_code,
+  k.quarter,
+  COALESCE(p.pat_inv_total_ctq, 0.0) AS pat_inv_total_ctq,
+  COALESCE(u.pub_total_ctq, 0.0) AS pub_total_ctq
+FROM all_keys k
+LEFT JOIN pat_country_qtr p USING (country_code, quarter)
+LEFT JOIN pub_country_qtr u USING (country_code, quarter)

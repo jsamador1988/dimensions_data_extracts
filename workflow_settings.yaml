@@ -1,0 +1,12 @@
+defaultProject: "dimensionsdataextracts"
+defaultDataset: "rd_stage_dev"
+defaultAssertionDataset: "dataform_assertions"
+defaultLocation: "US"
+dataformCoreVersion: "3.0.37"
+
+vars:
+  sample_start: "1950-01-01"
+  sample_end: "2024-12-31"
+  breakthrough_window_years: "5"
+  journal_elig_min_articles: "1000"
+  top_journal_pct: "0.05"
