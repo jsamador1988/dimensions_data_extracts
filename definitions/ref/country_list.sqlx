@@ -2,27 +2,23 @@ config {
   type: "table",
   schema: "rd_ref",
   tags: ["ref"],
-  description: "Working set of countries for panel construction (edit as needed)."
+  description: "Country codes included in the macro panel. Keep this aligned with your macro data country universe."
 }
 
-SELECT 'AT' AS country_code, 'Austria' AS country_name UNION ALL
-SELECT 'AU', 'Australia' UNION ALL
-SELECT 'BE', 'Belgium' UNION ALL
-SELECT 'CA', 'Canada' UNION ALL
-SELECT 'CH', 'Switzerland' UNION ALL
-SELECT 'CN', 'China' UNION ALL
-SELECT 'DE', 'Germany' UNION ALL
-SELECT 'DK', 'Denmark' UNION ALL
-SELECT 'ES', 'Spain' UNION ALL
-SELECT 'FI', 'Finland' UNION ALL
-SELECT 'FR', 'France' UNION ALL
-SELECT 'GB', 'United Kingdom' UNION ALL
-SELECT 'IN', 'India' UNION ALL
-SELECT 'IT', 'Italy' UNION ALL
-SELECT 'JP', 'Japan' UNION ALL
-SELECT 'KR', 'South Korea' UNION ALL
-SELECT 'NL', 'Netherlands' UNION ALL
-SELECT 'RU', 'Russia' UNION ALL
-SELECT 'SE', 'Sweden' UNION ALL
-SELECT 'TW', 'Taiwan' UNION ALL
-SELECT 'US', 'United States'
+SELECT 'US' AS country_code UNION ALL
+SELECT 'GB' UNION ALL
+SELECT 'DE' UNION ALL
+SELECT 'FR' UNION ALL
+SELECT 'IT' UNION ALL
+SELECT 'ES' UNION ALL
+SELECT 'NL' UNION ALL
+SELECT 'SE' UNION ALL
+SELECT 'DK' UNION ALL
+SELECT 'FI' UNION ALL
+SELECT 'BE' UNION ALL
+SELECT 'AT' UNION ALL
+SELECT 'CH' UNION ALL
+SELECT 'CA' UNION ALL
+SELECT 'JP' UNION ALL
+SELECT 'KR' UNION ALL
+SELECT 'AU'

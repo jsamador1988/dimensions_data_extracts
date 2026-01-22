@@ -1,0 +1,18 @@
+config {
+  type: "table",
+  schema: "rd_ref",
+  tags: ["ref"],
+  description: "Country-quarter grid over the analysis window for consistent merges with macro data."
+}
+
+WITH quarters AS (
+  SELECT DATE_TRUNC(d, QUARTER) AS quarter
+  FROM UNNEST(GENERATE_DATE_ARRAY(
+    DATE("${dataform.projectConfig.vars.sample_start}"),
+    DATE("${dataform.projectConfig.vars.sample_end}"),
+    INTERVAL 1 QUARTER
+  )) AS d
+)
+SELECT c.country_code, q.quarter
+FROM ${ref("country_list")} c
+CROSS JOIN quarters q

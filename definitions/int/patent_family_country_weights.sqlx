@@ -1,0 +1,121 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  tags: ["int"],
+  description: "Family×country weights: inventor fractional weight, assignee fractional weight, gov-assignee weight, domestic filing flag (EPO time-varying)."
+}
+
+WITH base AS (
+  SELECT * FROM ${ref("patent_family_base")}
+),
+
+-- inventor counts by family×country (restrict to macro country list)
+inv_counts AS (
+  SELECT
+    b.family_id,
+    c.country_code,
+    COUNT(*) AS inv_n
+  FROM base b
+  JOIN UNNEST(b.inventor_countries_raw) AS inv_cc
+  JOIN ${ref("country_list")} c
+    ON c.country_code = inv_cc
+  GROUP BY b.family_id, c.country_code
+),
+inv_tot AS (
+  SELECT family_id, SUM(inv_n) AS inv_total_obs
+  FROM inv_counts
+  GROUP BY family_id
+),
+
+-- assignee orgs → legal country + government type (restrict to macro list)
+assg_flat AS (
+  SELECT
+    b.family_id,
+    ao AS assg_org_id
+  FROM base b
+  JOIN UNNEST(b.assignee_orgs) AS ao
+),
+assg_enriched AS (
+  SELECT
+    af.family_id,
+    o.legal_country_code AS assg_country,
+    ('Government' IN UNNEST(IFNULL(o.types, []))) AS is_gov
+  FROM assg_flat af
+  LEFT JOIN ${ref("orgs_basic")} o
+    ON o.org_id = af.assg_org_id
+),
+assg_counts AS (
+  SELECT
+    family_id,
+    c.country_code,
+    COUNT(*) AS assg_n,
+    SUM(CASE WHEN is_gov THEN 1 ELSE 0 END) AS assg_gov_n
+  FROM assg_enriched ae
+  JOIN ${ref("country_list")} c
+    ON c.country_code = ae.assg_country
+  GROUP BY family_id, c.country_code
+),
+assg_tot AS (
+  SELECT
+    family_id,
+    SUM(assg_n) AS assg_total_obs
+  FROM assg_counts
+  GROUP BY family_id
+),
+
+-- domestic filing: national office OR EP when epo_active
+juris AS (
+  SELECT family_id, jurisdictions, family_app_dt
+  FROM base
+),
+epo AS (
+  SELECT * FROM ${ref("epo_membership")}
+),
+
+-- build the set of (family×country) that appear in inventor countries (your patent universe driver)
+family_countries AS (
+  SELECT DISTINCT family_id, country_code
+  FROM inv_counts
+)
+
+SELECT
+  fc.family_id,
+  fc.country_code,
+  b.family_app_qtr,
+
+  -- inventor fractional weight (normalized over observed macro-country inventors)
+  SAFE_DIVIDE(ic.inv_n, it.inv_total_obs) AS w_inv,
+
+  -- assignee fractional weight (normalized over observed macro-country assignees)
+  SAFE_DIVIDE(ac.assg_n, at.assg_total_obs) AS w_assg,
+
+  -- government assignee weight (NOT broadened)
+  SAFE_DIVIDE(ac.assg_gov_n, at.assg_total_obs) AS w_assg_gov,
+
+  -- domestic filing flag (time-varying EP rule)
+  CASE
+    WHEN fc.country_code IN UNNEST(j.jurisdictions) THEN 1
+    WHEN 'EP' IN UNNEST(j.jurisdictions)
+      AND EXISTS (
+        SELECT 1
+        FROM epo e
+        WHERE e.country_code = fc.country_code
+          AND j.family_app_dt >= e.epo_start_date
+          AND (e.epo_end_date IS NULL OR j.family_app_dt <= e.epo_end_date)
+      )
+    THEN 1
+    ELSE 0
+  END AS dom_filing,
+
+  -- tier1 (keep conservative: US-only)
+  CASE WHEN fc.country_code = 'US' AND b.has_federal_support THEN 1 ELSE 0 END AS tier1_pubfund_flag
+
+FROM family_countries fc
+JOIN base b USING (family_id)
+JOIN inv_counts ic
+  ON ic.family_id = fc.family_id AND ic.country_code = fc.country_code
+JOIN inv_tot it USING (family_id)
+LEFT JOIN assg_counts ac
+  ON ac.family_id = fc.family_id AND ac.country_code = fc.country_code
+LEFT JOIN assg_tot at USING (family_id)
+LEFT JOIN juris j USING (family_id)

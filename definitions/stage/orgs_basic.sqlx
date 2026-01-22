@@ -1,0 +1,13 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Organizations: legal country and types for assignee/funder/affiliation classification."
+}
+
+SELECT
+  id AS org_id,
+  legal_country_code,
+  types
+FROM `dimensions-ai.data_analytics.organizations`
+WHERE id IS NOT NULL

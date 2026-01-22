@@ -1,0 +1,21 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  tags: ["int"],
+  description: "Patent quarterly measures (core + public-owned + tier1). Tier2/3 added later as joins."
+}
+
+SELECT
+  country_code,
+  family_app_qtr AS quarter,
+
+  SUM(w_inv) AS pat_inv_total_ctq,
+  SUM(w_inv * COALESCE(w_assg, 0)) AS pat_inv_assg_total_ctq,
+  SUM(w_inv * COALESCE(w_assg, 0) * dom_filing) AS pat_inv_assg_file_total_ctq,
+
+  SUM(w_inv * COALESCE(w_assg_gov, 0)) AS pat_public_owned_ctq,
+
+  SUM(w_inv * tier1_pubfund_flag) AS pat_pubfund_tier1_ctq
+
+FROM ${ref("patent_family_country_weights")}
+GROUP BY country_code, quarter

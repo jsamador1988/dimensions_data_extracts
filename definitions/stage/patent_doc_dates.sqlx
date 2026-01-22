@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Patent document-level parsed dates and earliest application date (priority vs filing)."
+  description: "Patent doc-level parsed dates for family timing."
 }
 
 SELECT
@@ -24,3 +24,4 @@ SELECT
     )
   END AS doc_earliest_app_dt
 FROM `dimensions-ai.data_analytics.patents` p
+WHERE p.family_id IS NOT NULL

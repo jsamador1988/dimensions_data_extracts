@@ -1,0 +1,60 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Publication base: research articles only, month-level best date, quarter, journal id, authors/affiliations, FOR codes, funder orgs, citations array."
+}
+
+-- Parse function inline (month or day); year-only becomes NULL (dropped)
+WITH pub_raw AS (
+  SELECT
+    p.id AS pub_id,
+    p.type AS pub_type,
+    p.journal.id AS journal_id,
+
+    -- best date among (date, date_online, date_print) but only if >= month-level
+    (
+      SELECT MIN(d)
+      FROM UNNEST([
+        CASE
+          WHEN REGEXP_CONTAINS(p.date, r'^\d{4}-\d{2}-\d{2}$') THEN DATE(p.date)
+          WHEN REGEXP_CONTAINS(p.date, r'^\d{4}-\d{2}$') THEN DATE(CONCAT(p.date, '-01'))
+          ELSE NULL
+        END,
+        CASE
+          WHEN REGEXP_CONTAINS(p.date_online, r'^\d{4}-\d{2}-\d{2}$') THEN DATE(p.date_online)
+          WHEN REGEXP_CONTAINS(p.date_online, r'^\d{4}-\d{2}$') THEN DATE(CONCAT(p.date_online, '-01'))
+          ELSE NULL
+        END,
+        CASE
+          WHEN REGEXP_CONTAINS(p.date_print, r'^\d{4}-\d{2}-\d{2}$') THEN DATE(p.date_print)
+          WHEN REGEXP_CONTAINS(p.date_print, r'^\d{4}-\d{2}$') THEN DATE(CONCAT(p.date_print, '-01'))
+          ELSE NULL
+        END
+      ]) d
+      WHERE d IS NOT NULL
+    ) AS pub_dt_best,
+
+    p.authors,
+    p.funder_orgs,
+    p.funding_details,
+    p.category_for,
+    p.citations
+  FROM `dimensions-ai.data_analytics.publications` p
+)
+SELECT
+  pub_id,
+  journal_id,
+  pub_dt_best,
+  DATE_TRUNC(pub_dt_best, QUARTER) AS pub_qtr,
+  EXTRACT(YEAR FROM pub_dt_best) AS pub_year,
+  authors,
+  funder_orgs,
+  funding_details,
+  category_for,
+  citations
+FROM pub_raw
+WHERE pub_type = "article"
+  AND pub_dt_best IS NOT NULL
+  AND pub_dt_best BETWEEN DATE("${dataform.projectConfig.vars.sample_start}")
+                      AND DATE("${dataform.projectConfig.vars.sample_end}")

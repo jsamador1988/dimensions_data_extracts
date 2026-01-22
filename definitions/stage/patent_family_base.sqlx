@@ -1,0 +1,61 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Family-level patent base: anchor date/quarter, jurisdictions, inventor countries/RIDs, assignee orgs, FOR4 codes, publication links."
+}
+
+WITH family_anchor AS (
+  SELECT
+    family_id,
+    MIN(doc_earliest_app_dt) AS family_app_dt,
+    DATE_TRUNC(MIN(doc_earliest_app_dt), QUARTER) AS family_app_qtr
+  FROM ${ref("patent_doc_dates")}
+  WHERE doc_earliest_app_dt IS NOT NULL
+  GROUP BY family_id
+),
+family_rollup AS (
+  SELECT
+    p.family_id,
+
+    -- jurisdictions observed in family
+    ARRAY_AGG(DISTINCT p.jurisdiction IGNORE NULLS) AS jurisdictions,
+
+    -- inventor countries (keep duplicates to allow counts)
+    ARRAY_AGG(inv.address.country IGNORE NULLS) AS inventor_countries_raw,
+
+    -- inventor researcher ids (for tier2 RID matching)
+    ARRAY_AGG(inv.researcher_id IGNORE NULLS) AS inventor_rids_raw,
+
+    -- assignee orgs (GRID-style IDs stored in Dimensions org tables)
+    ARRAY_CONCAT_AGG(IFNULL(p.assignee_orgs, [])) AS assignee_orgs_raw,
+
+    -- FOR4 codes
+    ARRAY_AGG(
+      DISTINCT LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0')
+      IGNORE NULLS
+    ) AS for4_codes,
+
+    -- Tier1 proxy: federal_support populated (mostly US)
+    LOGICAL_OR(ARRAY_LENGTH(IFNULL(p.federal_support, [])) > 0) AS has_federal_support,
+
+    -- Patent-paper links (front-page)
+    ARRAY_CONCAT_AGG(IFNULL(p.publication_ids, [])) AS linked_publication_ids_raw
+  FROM `dimensions-ai.data_analytics.patents` p
+  LEFT JOIN UNNEST(IFNULL(p.inventors, [])) AS inv
+  LEFT JOIN UNNEST(IFNULL(p.category_for.second_level.codes, [])) AS code
+  GROUP BY p.family_id
+)
+SELECT
+  fa.family_id,
+  fa.family_app_dt,
+  fa.family_app_qtr,
+  fr.jurisdictions,
+  fr.inventor_countries_raw,
+  fr.inventor_rids_raw,
+  ARRAY(SELECT DISTINCT x FROM UNNEST(fr.assignee_orgs_raw) x WHERE x IS NOT NULL) AS assignee_orgs,
+  fr.for4_codes,
+  fr.has_federal_support,
+  ARRAY(SELECT DISTINCT x FROM UNNEST(fr.linked_publication_ids_raw) x WHERE x IS NOT NULL) AS linked_publication_ids
+FROM family_anchor fa
+JOIN family_rollup fr USING (family_id)

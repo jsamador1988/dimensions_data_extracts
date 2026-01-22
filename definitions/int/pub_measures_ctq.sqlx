@@ -1,0 +1,22 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  tags: ["int"],
+  description: "Country-quarter publication measures: total, public-produced, private-produced, gov-funded, any-funded, and private×gov-funded."
+}
+
+SELECT
+  country_code,
+  quarter,
+
+  SUM(w_aff) AS pub_total_ctq,
+  SUM(public_prod_share) AS pub_public_produced_ctq,
+  SUM(private_prod_share) AS pub_private_produced_ctq,
+
+  SUM(w_aff * CAST(paper_gov_funded_flag AS INT64)) AS pub_gov_funded_ctq,
+  SUM(w_aff * CAST(paper_any_funded_flag AS INT64)) AS pub_any_funded_ctq,
+
+  SUM(w_aff * CAST(private_prod_share > 0 AS INT64) * CAST(paper_gov_funded_flag AS INT64)) AS pub_private_produced_gov_funded_ctq
+
+FROM ${ref("pub_country_flags")}
+GROUP BY country_code, quarter

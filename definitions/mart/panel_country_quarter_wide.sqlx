@@ -2,20 +2,40 @@ config {
   type: "table",
   schema: "rd_mart",
   tags: ["mart"],
-  description: "Final country-quarter wide panel for merging with macro data.",
+  description: "Final country-quarter wide panel for merging to macro data.",
   bigquery: {
     partitionBy: "quarter",
     clusterBy: ["country_code"]
-  },
-  assertions: {
-    uniqueKey: ["country_code", "quarter"],
-    nonNull: ["country_code", "quarter"]
   }
 }
 
 SELECT
-  country_code,
-  quarter,
-  pat_inv_total_ctq,
-  pub_total_ctq
-FROM ${ref("panel_country_quarter_intermediate")}
+  g.country_code,
+  g.quarter,
+
+  -- patents
+  COALESCE(p.pat_inv_total_ctq, 0) AS pat_inv_total_ctq,
+  COALESCE(p.pat_inv_assg_total_ctq, 0) AS pat_inv_assg_total_ctq,
+  COALESCE(p.pat_inv_assg_file_total_ctq, 0) AS pat_inv_assg_file_total_ctq,
+  COALESCE(p.pat_public_owned_ctq, 0) AS pat_public_owned_ctq,
+  COALESCE(p.pat_pubfund_tier1_ctq, 0) AS pat_pubfund_tier1_ctq,
+
+  -- grants
+  COALESCE(gr.grants_any_count_ctq, 0) AS grants_any_count_ctq,
+  COALESCE(gr.grants_gov_count_ctq, 0) AS grants_gov_count_ctq,
+
+  -- publications
+  COALESCE(u.pub_total_ctq, 0) AS pub_total_ctq,
+  COALESCE(u.pub_public_produced_ctq, 0) AS pub_public_produced_ctq,
+  COALESCE(u.pub_private_produced_ctq, 0) AS pub_private_produced_ctq,
+  COALESCE(u.pub_gov_funded_ctq, 0) AS pub_gov_funded_ctq,
+  COALESCE(u.pub_any_funded_ctq, 0) AS pub_any_funded_ctq,
+  COALESCE(u.pub_private_produced_gov_funded_ctq, 0) AS pub_private_produced_gov_funded_ctq
+
+FROM ${ref("quarter_grid")} g
+LEFT JOIN ${ref("patent_measures_ctq")} p
+  ON p.country_code = g.country_code AND p.quarter = g.quarter
+LEFT JOIN ${ref("grant_measures_ctq")} gr
+  ON gr.country_code = g.country_code AND gr.quarter = g.quarter
+LEFT JOIN ${ref("pub_measures_ctq")} u
+  ON u.country_code = g.country_code AND u.quarter = g.quarter

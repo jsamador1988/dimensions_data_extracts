@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "rd_ref",
   tags: ["ref"],
-  description: "EPC (EPO) membership start dates for use in time-varying domestic filing logic."
+  description: "EPC membership start/end dates for time-varying treatment of EP as domestic filing."
 }
 
 SELECT 'AT' AS country_code, DATE '1979-05-01' AS epo_start_date, CAST(NULL AS DATE) AS epo_end_date UNION ALL
