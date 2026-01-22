@@ -1,8 +1,8 @@
 config {
   type: "table",
-  schema: "rd_stage_dev",
+  schema: "rd_stage",
   tags: ["stage"],
-  description: "Family × country inventor fractional weights w_inv (normalized over inventors with observed country)."
+  description: "Family × country inventor fractional weights w_inv restricted to rd_ref.country_list (target macro countries)."
 }
 
 WITH inv_counts AS (
@@ -16,17 +16,23 @@ WITH inv_counts AS (
     AND inv.address.country IS NOT NULL
   GROUP BY 1, 2
 ),
+inv_counts_target AS (
+  SELECT i.*
+  FROM inv_counts i
+  JOIN `dimensionsdataextracts.rd_ref.country_list` c
+    ON c.country_code = i.country_code
+),
 totals AS (
   SELECT
     family_id,
-    SUM(n_inventors_country) AS n_inventors_total_observed
-  FROM inv_counts
+    SUM(n_inventors_country) AS n_inventors_total_target
+  FROM inv_counts_target
   GROUP BY 1
 )
 SELECT
   i.family_id,
   i.country_code,
-  SAFE_DIVIDE(i.n_inventors_country, t.n_inventors_total_observed) AS w_inv
-FROM inv_counts i
+  SAFE_DIVIDE(i.n_inventors_country, t.n_inventors_total_target) AS w_inv
+FROM inv_counts_target i
 JOIN totals t USING (family_id)
-WHERE t.n_inventors_total_observed > 0
+WHERE t.n_inventors_total_target > 0

@@ -1,6 +1,6 @@
 config {
   type: "table",
-  schema: "rd_mart_dev",
+  schema: "rd_mart_",
   tags: ["mart"],
   description: "Intermediate country-quarter panel (currently patents inventor-weighted; publications placeholder)."
 }

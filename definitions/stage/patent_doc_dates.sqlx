@@ -1,6 +1,6 @@
 config {
   type: "table",
-  schema: "rd_stage_dev",
+  schema: "rd_stage",
   tags: ["stage"],
   description: "Patent document-level parsed dates and earliest application date (priority vs filing)."
 }

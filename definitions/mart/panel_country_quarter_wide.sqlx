@@ -1,0 +1,21 @@
+config {
+  type: "table",
+  schema: "rd_mart",
+  tags: ["mart"],
+  description: "Final country-quarter wide panel for merging with macro data.",
+  bigquery: {
+    partitionBy: "quarter",
+    clusterBy: ["country_code"]
+  },
+  assertions: {
+    uniqueKey: ["country_code", "quarter"],
+    nonNull: ["country_code", "quarter"]
+  }
+}
+
+SELECT
+  country_code,
+  quarter,
+  pat_inv_total_ctq,
+  pub_total_ctq
+FROM ${ref("panel_country_quarter_intermediate")}
