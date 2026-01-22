@@ -1,32 +1,73 @@
 config {
   type: "table",
+  name: "grant_rids_flat",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Flatten government grant RIDs (from researcher_ids and investigators), keeping FoR and start_dt."
+  description: "Flatten government-grant researcher IDs (RIDs) to (country_code, grant_id, researcher_id) for Tier-2 RID matching."
 }
 
-WITH g AS (
-  SELECT * FROM ${ref("grants_gov_core")}
+WITH gov_grants AS (
+  SELECT
+    grant_id,
+    -- normalize UK->GB for consistency
+    CASE WHEN country_code = 'UK' THEN 'GB' ELSE country_code END AS country_code,
+    start_dt,
+    funding_usd,
+    grant_for4,
+    researcher_ids,
+    investigators,
+    funder_types
+  FROM ${ref("grants_base")}
+  WHERE start_dt IS NOT NULL
+    AND country_code IS NOT NULL
+    AND 'Government' IN UNNEST(IFNULL(funder_types, []))
 ),
 
-rid1 AS (
+rid_from_array AS (
   SELECT
-    country_code, grant_id, start_dt, funding_usd, grant_for4,
+    country_code,
+    grant_id,
+    start_dt,
+    funding_usd,
+    grant_for4,
     rid AS researcher_id
-  FROM g, UNNEST(IFNULL(researcher_ids, [])) AS rid
+  FROM gov_grants,
+  UNNEST(IFNULL(researcher_ids, [])) AS rid
   WHERE rid IS NOT NULL
 ),
 
-rid2 AS (
+rid_from_investigators AS (
   SELECT
-    country_code, grant_id, start_dt, funding_usd, grant_for4,
-    inv.researcher_id
-  FROM g, UNNEST(IFNULL(investigators, [])) AS inv
+    country_code,
+    grant_id,
+    start_dt,
+    funding_usd,
+    grant_for4,
+    inv.researcher_id AS researcher_id
+  FROM gov_grants,
+  UNNEST(IFNULL(investigators, [])) AS inv
   WHERE inv.researcher_id IS NOT NULL
 )
 
-SELECT DISTINCT * FROM (
-  SELECT * FROM rid1
-  UNION DISTINCT
-  SELECT * FROM rid2
-)
+SELECT DISTINCT
+  country_code,
+  grant_id,
+  start_dt,
+  DATE_TRUNC(start_dt, QUARTER) AS start_qtr,
+  funding_usd,
+  grant_for4,
+  researcher_id
+FROM rid_from_array
+
+UNION DISTINCT
+
+SELECT DISTINCT
+  country_code,
+  grant_id,
+  start_dt,
+  DATE_TRUNC(start_dt, QUARTER) AS start_qtr,
+  funding_usd,
+  grant_for4,
+  researcher_id
+FROM rid_from_investigators
+WHERE researcher_id IS NOT NULL
