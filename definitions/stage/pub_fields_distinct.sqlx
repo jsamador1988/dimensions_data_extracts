@@ -1,37 +1,27 @@
 config {
   type: "table",
+  name: "pub_fields_distinct",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Distinct field22 assignments per publication: (pub_id, field22_code). Built from FoR second_level codes."
+  description: "Distinct list of field22 and disc6 categories used to generate wide pub_field_* columns."
 }
 
-WITH core AS (
-  SELECT pub_id, for4_codes
-  FROM ${ref("pub_core")}
-),
-
-for4_flat AS (
+WITH m AS (
   SELECT
-    pub_id,
-    -- normalize code to 4 digits where possible
-    LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0') AS for4
-  FROM core
-  CROSS JOIN UNNEST(IFNULL(for4_codes, [])) AS code
-  WHERE code IS NOT NULL
-),
-
-mapped AS (
-  SELECT
-    f.pub_id,
-    m.field22_code,
-    m.field22_name
-  FROM for4_flat f
-  JOIN ${ref("for4_to_field22")} m
-    ON m.for4 = f.for4
+    f.for4,
+    f.field22_code,
+    f.field22_name,
+    d.disc6,
+    d.disc6_name
+  FROM ${ref("for4_to_field22")} f
+  LEFT JOIN ${ref("field22_to_disc6")} d
+    ON d.field22 = f.field22_code
 )
 
 SELECT DISTINCT
-  pub_id,
   field22_code,
-  field22_name
-FROM mapped
+  field22_name,
+  disc6,
+  disc6_name
+FROM m
+WHERE field22_code IS NOT NULL

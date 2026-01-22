@@ -3,14 +3,11 @@ config {
   name: "country_list",
   schema: "rd_ref",
   tags: ["ref"],
-  description: "ISO2 country codes used as panel keys (derived from Dimensions org legal_country_code; normalized UK->GB)."
+  description: "ISO2 country codes used as panel keys. Normalizes UK->GB and filters non-country codes."
 }
 
 SELECT DISTINCT
-  CASE
-    WHEN legal_country_code = 'UK' THEN 'GB'
-    ELSE legal_country_code
-  END AS country_code
+  CASE WHEN legal_country_code = 'UK' THEN 'GB' ELSE legal_country_code END AS country_code
 FROM `dimensions-ai.data_analytics.organizations`
 WHERE legal_country_code IS NOT NULL
   AND REGEXP_CONTAINS(legal_country_code, r'^[A-Z]{2}$')

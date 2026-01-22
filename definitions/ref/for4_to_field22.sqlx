@@ -1,35 +1,40 @@
 config {
   type: "table",
+  name: "for4_to_field22",
   schema: "rd_ref",
   tags: ["ref"],
-  description: "Map 4-digit FoR codes to field22 (via 2-digit division mapping)."
+  description: "Map 4-digit FoR codes to field22_code/field22_name (via 2-digit division mapping)."
 }
 
 WITH div_map AS (
   SELECT
     CAST(for_division AS INT64) AS for_division,
+    field22_code,
     field22_name
   FROM ${ref("for_to_field_22")}
-)
+),
 
-SELECT
-  for4,
-  CAST(SUBSTR(for4, 1, 2) AS INT64) AS for_division,
-  div_map.field22_name
-FROM (
-  -- Build a universe of FoR4 codes you actually observe in Dimensions pubs+patents (stable & fast).
-  SELECT DISTINCT LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0') AS for4
+for4_universe AS (
+  -- Universe of FoR4 codes observed in Dimensions pubs + patents.
+  SELECT DISTINCT LPAD(REGEXP_EXTRACT(code, r'\\d+'), 4, '0') AS for4
   FROM `dimensions-ai.data_analytics.publications`,
   UNNEST(IFNULL(category_for.second_level.codes, [])) AS code
   WHERE code IS NOT NULL
 
   UNION DISTINCT
 
-  SELECT DISTINCT LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0') AS for4
+  SELECT DISTINCT LPAD(REGEXP_EXTRACT(code, r'\\d+'), 4, '0') AS for4
   FROM `dimensions-ai.data_analytics.patents`,
   UNNEST(IFNULL(category_for.second_level.codes, [])) AS code
   WHERE code IS NOT NULL
-) u
-LEFT JOIN div_map
-  ON div_map.for_division = CAST(SUBSTR(u.for4, 1, 2) AS INT64)
+)
+
+SELECT
+  u.for4,
+  CAST(SUBSTR(u.for4, 1, 2) AS INT64) AS for_division,
+  m.field22_code,
+  m.field22_name
+FROM for4_universe u
+LEFT JOIN div_map m
+  ON m.for_division = CAST(SUBSTR(u.for4, 1, 2) AS INT64)
 WHERE u.for4 IS NOT NULL
