@@ -1,0 +1,25 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Field weights per publication: w_field = 1/num_distinct_fields."
+}
+
+WITH f AS (
+  SELECT pub_id, field22_code
+  FROM ${ref("pub_fields_distinct")}
+),
+
+n AS (
+  SELECT pub_id, COUNT(*) AS n_fields
+  FROM f
+  GROUP BY pub_id
+)
+
+SELECT
+  f.pub_id,
+  f.field22_code,
+  SAFE_DIVIDE(1.0, n.n_fields) AS w_field
+FROM f
+JOIN n USING (pub_id)
+WHERE n.n_fields > 0

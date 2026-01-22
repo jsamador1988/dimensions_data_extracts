@@ -2,39 +2,40 @@ config {
   type: "table",
   schema: "rd_ref",
   tags: ["ref"],
-  description: "field22 -> discipline6 mapping for grouped plots and aggregates."
+  description: "Map field22_code (22 fields) -> disc6_code (6 broad disciplines) used for aggregated series."
 }
 
--- 1) Agricultural sciences
-SELECT 'Agricultural, Veterinary and Food Sciences' AS field22, 'Agricultural Sciences' AS discipline6 UNION ALL
+-- Disciplines (example):
+-- LIFE     = life/biomed/health/ag/env
+-- PHYS     = math/physical/chem/earth
+-- ENGTECH  = engineering + built + computing
+-- SOCSCI   = economics + education + commerce + society + psychology + law
+-- HUMARTS  = history + language + philosophy + creative arts
+-- OTHER    = spare bucket if you later add fields
 
--- 2) Natural sciences
-SELECT 'Biological Sciences', 'Natural Sciences' UNION ALL
-SELECT 'Chemical Sciences', 'Natural Sciences' UNION ALL
-SELECT 'Earth Sciences', 'Natural Sciences' UNION ALL
-SELECT 'Environmental Sciences', 'Natural Sciences' UNION ALL
-SELECT 'Mathematical Sciences', 'Natural Sciences' UNION ALL
-SELECT 'Physical Sciences', 'Natural Sciences' UNION ALL
+SELECT 'AGRI'     AS field22_code, 'LIFE'    AS disc6_code, 'Life Sciences' AS disc6_name UNION ALL
+SELECT 'BIO',                       'LIFE',                 'Life Sciences' UNION ALL
+SELECT 'BIOMED',                    'LIFE',                 'Life Sciences' UNION ALL
+SELECT 'HEALTH',                    'LIFE',                 'Life Sciences' UNION ALL
+SELECT 'ENV',                       'LIFE',                 'Life Sciences' UNION ALL
 
--- 3) Engineering & technology
-SELECT 'Engineering', 'Engineering and Technology' UNION ALL
-SELECT 'Information and Computing Sciences', 'Engineering and Technology' UNION ALL
-SELECT 'Built Environment and Design', 'Engineering and Technology' UNION ALL
+SELECT 'MATH',                      'PHYS',                 'Physical Sciences' UNION ALL
+SELECT 'PHYSICAL',                  'PHYS',                 'Physical Sciences' UNION ALL
+SELECT 'CHEM',                      'PHYS',                 'Physical Sciences' UNION ALL
+SELECT 'EARTH',                     'PHYS',                 'Physical Sciences' UNION ALL
 
--- 4) Medical & health sciences
-SELECT 'Biomedical and Clinical Sciences', 'Medical and Health Sciences' UNION ALL
-SELECT 'Health Sciences', 'Medical and Health Sciences' UNION ALL
+SELECT 'ENG',                       'ENGTECH',              'Engineering & Technology' UNION ALL
+SELECT 'BUILT',                     'ENGTECH',              'Engineering & Technology' UNION ALL
+SELECT 'INFOCOMP',                  'ENGTECH',              'Engineering & Technology' UNION ALL
 
--- 5) Social sciences
-SELECT 'Commerce, Management, Tourism and Services', 'Social Sciences' UNION ALL
-SELECT 'Economics', 'Social Sciences' UNION ALL
-SELECT 'Education', 'Social Sciences' UNION ALL
-SELECT 'Human Society', 'Social Sciences' UNION ALL
-SELECT 'Psychology', 'Social Sciences' UNION ALL
+SELECT 'ECON',                      'SOCSCI',               'Social Sciences' UNION ALL
+SELECT 'EDUC',                      'SOCSCI',               'Social Sciences' UNION ALL
+SELECT 'COMMERCE',                  'SOCSCI',               'Social Sciences' UNION ALL
+SELECT 'SOCIETY',                   'SOCSCI',               'Social Sciences' UNION ALL
+SELECT 'PSYCH',                     'SOCSCI',               'Social Sciences' UNION ALL
+SELECT 'LAW',                       'SOCSCI',               'Social Sciences' UNION ALL
 
--- 6) Humanities & arts
-SELECT 'Creative Arts and Writing', 'Humanities and the Arts' UNION ALL
-SELECT 'History, Heritage and Archaeology', 'Humanities and the Arts' UNION ALL
-SELECT 'Language, Communication and Culture', 'Humanities and the Arts' UNION ALL
-SELECT 'Law and Legal Studies', 'Humanities and the Arts' UNION ALL
-SELECT 'Philosophy and Religious Studies', 'Humanities and the Arts'
+SELECT 'HISTORY',                   'HUMARTS',              'Humanities & Arts' UNION ALL
+SELECT 'LANGUAGE',                  'HUMARTS',              'Humanities & Arts' UNION ALL
+SELECT 'PHIL',                      'HUMARTS',              'Humanities & Arts' UNION ALL
+SELECT 'CREATIVE',                  'HUMARTS',              'Humanities & Arts'

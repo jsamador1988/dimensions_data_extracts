@@ -1,0 +1,47 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Field-year normalization for windowed citations: nc = cites_w / mean(cites_w) within (field,year)."
+}
+
+WITH core AS (
+  SELECT pub_id, pub_year
+  FROM ${ref("pub_core")}
+),
+
+cites AS (
+  SELECT pub_id, cites_w
+  FROM ${ref("pub_citations_5y")}
+),
+
+paper_field AS (
+  SELECT
+    f.pub_id,
+    f.field22_code,
+    c.pub_year,
+    ci.cites_w
+  FROM ${ref("pub_fields_distinct")} f
+  JOIN core c USING (pub_id)
+  JOIN cites ci USING (pub_id)
+),
+
+field_year_mean AS (
+  SELECT
+    field22_code,
+    pub_year,
+    AVG(cites_w) AS mean_cites_w
+  FROM paper_field
+  GROUP BY field22_code, pub_year
+)
+
+SELECT
+  pf.pub_id,
+  pf.field22_code,
+  pf.pub_year,
+  pf.cites_w,
+  m.mean_cites_w,
+  SAFE_DIVIDE(pf.cites_w, m.mean_cites_w) AS nc_w
+FROM paper_field pf
+JOIN field_year_mean m
+  USING (field22_code, pub_year)

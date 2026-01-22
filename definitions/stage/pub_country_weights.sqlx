@@ -1,0 +1,75 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Publication country weights (fractional by affiliation instances), plus public/private produced weights using org types."
+}
+
+WITH aff AS (
+  SELECT
+    a.pub_id,
+    a.quarter,
+    a.country_code,
+    a.org_id
+  FROM ${ref("pub_affiliations_flat")} a
+),
+
+org_types AS (
+  SELECT
+    o.id AS org_id,
+    o.legal_country_code,
+    o.types
+  FROM `dimensions-ai.data_analytics.organizations` o
+),
+
+aff_typed AS (
+  SELECT
+    a.pub_id,
+    a.quarter,
+    a.country_code,
+    -- classify affiliation org
+    CASE
+      WHEN 'Company' IN UNNEST(IFNULL(t.types, [])) THEN 1 ELSE 0
+    END AS is_private,
+    CASE
+      WHEN ('Government' IN UNNEST(IFNULL(t.types, []))
+         OR 'Education' IN UNNEST(IFNULL(t.types, []))
+         OR 'Healthcare' IN UNNEST(IFNULL(t.types, []))) THEN 1 ELSE 0
+    END AS is_public
+  FROM aff a
+  LEFT JOIN org_types t
+    ON t.org_id = a.org_id
+),
+
+counts AS (
+  SELECT
+    pub_id,
+    quarter,
+    country_code,
+    COUNT(*) AS n_aff_country,
+    SUM(is_public)  AS n_aff_public_country,
+    SUM(is_private) AS n_aff_private_country
+  FROM aff_typed
+  GROUP BY pub_id, quarter, country_code
+),
+
+totals AS (
+  SELECT
+    pub_id,
+    quarter,
+    SUM(n_aff_country) AS n_aff_total
+  FROM counts
+  GROUP BY pub_id, quarter
+)
+
+SELECT
+  c.pub_id,
+  c.quarter,
+  c.country_code,
+  SAFE_DIVIDE(c.n_aff_country, t.n_aff_total) AS w_aff,
+  SAFE_DIVIDE(c.n_aff_public_country, t.n_aff_total) AS w_public_prod,
+  SAFE_DIVIDE(c.n_aff_private_country, t.n_aff_total) AS w_private_prod
+FROM counts c
+JOIN totals t
+  USING (pub_id, quarter)
+WHERE t.n_aff_total > 0

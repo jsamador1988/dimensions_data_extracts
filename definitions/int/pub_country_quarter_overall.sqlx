@@ -1,0 +1,67 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  tags: ["int"],
+  description: "Overall publication quarterly series by country (fractional by affiliation instances)."
+}
+
+WITH cw AS (
+  SELECT pub_id, quarter, country_code, w_aff, w_public_prod, w_private_prod
+  FROM ${ref("pub_country_weights")}
+),
+
+-- funding flags by funder country type
+funders AS (
+  SELECT
+    c.pub_id,
+    org.legal_country_code AS funder_country,
+    MAX(CASE WHEN 'Government' IN UNNEST(IFNULL(org.types, [])) THEN 1 ELSE 0 END) AS has_gov_funder,
+    MAX(CASE WHEN ('Government' IN UNNEST(IFNULL(org.types, [])) OR 'Funder' IN UNNEST(IFNULL(org.types, []))) THEN 1 ELSE 0 END) AS has_any_funder
+  FROM ${ref("pub_core")} c
+  CROSS JOIN UNNEST(IFNULL(c.funder_orgs, [])) AS funder_org_id
+  LEFT JOIN `dimensions-ai.data_analytics.organizations` org
+    ON org.id = funder_org_id
+  WHERE org.legal_country_code IS NOT NULL
+    AND REGEXP_CONTAINS(org.legal_country_code, r'^[A-Z]{2}$')
+  GROUP BY c.pub_id, funder_country
+),
+
+-- overall top5 and breakthrough flags (ANY field)
+flags_any AS (
+  SELECT
+    pf.pub_id,
+    MAX(pf.is_top5_field) AS is_top5_anyfield,
+    MAX(pf.is_breakthrough_field) AS is_break_anyfield
+  FROM ${ref("pub_field_flags")} pf
+  GROUP BY pf.pub_id
+)
+
+SELECT
+  cw.country_code,
+  cw.quarter,
+
+  SUM(cw.w_aff) AS pub_total_ctq,
+
+  -- overall: paper is "top5" if it is top5 in at least one of its fields
+  SUM(cw.w_aff * COALESCE(fa.is_top5_anyfield, 0)) AS pub_top5_ctq,
+
+  -- overall breakthrough (any field), subject to eligibility already baked into is_breakthrough_field
+  SUM(cw.w_aff * COALESCE(fa.is_break_anyfield, 0)) AS pub_break_ctq,
+
+  SUM(cw.w_public_prod)  AS pub_public_produced_ctq,
+  SUM(cw.w_private_prod) AS pub_private_produced_ctq,
+
+  -- gov funded: require funder country == affiliation country (domestic funding)
+  SUM(cw.w_aff * COALESCE(f.has_gov_funder, 0)) AS pub_gov_funded_ctq,
+  SUM(cw.w_aff * COALESCE(f.has_any_funder, 0)) AS pub_any_funded_ctq,
+
+  -- private-produced AND gov-funded (domestic)
+  SUM(cw.w_aff * (CASE WHEN cw.w_private_prod > 0 THEN 1 ELSE 0 END) * COALESCE(f.has_gov_funder, 0)) AS pub_privprod_govfund_ctq
+
+FROM cw
+LEFT JOIN funders f
+  ON f.pub_id = cw.pub_id
+ AND f.funder_country = cw.country_code
+LEFT JOIN flags_any fa
+  ON fa.pub_id = cw.pub_id
+GROUP BY cw.country_code, cw.quarter

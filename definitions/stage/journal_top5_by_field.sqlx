@@ -1,0 +1,61 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Top journals within field: rank eligible journals by mean normalized citations (pre-period), keep top top_journal_pct."
+}
+
+WITH core AS (
+  SELECT pub_id, journal_id, pub_dt_best, pub_year
+  FROM ${ref("pub_core")}
+),
+
+eligible AS (
+  SELECT journal_id
+  FROM ${ref("journal_eligibility")}
+),
+
+pf AS (
+  SELECT
+    n.pub_id,
+    n.field22_code,
+    n.pub_year,
+    n.nc_w
+  FROM ${ref("pub_field_year_norm")} n
+),
+
+joined AS (
+  SELECT
+    pf.field22_code,
+    c.journal_id,
+    pf.nc_w
+  FROM pf
+  JOIN core c USING (pub_id)
+  JOIN eligible e ON e.journal_id = c.journal_id
+  WHERE c.pub_dt_best BETWEEN DATE('${vars.journal_impact_pre_start}') AND DATE('${vars.journal_impact_pre_end}')
+),
+
+impact AS (
+  SELECT
+    field22_code,
+    journal_id,
+    AVG(nc_w) AS impact_nc
+  FROM joined
+  GROUP BY field22_code, journal_id
+),
+
+ranked AS (
+  SELECT
+    field22_code,
+    journal_id,
+    impact_nc,
+    PERCENT_RANK() OVER (PARTITION BY field22_code ORDER BY impact_nc DESC) AS pr
+  FROM impact
+)
+
+SELECT
+  field22_code,
+  journal_id,
+  impact_nc,
+  CASE WHEN pr <= CAST('${vars.top_journal_pct}' AS FLOAT64) THEN 1 ELSE 0 END AS is_top5_within_field
+FROM ranked

@@ -1,0 +1,26 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Citations within a W-year window (year-based) for each publication."
+}
+
+WITH core AS (
+  SELECT pub_id, pub_year, citations
+  FROM ${ref("pub_core")}
+),
+
+counted AS (
+  SELECT
+    pub_id,
+    pub_year,
+    COUNTIF(
+      cit.year IS NOT NULL
+      AND cit.year <= pub_year + CAST('${vars.breakthrough_window_years}' AS INT64) - 1
+    ) AS cites_w
+  FROM core
+  LEFT JOIN UNNEST(IFNULL(citations, [])) AS cit
+  GROUP BY pub_id, pub_year
+)
+
+SELECT * FROM counted

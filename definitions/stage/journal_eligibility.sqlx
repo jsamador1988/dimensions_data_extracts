@@ -1,0 +1,15 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Eligible journals: journals with >= journal_elig_min_articles research articles in the analysis window."
+}
+
+SELECT
+  journal_id,
+  ANY_VALUE(journal_title) AS journal_title,
+  COUNT(*) AS n_articles
+FROM ${ref("pub_core")}
+WHERE journal_id IS NOT NULL
+GROUP BY journal_id
+HAVING COUNT(*) >= CAST('${vars.journal_elig_min_articles}' AS INT64)
