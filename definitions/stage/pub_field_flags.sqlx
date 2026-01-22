@@ -44,7 +44,7 @@ joined AS (
 
     -- breakthrough eligibility: need full window
     CASE
-      WHEN c.pub_dt_best <= DATE_SUB(DATE('${vars.sample_end}'), INTERVAL CAST('${vars.breakthrough_window_years}' AS INT64) YEAR)
+      WHEN c.pub_dt_best <= DATE_SUB(DATE('${dataform.projectConfig.vars.sample_end}'), INTERVAL CAST('${dataform.projectConfig.vars.breakthrough_window_years}' AS INT64) YEAR)
       THEN 1 ELSE 0
     END AS break_eligible
   FROM norm n

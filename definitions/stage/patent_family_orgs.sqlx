@@ -1,0 +1,38 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Family-level org IDs: union of assignee orgs and inventor affiliation orgs (via researcher_orgs)."
+}
+
+WITH assg AS (
+  SELECT DISTINCT
+    p.family_id,
+    ao AS org_id
+  FROM `dimensions-ai.data_analytics.patents` p
+  CROSS JOIN UNNEST(IFNULL(p.assignee_orgs, [])) AS ao
+  WHERE p.family_id IS NOT NULL
+    AND ao IS NOT NULL
+),
+
+inv_rid AS (
+  SELECT DISTINCT family_id, researcher_id
+  FROM ${ref("patent_family_rids")}
+),
+
+rid_org AS (
+  SELECT DISTINCT
+    ir.family_id,
+    ro AS org_id
+  FROM inv_rid ir
+  JOIN `dimensions-ai.data_analytics.researchers` r
+    ON r.id = ir.researcher_id
+  CROSS JOIN UNNEST(IFNULL(r.research_orgs, [])) AS ro
+  WHERE ro IS NOT NULL
+)
+
+SELECT DISTINCT * FROM (
+  SELECT * FROM assg
+  UNION DISTINCT
+  SELECT * FROM rid_org
+)

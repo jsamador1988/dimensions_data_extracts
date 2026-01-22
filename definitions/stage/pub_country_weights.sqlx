@@ -1,8 +1,9 @@
 config {
   type: "table",
+  name: "pub_country_weights",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Publication country weights (fractional by affiliation instances), plus public/private produced weights using org types."
+  description: "Publication×country fractional affiliation weights."
 }
 
 WITH aff AS (
@@ -17,7 +18,6 @@ WITH aff AS (
 org_types AS (
   SELECT
     o.id AS org_id,
-    o.legal_country_code,
     o.types
   FROM `dimensions-ai.data_analytics.organizations` o
 ),
@@ -27,15 +27,16 @@ aff_typed AS (
     a.pub_id,
     a.quarter,
     a.country_code,
-    -- classify affiliation org
-    CASE
-      WHEN 'Company' IN UNNEST(IFNULL(t.types, [])) THEN 1 ELSE 0
-    END AS is_private,
+
+    CASE WHEN 'Company' IN UNNEST(IFNULL(t.types, [])) THEN 1 ELSE 0 END AS is_private,
+
     CASE
       WHEN ('Government' IN UNNEST(IFNULL(t.types, []))
          OR 'Education' IN UNNEST(IFNULL(t.types, []))
-         OR 'Healthcare' IN UNNEST(IFNULL(t.types, []))) THEN 1 ELSE 0
+         OR 'Healthcare' IN UNNEST(IFNULL(t.types, [])))
+      THEN 1 ELSE 0
     END AS is_public
+
   FROM aff a
   LEFT JOIN org_types t
     ON t.org_id = a.org_id
@@ -70,6 +71,5 @@ SELECT
   SAFE_DIVIDE(c.n_aff_public_country, t.n_aff_total) AS w_public_prod,
   SAFE_DIVIDE(c.n_aff_private_country, t.n_aff_total) AS w_private_prod
 FROM counts c
-JOIN totals t
-  USING (pub_id, quarter)
+JOIN totals t USING (pub_id, quarter)
 WHERE t.n_aff_total > 0

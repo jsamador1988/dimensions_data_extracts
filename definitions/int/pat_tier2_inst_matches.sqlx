@@ -57,7 +57,7 @@ WHERE fam.family_app_dt >= gcore.start_dt
     FROM UNNEST(IFNULL(gcore.grant_for4, [])) x
     JOIN UNNEST(IFNULL(pf.pat_for4, [])) y
       ON x = y
-  ) >= CAST('${vars.min_for4_overlap}' AS INT64)
+  ) >= CAST('${dataform.projectConfig.vars.min_for4_overlap}' AS INT64)
   AND SAFE_DIVIDE(
     (
       SELECT COUNT(DISTINCT x)
@@ -73,4 +73,4 @@ WHERE fam.family_app_dt >= gcore.start_dt
         SELECT y AS z FROM UNNEST(IFNULL(pf.pat_for4, [])) y
       )
     )
-  ) >= CAST('${vars.min_jaccard}' AS FLOAT64)
+  ) >= CAST('${dataform.projectConfig.vars.min_jaccard}' AS FLOAT64)

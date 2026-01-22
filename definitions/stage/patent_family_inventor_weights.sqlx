@@ -2,37 +2,51 @@ config {
   type: "table",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Family × country inventor fractional weights w_inv restricted to rd_ref.country_list (target macro countries)."
+  description: "Family×country inventor fractional weights w_inv (normalized over observed inventor countries)."
 }
 
-WITH inv_counts AS (
+WITH inv AS (
   SELECT
     p.family_id,
-    inv.address.country AS country_code,
-    COUNT(*) AS n_inventors_country
+    -- normalize UK -> GB for macro merges
+    CASE WHEN inv.address.country = 'UK' THEN 'GB' ELSE inv.address.country END AS country_code,
+
+    -- de-dup key: prefer researcher_id; else fallback
+    COALESCE(
+      inv.researcher_id,
+      CONCAT(IFNULL(inv.first_name,''), '|', IFNULL(inv.last_name,''), '|', IFNULL(inv.address.country,''))
+    ) AS inv_key
   FROM `dimensions-ai.data_analytics.patents` p
   CROSS JOIN UNNEST(p.inventors) AS inv
   WHERE p.family_id IS NOT NULL
-    AND inv.address.country IS NOT NULL
-  GROUP BY 1, 2
 ),
-inv_counts_target AS (
-  SELECT i.*
-  FROM inv_counts i
-  JOIN `dimensionsdataextracts.rd_ref.country_list` c
-    ON c.country_code = i.country_code
-),
-totals AS (
+
+inv_clean AS (
+  SELECT *
+  FROM inv
+  WHERE country_code IS NOT NULL
+    AND REGEXP_CONTAINS(country_code, r'^[A-Z]{2}$')
+)
+
+, by_cty AS (
   SELECT
     family_id,
-    SUM(n_inventors_country) AS n_inventors_total_target
-  FROM inv_counts_target
-  GROUP BY 1
+    country_code,
+    COUNT(DISTINCT inv_key) AS n_inv
+  FROM inv_clean
+  GROUP BY family_id, country_code
+),
+
+tot AS (
+  SELECT family_id, SUM(n_inv) AS n_inv_total
+  FROM by_cty
+  GROUP BY family_id
 )
+
 SELECT
-  i.family_id,
-  i.country_code,
-  SAFE_DIVIDE(i.n_inventors_country, t.n_inventors_total_target) AS w_inv
-FROM inv_counts_target i
-JOIN totals t USING (family_id)
-WHERE t.n_inventors_total_target > 0
+  b.family_id,
+  b.country_code,
+  SAFE_DIVIDE(b.n_inv, t.n_inv_total) AS w_inv
+FROM by_cty b
+JOIN tot t USING (family_id)
+WHERE t.n_inv_total > 0

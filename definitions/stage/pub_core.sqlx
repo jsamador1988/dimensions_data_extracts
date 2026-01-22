@@ -101,7 +101,7 @@ filtered AS (
     AND doc_classification = 'RESEARCH_ARTICLE'
     AND is_citable_lower = 'true'
     -- keep only dates in window
-    AND pub_dt_best BETWEEN DATE('${vars.sample_start}') AND DATE('${vars.sample_end}')
+    AND pub_dt_best BETWEEN DATE('${dataform.projectConfig.vars.sample_start}') AND DATE('${dataform.projectConfig.vars.sample_end}')
 )
 
 SELECT * FROM filtered
