@@ -1,0 +1,40 @@
+config {
+  type: "table",
+  schema: "rd_mart",
+  tags: ["mart"],
+  bigquery: { partitionBy: "quarter", clusterBy: ["country_code"] },
+  description: "WIDE patents quarterly mart: core measures + Tier2 funding proxies + placeholders for Tier1/Tier3."
+}
+
+WITH core AS (
+  SELECT * FROM ${ref("pat_country_quarter_core")}
+),
+
+tier2 AS (
+  SELECT * FROM ${ref("pat_country_quarter_tier2")}
+)
+
+SELECT
+  core.country_code,
+  core.quarter,
+
+  core.pat_inv_total_ctq,
+  core.pat_inv_assg_total_ctq,
+  core.pat_inv_assg_file_total_ctq,
+  core.pat_public_owned_ctq,
+
+  -- Tier 1 placeholder (usually US-only; implement later if you locate a Dimensions field)
+  0.0 AS pat_pubfund_tier1_ctq,
+
+  tier2.pat_pubfund_tier2_rid_ctq,
+  tier2.pat_pubfund_tier2_inst_ctq,
+  tier2.pat_pubfund_tier2_any_ctq,
+  tier2.matched_grants_tier2_ctq,
+  tier2.matched_grants_amount_usd_tier2_startqtr_ctq,
+
+  -- Tier 3 placeholder (needs patent<->paper link field in Dimensions patents table)
+  0.0 AS pat_pubfund_tier3_pubscience_ctq
+
+FROM core
+LEFT JOIN tier2
+  USING (country_code, quarter)

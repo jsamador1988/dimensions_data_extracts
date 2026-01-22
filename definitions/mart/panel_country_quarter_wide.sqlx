@@ -2,40 +2,34 @@ config {
   type: "table",
   schema: "rd_mart",
   tags: ["mart"],
-  description: "Final country-quarter wide panel for merging to macro data.",
-  bigquery: {
-    partitionBy: "quarter",
-    clusterBy: ["country_code"]
-  }
+  bigquery: { partitionBy: "quarter", clusterBy: ["country_code"] },
+  description: "Final country-quarter panel: patents + publications (wide) merged on (country_code, quarter)."
 }
 
+WITH keys AS (
+  SELECT country_code, quarter FROM ${ref("pat_country_quarter_wide")}
+  UNION DISTINCT
+  SELECT country_code, quarter FROM ${ref("pub_country_quarter_wide")}
+),
+
+pat AS (
+  SELECT * FROM ${ref("pat_country_quarter_wide")}
+),
+
+pub AS (
+  SELECT * FROM ${ref("pub_country_quarter_wide")}
+)
+
 SELECT
-  g.country_code,
-  g.quarter,
+  k.country_code,
+  k.quarter,
 
   -- patents
-  COALESCE(p.pat_inv_total_ctq, 0) AS pat_inv_total_ctq,
-  COALESCE(p.pat_inv_assg_total_ctq, 0) AS pat_inv_assg_total_ctq,
-  COALESCE(p.pat_inv_assg_file_total_ctq, 0) AS pat_inv_assg_file_total_ctq,
-  COALESCE(p.pat_public_owned_ctq, 0) AS pat_public_owned_ctq,
-  COALESCE(p.pat_pubfund_tier1_ctq, 0) AS pat_pubfund_tier1_ctq,
-
-  -- grants
-  COALESCE(gr.grants_any_count_ctq, 0) AS grants_any_count_ctq,
-  COALESCE(gr.grants_gov_count_ctq, 0) AS grants_gov_count_ctq,
+  pat.* EXCEPT(country_code, quarter),
 
   -- publications
-  COALESCE(u.pub_total_ctq, 0) AS pub_total_ctq,
-  COALESCE(u.pub_public_produced_ctq, 0) AS pub_public_produced_ctq,
-  COALESCE(u.pub_private_produced_ctq, 0) AS pub_private_produced_ctq,
-  COALESCE(u.pub_gov_funded_ctq, 0) AS pub_gov_funded_ctq,
-  COALESCE(u.pub_any_funded_ctq, 0) AS pub_any_funded_ctq,
-  COALESCE(u.pub_private_produced_gov_funded_ctq, 0) AS pub_private_produced_gov_funded_ctq
+  pub.* EXCEPT(country_code, quarter)
 
-FROM ${ref("quarter_grid")} g
-LEFT JOIN ${ref("patent_measures_ctq")} p
-  ON p.country_code = g.country_code AND p.quarter = g.quarter
-LEFT JOIN ${ref("grant_measures_ctq")} gr
-  ON gr.country_code = g.country_code AND gr.quarter = g.quarter
-LEFT JOIN ${ref("pub_measures_ctq")} u
-  ON u.country_code = g.country_code AND u.quarter = g.quarter
+FROM keys k
+LEFT JOIN pat USING (country_code, quarter)
+LEFT JOIN pub USING (country_code, quarter)

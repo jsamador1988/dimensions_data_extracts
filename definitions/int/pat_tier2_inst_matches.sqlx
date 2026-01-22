@@ -1,0 +1,76 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  tags: ["int"],
+  description: "Tier-2 institution-based matches: grant recipient org intersects family orgs; FoR overlap + Jaccard thresholds."
+}
+
+WITH fam AS (
+  SELECT
+    f.country_code,
+    f.family_id,
+    f.family_app_dt,
+    f.family_app_qtr
+  FROM ${ref("patent_family_country_features")} f
+  WHERE f.w_inv > 0
+),
+
+pat_for AS (
+  SELECT family_id, pat_for4
+  FROM ${ref("patent_family_for4")}
+),
+
+fam_org AS (
+  SELECT family_id, org_id
+  FROM ${ref("patent_family_orgs")}
+),
+
+gcore AS (
+  SELECT country_code, grant_id, start_dt, funding_usd, grant_for4
+  FROM ${ref("grants_gov_core")}
+),
+
+gorg AS (
+  SELECT country_code, grant_id, org_id
+  FROM ${ref("grant_orgs_flat")}
+)
+
+SELECT DISTINCT
+  fam.country_code,
+  fam.family_id,
+  fam.family_app_qtr AS quarter,
+  gcore.grant_id
+FROM fam
+JOIN pat_for pf
+  ON pf.family_id = fam.family_id
+JOIN fam_org fo
+  ON fo.family_id = fam.family_id
+JOIN gorg
+  ON gorg.country_code = fam.country_code
+ AND gorg.org_id = fo.org_id
+JOIN gcore
+  ON gcore.country_code = gorg.country_code
+ AND gcore.grant_id = gorg.grant_id
+WHERE fam.family_app_dt >= gcore.start_dt
+  AND (
+    SELECT COUNT(DISTINCT x)
+    FROM UNNEST(IFNULL(gcore.grant_for4, [])) x
+    JOIN UNNEST(IFNULL(pf.pat_for4, [])) y
+      ON x = y
+  ) >= CAST('${vars.min_for4_overlap}' AS INT64)
+  AND SAFE_DIVIDE(
+    (
+      SELECT COUNT(DISTINCT x)
+      FROM UNNEST(IFNULL(gcore.grant_for4, [])) x
+      JOIN UNNEST(IFNULL(pf.pat_for4, [])) y
+        ON x = y
+    ),
+    (
+      SELECT COUNT(DISTINCT z)
+      FROM (
+        SELECT x AS z FROM UNNEST(IFNULL(gcore.grant_for4, [])) x
+        UNION ALL
+        SELECT y AS z FROM UNNEST(IFNULL(pf.pat_for4, [])) y
+      )
+    )
+  ) >= CAST('${vars.min_jaccard}' AS FLOAT64)

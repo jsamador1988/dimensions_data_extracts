@@ -1,0 +1,64 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Family×country assignee fractional weights w_assg and government-assignee share w_assg_gov (Gov only; not broadened)."
+}
+
+WITH fam_org AS (
+  SELECT DISTINCT
+    p.family_id,
+    ao AS org_id
+  FROM `dimensions-ai.data_analytics.patents` p
+  CROSS JOIN UNNEST(IFNULL(p.assignee_orgs, [])) AS ao
+  WHERE p.family_id IS NOT NULL
+    AND ao IS NOT NULL
+),
+
+org AS (
+  SELECT
+    o.id AS org_id,
+    CASE WHEN o.legal_country_code = 'UK' THEN 'GB' ELSE o.legal_country_code END AS country_code,
+    o.types
+  FROM `dimensions-ai.data_analytics.organizations` o
+),
+
+joined AS (
+  SELECT
+    f.family_id,
+    o.country_code,
+    f.org_id,
+    CASE WHEN 'Government' IN UNNEST(IFNULL(o.types, [])) THEN 1 ELSE 0 END AS is_gov
+  FROM fam_org f
+  LEFT JOIN org o
+    ON o.org_id = f.org_id
+  WHERE o.country_code IS NOT NULL
+    AND REGEXP_CONTAINS(o.country_code, r'^[A-Z]{2}$')
+),
+
+by_cty AS (
+  SELECT
+    family_id,
+    country_code,
+    COUNT(DISTINCT org_id) AS n_assg,
+    COUNT(DISTINCT IF(is_gov=1, org_id, NULL)) AS n_assg_gov
+  FROM joined
+  GROUP BY family_id, country_code
+),
+
+tot AS (
+  SELECT
+    family_id,
+    SUM(n_assg) AS n_assg_total
+  FROM by_cty
+  GROUP BY family_id
+)
+
+SELECT
+  b.family_id,
+  b.country_code,
+  SAFE_DIVIDE(b.n_assg, t.n_assg_total) AS w_assg,
+  SAFE_DIVIDE(b.n_assg_gov, t.n_assg_total) AS w_assg_gov
+FROM by_cty b
+JOIN tot t USING (family_id)
+WHERE t.n_assg_total > 0

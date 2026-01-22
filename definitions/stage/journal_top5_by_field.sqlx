@@ -32,7 +32,7 @@ joined AS (
   FROM pf
   JOIN core c USING (pub_id)
   JOIN eligible e ON e.journal_id = c.journal_id
-  WHERE c.pub_dt_best BETWEEN DATE('${vars.journal_impact_pre_start}') AND DATE('${vars.journal_impact_pre_end}')
+  WHERE c.pub_dt_best BETWEEN DATE('${dataform.projectConfig.vars.journal_impact_pre_start}') AND DATE('${dataform.projectConfig.vars.journal_impact_pre_end}')
 ),
 
 impact AS (
@@ -57,5 +57,5 @@ SELECT
   field22_code,
   journal_id,
   impact_nc,
-  CASE WHEN pr <= CAST('${vars.top_journal_pct}' AS FLOAT64) THEN 1 ELSE 0 END AS is_top5_within_field
+  CASE WHEN pr <= CAST('${dataform.projectConfig.vars.top_journal_pct}' AS FLOAT64) THEN 1 ELSE 0 END AS is_top5_within_field
 FROM ranked

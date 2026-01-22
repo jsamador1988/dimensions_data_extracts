@@ -1,0 +1,22 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Family-level set of 4-digit FoR codes from patent category_for.second_level.codes."
+}
+
+WITH flat AS (
+  SELECT
+    p.family_id,
+    LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0') AS for4
+  FROM `dimensions-ai.data_analytics.patents` p
+  LEFT JOIN UNNEST(IFNULL(p.category_for.second_level.codes, [])) AS code
+  WHERE p.family_id IS NOT NULL
+    AND code IS NOT NULL
+)
+
+SELECT
+  family_id,
+  ARRAY_AGG(DISTINCT for4 IGNORE NULLS) AS pat_for4
+FROM flat
+GROUP BY family_id

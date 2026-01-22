@@ -1,0 +1,39 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Government-funded grants with country, start date, FoR(4) set, funding_usd."
+}
+
+WITH funder AS (
+  SELECT
+    o.id AS org_id,
+    CASE WHEN o.legal_country_code='UK' THEN 'GB' ELSE o.legal_country_code END AS country_code,
+    o.types
+  FROM `dimensions-ai.data_analytics.organizations` o
+  WHERE o.legal_country_code IS NOT NULL
+    AND REGEXP_CONTAINS(CASE WHEN o.legal_country_code='UK' THEN 'GB' ELSE o.legal_country_code END, r'^[A-Z]{2}$')
+)
+
+SELECT
+  f.country_code,
+  g.id AS grant_id,
+  COALESCE(SAFE.PARSE_DATE('%Y-%m-%d', g.start_date), DATE(SAFE_CAST(g.start_year AS INT64),1,1)) AS start_dt,
+  g.funding_usd,
+
+  -- FoR(4) set on grant
+  ARRAY(
+    SELECT DISTINCT LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0')
+    FROM UNNEST(IFNULL(g.category_for.second_level.codes, [])) AS code
+    WHERE code IS NOT NULL
+  ) AS grant_for4,
+
+  g.researcher_ids,
+  g.investigators,
+  g.organisation_details
+
+FROM `dimensions-ai.data_analytics.grants` g
+JOIN funder f
+  ON f.org_id = g.funder_org
+WHERE (g.start_date IS NOT NULL OR g.start_year IS NOT NULL)
+  AND 'Government' IN UNNEST(IFNULL(f.types, []))

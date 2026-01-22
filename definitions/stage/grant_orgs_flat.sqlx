@@ -1,0 +1,14 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Flatten grant recipient orgs (grid_id) for institution matching."
+}
+
+SELECT DISTINCT
+  g.country_code,
+  g.grant_id,
+  od.grid_id AS org_id
+FROM ${ref("grants_gov_core")} g
+CROSS JOIN UNNEST(IFNULL(g.organisation_details, [])) AS od
+WHERE od.grid_id IS NOT NULL

@@ -12,4 +12,5 @@ SELECT
 FROM ${ref("pub_core")}
 WHERE journal_id IS NOT NULL
 GROUP BY journal_id
-HAVING COUNT(*) >= CAST('${vars.journal_elig_min_articles}' AS INT64)
+HAVING COUNT(*) >= CAST('${dataform.projectConfig.vars.journal_elig_min_articles}' AS INT64)
+

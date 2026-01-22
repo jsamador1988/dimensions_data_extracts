@@ -2,25 +2,40 @@ config {
   type: "table",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Patent doc-level parsed dates for family timing."
+  description: "Patent document-level parsed dates and earliest application date."
 }
 
 SELECT
   p.family_id,
   p.id AS patent_id,
   p.jurisdiction,
-  SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date) AS priority_dt,
-  SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date) AS filing_dt,
+
+  COALESCE(
+    SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date),
+    CASE WHEN p.priority_year IS NOT NULL THEN DATE(SAFE_CAST(p.priority_year AS INT64), 1, 1) END
+  ) AS priority_dt,
+
+  COALESCE(
+    SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date),
+    CASE WHEN p.filing_year IS NOT NULL THEN DATE(SAFE_CAST(p.filing_year AS INT64), 1, 1) END
+  ) AS filing_dt,
+
   CASE
-    WHEN SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date) IS NOT NULL
-     AND SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date) IS NOT NULL
+    WHEN COALESCE(SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date),
+                  CASE WHEN p.priority_year IS NOT NULL THEN DATE(SAFE_CAST(p.priority_year AS INT64),1,1) END) IS NOT NULL
+     AND COALESCE(SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date),
+                  CASE WHEN p.filing_year IS NOT NULL THEN DATE(SAFE_CAST(p.filing_year AS INT64),1,1) END) IS NOT NULL
     THEN LEAST(
-      SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date),
-      SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date)
+      COALESCE(SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date),
+               CASE WHEN p.priority_year IS NOT NULL THEN DATE(SAFE_CAST(p.priority_year AS INT64),1,1) END),
+      COALESCE(SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date),
+               CASE WHEN p.filing_year IS NOT NULL THEN DATE(SAFE_CAST(p.filing_year AS INT64),1,1) END)
     )
     ELSE COALESCE(
-      SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date),
-      SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date)
+      COALESCE(SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date),
+               CASE WHEN p.priority_year IS NOT NULL THEN DATE(SAFE_CAST(p.priority_year AS INT64),1,1) END),
+      COALESCE(SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date),
+               CASE WHEN p.filing_year IS NOT NULL THEN DATE(SAFE_CAST(p.filing_year AS INT64),1,1) END)
     )
   END AS doc_earliest_app_dt
 FROM `dimensions-ai.data_analytics.patents` p

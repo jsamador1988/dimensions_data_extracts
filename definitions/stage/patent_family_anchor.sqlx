@@ -2,13 +2,18 @@ config {
   type: "table",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Family-level anchor date and quarter (min earliest application date across family documents)."
+  description: "Family-level anchor date/quarter (min earliest app date) and jurisdiction set."
 }
+
+WITH d AS (
+  SELECT * FROM ${ref("patent_doc_dates")}
+  WHERE doc_earliest_app_dt IS NOT NULL
+)
 
 SELECT
   family_id,
   MIN(doc_earliest_app_dt) AS family_app_dt,
-  DATE_TRUNC(MIN(doc_earliest_app_dt), QUARTER) AS family_app_qtr
-FROM ${ref("patent_doc_dates")}
-WHERE doc_earliest_app_dt IS NOT NULL
+  DATE_TRUNC(MIN(doc_earliest_app_dt), QUARTER) AS family_app_qtr,
+  ARRAY_AGG(DISTINCT jurisdiction IGNORE NULLS) AS jurisdictions
+FROM d
 GROUP BY family_id

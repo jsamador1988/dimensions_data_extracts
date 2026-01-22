@@ -1,0 +1,74 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  tags: ["int"],
+  description: "Tier-2 RID-based grant matches: same country, family_app_dt >= grant_start_dt, FoR overlap + Jaccard thresholds."
+}
+
+-- thresholds as strings in workflow vars
+-- add these to workflow_settings.yaml vars if you haven't:
+-- min_for4_overlap: "1"
+-- min_jaccard: "0.5"
+
+WITH fam AS (
+  SELECT
+    f.country_code,
+    f.family_id,
+    f.family_app_dt,
+    f.family_app_qtr
+  FROM ${ref("patent_family_country_features")} f
+  WHERE f.w_inv > 0
+),
+
+pat_for AS (
+  SELECT family_id, pat_for4
+  FROM ${ref("patent_family_for4")}
+),
+
+fam_rids AS (
+  SELECT family_id, researcher_id
+  FROM ${ref("patent_family_rids")}
+),
+
+gr AS (
+  SELECT
+    country_code, grant_id, start_dt, funding_usd, grant_for4, researcher_id
+  FROM ${ref("grant_rids_flat")}
+)
+
+SELECT DISTINCT
+  fam.country_code,
+  fam.family_id,
+  fam.family_app_qtr AS quarter,
+  gr.grant_id
+FROM fam
+JOIN fam_rids fr
+  ON fr.family_id = fam.family_id
+JOIN gr
+  ON gr.country_code = fam.country_code
+ AND gr.researcher_id = fr.researcher_id
+JOIN pat_for pf
+  ON pf.family_id = fam.family_id
+WHERE fam.family_app_dt >= gr.start_dt
+  AND (
+    SELECT COUNT(DISTINCT x)
+    FROM UNNEST(IFNULL(gr.grant_for4, [])) x
+    JOIN UNNEST(IFNULL(pf.pat_for4, [])) y
+      ON x = y
+  ) >= CAST('${dataform.projectConfig.vars.min_for4_overlap}' AS INT64)
+  AND SAFE_DIVIDE(
+    (
+      SELECT COUNT(DISTINCT x)
+      FROM UNNEST(IFNULL(gr.grant_for4, [])) x
+      JOIN UNNEST(IFNULL(pf.pat_for4, [])) y
+        ON x = y
+    ),
+    (
+      SELECT COUNT(DISTINCT z)
+      FROM (
+        SELECT x AS z FROM UNNEST(IFNULL(gr.grant_for4, [])) x
+        UNION ALL
+        SELECT y AS z FROM UNNEST(IFNULL(pf.pat_for4, [])) y
+      )
+    )
+  ) >= CAST('${dataform.projectConfig.vars.min_jaccard}' AS FLOAT64)
