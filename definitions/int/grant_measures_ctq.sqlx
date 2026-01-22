@@ -1,5 +1,6 @@
 config {
   type: "table",
+  name: "grant_measures_ctq",
   schema: "rd_int",
   tags: ["int"],
   description: "Grant quarterly counts by funder-country: any funder vs government funder."
@@ -10,39 +11,49 @@ WITH g AS (
     grant_id,
     start_dt,
     DATE_TRUNC(start_dt, QUARTER) AS quarter,
-    funder_country,
+    country_code,
     funder_types
   FROM ${ref("grants_base")}
   WHERE start_dt IS NOT NULL
 ),
+
 is_any AS (
   SELECT * FROM g
-  WHERE funder_country IS NOT NULL
+  WHERE country_code IS NOT NULL
     AND EXISTS (
-      SELECT 1 FROM UNNEST(IFNULL(funder_types, [])) t
+      SELECT 1
+      FROM UNNEST(IFNULL(funder_types, [])) t
       WHERE t IN ('Government', 'Funder')
     )
 ),
+
 is_gov AS (
   SELECT * FROM g
-  WHERE funder_country IS NOT NULL
+  WHERE country_code IS NOT NULL
     AND 'Government' IN UNNEST(IFNULL(funder_types, []))
 )
+
 SELECT
   c.country_code,
   q.quarter,
   COALESCE(a.grants_any_count_ctq, 0) AS grants_any_count_ctq,
   COALESCE(v.grants_gov_count_ctq, 0) AS grants_gov_count_ctq
 FROM ${ref("quarter_grid")} q
-JOIN ${ref("country_list")} c ON TRUE
+CROSS JOIN ${ref("country_list")} c
 LEFT JOIN (
-  SELECT funder_country AS country_code, quarter, COUNT(DISTINCT grant_id) AS grants_any_count_ctq
+  SELECT
+    country_code,
+    quarter,
+    COUNT(DISTINCT grant_id) AS grants_any_count_ctq
   FROM is_any
   GROUP BY country_code, quarter
 ) a
   ON a.country_code = c.country_code AND a.quarter = q.quarter
 LEFT JOIN (
-  SELECT funder_country AS country_code, quarter, COUNT(DISTINCT grant_id) AS grants_gov_count_ctq
+  SELECT
+    country_code,
+    quarter,
+    COUNT(DISTINCT grant_id) AS grants_gov_count_ctq
   FROM is_gov
   GROUP BY country_code, quarter
 ) v
