@@ -2,73 +2,106 @@ config {
   type: "table",
   schema: "rd_int",
   tags: ["int"],
-  description: "Tier-2 RID-based grant matches: same country, family_app_dt >= grant_start_dt, FoR overlap + Jaccard thresholds."
+  description: "Tier-2 RID-based matches: inventor researcher_id intersects grant investigators; FoR overlap + Jaccard thresholds."
 }
-
--- thresholds as strings in workflow vars
--- add these to workflow_settings.yaml vars if you haven't:
--- min_for4_overlap: "1"
--- min_jaccard: "0.5"
 
 WITH fam AS (
   SELECT
-    f.country_code,
-    f.family_id,
-    f.family_app_dt,
-    f.family_app_qtr
-  FROM ${ref("patent_family_country_features")} f
-  WHERE f.w_inv > 0
+    country_code,
+    family_id,
+    family_app_dt,
+    family_app_qtr
+  FROM ${ref("patent_family_country_features")}
+  WHERE w_inv > 0
 ),
 
 pat_for AS (
-  SELECT family_id, pat_for4
+  SELECT
+    family_id,
+    pat_for4
   FROM ${ref("patent_family_for4")}
 ),
 
-fam_rids AS (
-  SELECT family_id, researcher_id
-  FROM ${ref("patent_family_rids")}
+-- Inventor RIDs directly from Dimensions patents (NULL-safe via LEFT JOIN UNNEST)
+inv_rids AS (
+  SELECT DISTINCT
+    p.family_id,
+    inv.researcher_id AS researcher_id
+  FROM `dimensions-ai.data_analytics.patents` p
+  LEFT JOIN UNNEST(p.inventors) AS inv
+  WHERE p.family_id IS NOT NULL
+    AND inv.researcher_id IS NOT NULL
 ),
 
 gr AS (
   SELECT
-    country_code, grant_id, start_dt, funding_usd, grant_for4, researcher_id
+    country_code,
+    grant_id,
+    start_dt,
+    researcher_id,
+    grant_for4
   FROM ${ref("grant_rids_flat")}
+  WHERE start_dt IS NOT NULL
+    AND researcher_id IS NOT NULL
+),
+
+cand AS (
+  SELECT DISTINCT
+    f.country_code,
+    f.family_id,
+    f.family_app_dt,
+    f.family_app_qtr AS quarter,
+    g.grant_id,
+    g.start_dt,
+    pf.pat_for4,
+    g.grant_for4
+  FROM fam f
+  JOIN inv_rids ir
+    ON ir.family_id = f.family_id
+  JOIN gr g
+    ON g.country_code = f.country_code
+   AND g.researcher_id = ir.researcher_id
+  JOIN pat_for pf
+    ON pf.family_id = f.family_id
+  WHERE f.family_app_dt >= g.start_dt
+),
+
+scored AS (
+  SELECT
+    country_code,
+    family_id,
+    quarter,
+    grant_id,
+    (
+      SELECT COUNT(DISTINCT x)
+      FROM UNNEST(IFNULL(grant_for4, CAST([] AS ARRAY<STRING>))) AS x
+      JOIN UNNEST(IFNULL(pat_for4,   CAST([] AS ARRAY<STRING>))) AS y
+        ON x = y
+    ) AS for4_overlap,
+    SAFE_DIVIDE(
+      (
+        SELECT COUNT(DISTINCT x)
+        FROM UNNEST(IFNULL(grant_for4, CAST([] AS ARRAY<STRING>))) AS x
+        JOIN UNNEST(IFNULL(pat_for4,   CAST([] AS ARRAY<STRING>))) AS y
+          ON x = y
+      ),
+      (
+        SELECT COUNT(DISTINCT z)
+        FROM (
+          SELECT x AS z FROM UNNEST(IFNULL(grant_for4, CAST([] AS ARRAY<STRING>))) AS x
+          UNION ALL
+          SELECT y AS z FROM UNNEST(IFNULL(pat_for4,   CAST([] AS ARRAY<STRING>))) AS y
+        )
+      )
+    ) AS jaccard_for4
+  FROM cand
 )
 
 SELECT DISTINCT
-  fam.country_code,
-  fam.family_id,
-  fam.family_app_qtr AS quarter,
-  gr.grant_id
-FROM fam
-JOIN fam_rids fr
-  ON fr.family_id = fam.family_id
-JOIN gr
-  ON gr.country_code = fam.country_code
- AND gr.researcher_id = fr.researcher_id
-JOIN pat_for pf
-  ON pf.family_id = fam.family_id
-WHERE fam.family_app_dt >= gr.start_dt
-  AND (
-    SELECT COUNT(DISTINCT x)
-    FROM UNNEST(IFNULL(gr.grant_for4, [])) x
-    JOIN UNNEST(IFNULL(pf.pat_for4, [])) y
-      ON x = y
-  ) >= CAST('${dataform.projectConfig.vars.min_for4_overlap}' AS INT64)
-  AND SAFE_DIVIDE(
-    (
-      SELECT COUNT(DISTINCT x)
-      FROM UNNEST(IFNULL(gr.grant_for4, [])) x
-      JOIN UNNEST(IFNULL(pf.pat_for4, [])) y
-        ON x = y
-    ),
-    (
-      SELECT COUNT(DISTINCT z)
-      FROM (
-        SELECT x AS z FROM UNNEST(IFNULL(gr.grant_for4, [])) x
-        UNION ALL
-        SELECT y AS z FROM UNNEST(IFNULL(pf.pat_for4, [])) y
-      )
-    )
-  ) >= CAST('${dataform.projectConfig.vars.min_jaccard}' AS FLOAT64)
+  country_code,
+  family_id,
+  quarter,
+  grant_id
+FROM scored
+WHERE for4_overlap >= CAST('${dataform.projectConfig.vars.min_for4_overlap}' AS INT64)
+  AND jaccard_for4 >= CAST('${dataform.projectConfig.vars.min_jaccard}' AS FLOAT64)
