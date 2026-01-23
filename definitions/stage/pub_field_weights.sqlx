@@ -1,25 +1,55 @@
 config {
   type: "table",
+  name: "pub_field_weights",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Field weights per publication: w_field = 1/num_distinct_fields."
+  description: "Publication×field22 fractional weights w_field based on distinct mapped FoR4 codes on the paper."
 }
 
-WITH f AS (
-  SELECT pub_id, field22_code
-  FROM ${ref("pub_fields_distinct")}
+WITH core AS (
+  SELECT
+    pub_id,
+    quarter,
+    for4_codes
+  FROM ${ref("pub_core")}
 ),
 
-n AS (
-  SELECT pub_id, COUNT(*) AS n_fields
-  FROM f
-  GROUP BY pub_id
+for4_flat AS (
+  SELECT
+    c.pub_id,
+    c.quarter,
+    for4
+  FROM core c
+  CROSS JOIN UNNEST(IFNULL(c.for4_codes, [])) AS for4
+  WHERE for4 IS NOT NULL
+),
+
+mapped AS (
+  SELECT DISTINCT
+    f.pub_id,
+    f.quarter,
+    m.field22_code
+  FROM for4_flat f
+  JOIN ${ref("for4_to_field22")} m
+    ON m.for4 = f.for4
+  WHERE m.field22_code IS NOT NULL
+),
+
+totals AS (
+  SELECT
+    pub_id,
+    quarter,
+    COUNT(DISTINCT field22_code) AS n_fields
+  FROM mapped
+  GROUP BY pub_id, quarter
 )
 
 SELECT
-  f.pub_id,
-  f.field22_code,
-  SAFE_DIVIDE(1.0, n.n_fields) AS w_field
-FROM f
-JOIN n USING (pub_id)
-WHERE n.n_fields > 0
+  m.pub_id,
+  m.quarter,
+  m.field22_code,
+  SAFE_DIVIDE(1.0, t.n_fields) AS w_field
+FROM mapped m
+JOIN totals t
+  USING (pub_id, quarter)
+WHERE t.n_fields > 0

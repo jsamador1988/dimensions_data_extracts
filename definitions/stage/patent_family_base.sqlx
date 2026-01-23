@@ -3,7 +3,7 @@ config {
   name: "patent_family_base",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Slim patent base table with only required fields (avoids BigQuery 100MB row limit)."
+  description: "Slim patent base table with only required fields (avoids BigQuery 100MB row limit) and safe FoR4 array (no null elements)."
 }
 
 SELECT
@@ -27,17 +27,18 @@ SELECT
     )
   END AS doc_earliest_app_dt,
 
-  -- Keep inventors (needed for weights) but do NOT SELECT p.* (which pulls huge text fields)
   p.inventors,
-
-  -- Keep assignee org ids (needed downstream)
   IFNULL(p.assignee_orgs, []) AS assignee_orgs,
 
-  -- Keep only small classification codes
   ARRAY(
-    SELECT DISTINCT LPAD(REGEXP_EXTRACT(code, r'\\d+'), 4, '0')
-    FROM UNNEST(IFNULL(p.category_for.second_level.codes, [])) AS code
-    WHERE code IS NOT NULL
+    SELECT DISTINCT LPAD(digits, 4, '0')
+    FROM (
+      SELECT REGEXP_EXTRACT(code, r'\\d+') AS digits
+      FROM UNNEST(IFNULL(p.category_for.second_level.codes, [])) AS code
+      WHERE code IS NOT NULL
+    )
+    WHERE digits IS NOT NULL
   ) AS for4_codes
+
 FROM `dimensions-ai.data_analytics.patents` p
 WHERE p.family_id IS NOT NULL
