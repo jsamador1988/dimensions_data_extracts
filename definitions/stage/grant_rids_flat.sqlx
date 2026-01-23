@@ -3,49 +3,39 @@ config {
   name: "grant_rids_flat",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Flatten government-grant researcher IDs (RIDs) to (country_code, grant_id, researcher_id) for Tier-2 RID matching."
+  description: "Grant×researcher_id rows (scalar-only). Built from grants_gov_core; avoids UNION DISTINCT over ARRAY columns."
 }
 
-WITH gov_grants AS (
-  SELECT
-    grant_id,
-    -- normalize UK->GB for consistency
-    CASE WHEN country_code = 'UK' THEN 'GB' ELSE country_code END AS country_code,
-    start_dt,
-    funding_usd,
-    grant_for4,
-    researcher_ids,
-    investigators,
-    funder_types
-  FROM ${ref("grants_base")}
-  WHERE start_dt IS NOT NULL
-    AND country_code IS NOT NULL
-    AND 'Government' IN UNNEST(IFNULL(funder_types, []))
-),
-
-rid_from_array AS (
+WITH g AS (
   SELECT
     country_code,
     grant_id,
     start_dt,
-    funding_usd,
-    grant_for4,
+    researcher_ids,
+    investigators
+  FROM ${ref("grants_gov_core")}
+  WHERE start_dt IS NOT NULL
+),
+
+rid1 AS (
+  SELECT
+    country_code,
+    grant_id,
+    start_dt,
     rid AS researcher_id
-  FROM gov_grants,
-  UNNEST(IFNULL(researcher_ids, [])) AS rid
+  FROM g
+  CROSS JOIN UNNEST(IFNULL(researcher_ids, [])) AS rid
   WHERE rid IS NOT NULL
 ),
 
-rid_from_investigators AS (
+rid2 AS (
   SELECT
     country_code,
     grant_id,
     start_dt,
-    funding_usd,
-    grant_for4,
     inv.researcher_id AS researcher_id
-  FROM gov_grants,
-  UNNEST(IFNULL(investigators, [])) AS inv
+  FROM g
+  CROSS JOIN UNNEST(IFNULL(investigators, [])) AS inv
   WHERE inv.researcher_id IS NOT NULL
 )
 
@@ -53,21 +43,9 @@ SELECT DISTINCT
   country_code,
   grant_id,
   start_dt,
-  DATE_TRUNC(start_dt, QUARTER) AS start_qtr,
-  funding_usd,
-  grant_for4,
   researcher_id
-FROM rid_from_array
-
-UNION DISTINCT
-
-SELECT DISTINCT
-  country_code,
-  grant_id,
-  start_dt,
-  DATE_TRUNC(start_dt, QUARTER) AS start_qtr,
-  funding_usd,
-  grant_for4,
-  researcher_id
-FROM rid_from_investigators
-WHERE researcher_id IS NOT NULL
+FROM (
+  SELECT * FROM rid1
+  UNION ALL
+  SELECT * FROM rid2
+)
