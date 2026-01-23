@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "rd_int",
   tags: ["int"],
-  description: "Tier-2 RID-based matches: inventor researcher_id intersects grant investigators; FoR overlap + Jaccard thresholds."
+  description: "Tier-2 RID-based matches: inventor researcher_id intersects grant investigators; FoR overlap + Jaccard thresholds (grant FoR from grants_gov_core)."
 }
 
 WITH fam AS (
@@ -22,7 +22,7 @@ pat_for AS (
   FROM ${ref("patent_family_for4")}
 ),
 
--- Inventor RIDs directly from Dimensions patents (NULL-safe via LEFT JOIN UNNEST)
+-- Inventor RIDs (NULL-safe)
 inv_rids AS (
   SELECT DISTINCT
     p.family_id,
@@ -33,16 +33,27 @@ inv_rids AS (
     AND inv.researcher_id IS NOT NULL
 ),
 
-gr AS (
+-- RID list from grants (no FoR assumed here)
+gr_rids AS (
   SELECT
     country_code,
     grant_id,
     start_dt,
-    researcher_id,
-    grant_for4
+    researcher_id
   FROM ${ref("grant_rids_flat")}
   WHERE start_dt IS NOT NULL
     AND researcher_id IS NOT NULL
+),
+
+-- Grant FoR4 (this table MUST have grant_for4 as ARRAY<STRING>)
+gr_core AS (
+  SELECT
+    country_code,
+    grant_id,
+    start_dt,
+    grant_for4
+  FROM ${ref("grants_gov_core")}
+  WHERE start_dt IS NOT NULL
 ),
 
 cand AS (
@@ -51,19 +62,22 @@ cand AS (
     f.family_id,
     f.family_app_dt,
     f.family_app_qtr AS quarter,
-    g.grant_id,
-    g.start_dt,
+    rr.grant_id,
+    rr.start_dt,
     pf.pat_for4,
-    g.grant_for4
+    gc.grant_for4
   FROM fam f
   JOIN inv_rids ir
     ON ir.family_id = f.family_id
-  JOIN gr g
-    ON g.country_code = f.country_code
-   AND g.researcher_id = ir.researcher_id
+  JOIN gr_rids rr
+    ON rr.country_code = f.country_code
+   AND rr.researcher_id = ir.researcher_id
+  JOIN gr_core gc
+    ON gc.country_code = rr.country_code
+   AND gc.grant_id = rr.grant_id
   JOIN pat_for pf
     ON pf.family_id = f.family_id
-  WHERE f.family_app_dt >= g.start_dt
+  WHERE f.family_app_dt >= rr.start_dt
 ),
 
 scored AS (
@@ -72,12 +86,14 @@ scored AS (
     family_id,
     quarter,
     grant_id,
+
     (
       SELECT COUNT(DISTINCT x)
       FROM UNNEST(IFNULL(grant_for4, CAST([] AS ARRAY<STRING>))) AS x
       JOIN UNNEST(IFNULL(pat_for4,   CAST([] AS ARRAY<STRING>))) AS y
         ON x = y
     ) AS for4_overlap,
+
     SAFE_DIVIDE(
       (
         SELECT COUNT(DISTINCT x)
