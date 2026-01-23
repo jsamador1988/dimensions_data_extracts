@@ -2,60 +2,135 @@ config {
   type: "table",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Top journals within field: rank eligible journals by mean normalized citations (pre-period), keep top top_journal_pct."
+  description: "Eligible journals (>= min articles) and top-5% journals within each field22 based on average normalized 5y citations in a fixed pre-period."
 }
 
-WITH core AS (
-  SELECT pub_id, journal_id, pub_dt_best, pub_year
+-- Uses these upstream tables (must exist):
+--   ${ref("pub_core")}            : pub_id, pub_dt_best, pub_year, journal_id  (or adapt below)
+--   ${ref("pub_field_weights")}   : pub_id, field22_code, w_field
+--   ${ref("pub_citations_5y")}    : pub_id, citations_5y
+--   ${ref("pub_field_year_norm")} : field22_code, pub_year, exp_citations_5y
+
+WITH cfg AS (
+  SELECT
+    CAST('${dataform.projectConfig.vars.journal_elig_min_articles}' AS INT64) AS min_articles,
+    CAST('${dataform.projectConfig.vars.top_journal_pct}' AS FLOAT64)        AS top_pct,
+    2000 AS pre_start_year,
+    2015 AS pre_end_year
+),
+
+core AS (
+  SELECT
+    pub_id,
+    EXTRACT(YEAR FROM pub_dt_best) AS pub_year,
+
+    -- IMPORTANT:
+    -- If your pub_core already has journal_id, keep this line.
+    -- If instead you have journal.id, change to: journal.id AS journal_id
+    journal_id
   FROM ${ref("pub_core")}
+  WHERE pub_dt_best IS NOT NULL
+    AND journal_id IS NOT NULL
 ),
 
-eligible AS (
-  SELECT journal_id
-  FROM ${ref("journal_eligibility")}
-),
-
-pf AS (
+-- Eligible journal set: >= min_articles research articles overall (using pub_core universe)
+journal_counts AS (
   SELECT
-    n.pub_id,
-    n.field22_code,
-    n.pub_year,
-    n.nc_w
-  FROM ${ref("pub_field_year_norm")} n
-),
-
-joined AS (
-  SELECT
-    pf.field22_code,
     c.journal_id,
-    pf.nc_w
-  FROM pf
-  JOIN core c USING (pub_id)
-  JOIN eligible e ON e.journal_id = c.journal_id
-  WHERE c.pub_dt_best BETWEEN DATE('${dataform.projectConfig.vars.journal_impact_pre_start}') AND DATE('${dataform.projectConfig.vars.journal_impact_pre_end}')
+    COUNT(DISTINCT c.pub_id) AS n_articles
+  FROM core c
+  GROUP BY c.journal_id
 ),
 
-impact AS (
+eligible_journals AS (
   SELECT
-    field22_code,
-    journal_id,
-    AVG(nc_w) AS impact_nc
-  FROM joined
-  GROUP BY field22_code, journal_id
+    jc.journal_id,
+    jc.n_articles
+  FROM journal_counts jc
+  CROSS JOIN cfg
+  WHERE jc.n_articles >= cfg.min_articles
+),
+
+fw AS (
+  SELECT pub_id, field22_code, w_field
+  FROM ${ref("pub_field_weights")}
+),
+
+cit AS (
+  SELECT pub_id, citations_5y
+  FROM ${ref("pub_citations_5y")}
+),
+
+norm AS (
+  SELECT field22_code, pub_year, exp_citations_5y
+  FROM ${ref("pub_field_year_norm")}
+),
+
+-- Paper × field panel with normalized citations
+paper_field AS (
+  SELECT
+    c.pub_id,
+    c.journal_id,
+    c.pub_year,
+    fw.field22_code,
+    fw.w_field,
+    cit.citations_5y,
+    norm.exp_citations_5y,
+    SAFE_DIVIDE(cit.citations_5y, NULLIF(norm.exp_citations_5y, 0)) AS nc_5y
+  FROM core c
+  JOIN fw
+    ON fw.pub_id = c.pub_id
+  LEFT JOIN cit
+    ON cit.pub_id = c.pub_id
+  LEFT JOIN norm
+    ON norm.field22_code = fw.field22_code
+   AND norm.pub_year = c.pub_year
+),
+
+-- Fixed pre-period for ranking journals (reduces look-ahead / drift)
+paper_field_pre AS (
+  SELECT
+    pf.pub_id,
+    pf.journal_id,
+    pf.field22_code,
+    pf.w_field,
+    pf.nc_5y
+  FROM paper_field pf
+  CROSS JOIN cfg
+  WHERE pf.pub_year BETWEEN cfg.pre_start_year AND cfg.pre_end_year
+    AND pf.journal_id IS NOT NULL
+    AND pf.field22_code IS NOT NULL
+    AND pf.nc_5y IS NOT NULL
+),
+
+-- Journal × field impact: weighted average normalized citations
+journal_field_impact AS (
+  SELECT
+    p.journal_id,
+    p.field22_code,
+    SAFE_DIVIDE(SUM(p.w_field * p.nc_5y), SUM(p.w_field)) AS impact_nc5y,
+    COUNT(DISTINCT p.pub_id) AS n_pubs_pre
+  FROM paper_field_pre p
+  JOIN eligible_journals e
+    ON e.journal_id = p.journal_id
+  GROUP BY p.journal_id, p.field22_code
 ),
 
 ranked AS (
   SELECT
-    field22_code,
-    journal_id,
-    impact_nc,
-    PERCENT_RANK() OVER (PARTITION BY field22_code ORDER BY impact_nc DESC) AS pr
-  FROM impact
+    jfi.*,
+    PERCENT_RANK() OVER (PARTITION BY field22_code ORDER BY impact_nc5y DESC) AS pr
+  FROM journal_field_impact jfi
 )
 
 SELECT
-  field22_code,
-  journal_id,
-  impact_nc,
-  CASE WHEN pr <= CAST('${dataform.projectConfig.vars.top_journal_pct}' AS FLOAT64) THEN 1 ELSE 0 END AS is_top5_within_field
-FROM ranked
+  r.journal_id,
+  r.field22_code,
+  r.impact_nc5y,
+  r.n_pubs_pre,
+  r.pr,
+  CASE
+    WHEN r.pr <= (SELECT top_pct FROM cfg) THEN 1
+    ELSE 0
+  END AS is_top5
+FROM ranked r
