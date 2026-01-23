@@ -2,25 +2,36 @@ config {
   type: "table",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Citations within a W-year window (year-based) for each publication."
+  description: "Per-publication 5-year citation counts (year-based window) computed from publications.citations[].year."
 }
 
 WITH core AS (
-  SELECT pub_id, pub_year, citations
-  FROM ${ref("pub_core")}
-),
-
-counted AS (
   SELECT
     pub_id,
-    pub_year,
-    COUNTIF(
-      cit.year IS NOT NULL
-      AND cit.year <= pub_year + CAST('${dataform.projectConfig.vars.breakthrough_window_years}' AS INT64) - 1
-    ) AS cites_w
-  FROM core
-  LEFT JOIN UNNEST(IFNULL(citations, [])) AS cit
-  GROUP BY pub_id, pub_year
+    EXTRACT(YEAR FROM pub_dt_best) AS pub_year
+  FROM ${ref("pub_core")}
+  WHERE pub_dt_best IS NOT NULL
+),
+
+cit_years AS (
+  SELECT
+    p.id AS pub_id,
+    c.year AS citing_year
+  FROM `dimensions-ai.data_analytics.publications` p
+  JOIN core
+    ON core.pub_id = p.id
+  LEFT JOIN UNNEST(IFNULL(p.citations, ARRAY<STRUCT<id STRING, year INT64>>[])) AS c
 )
 
-SELECT * FROM counted
+SELECT
+  c.pub_id,
+  SUM(
+    CASE
+      WHEN cy.citing_year BETWEEN c.pub_year AND c.pub_year + 4 THEN 1
+      ELSE 0
+    END
+  ) AS citations_5y
+FROM core c
+LEFT JOIN cit_years cy
+  ON cy.pub_id = c.pub_id
+GROUP BY c.pub_id

@@ -1,9 +1,8 @@
 config {
   type: "table",
-  name: "pub_field_year_norm",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Field-year expected citations (5y) for normalization. Produces E[citations_5y | field22_code, pub_year]."
+  description: "Field-year expected citations (5y): E[citations_5y | field22_code, pub_year], weighted by paper field weights."
 }
 
 WITH core AS (
@@ -11,18 +10,17 @@ WITH core AS (
     pub_id,
     EXTRACT(YEAR FROM pub_dt_best) AS pub_year
   FROM ${ref("pub_core")}
+  WHERE pub_dt_best IS NOT NULL
 ),
 
-cits AS (
-  -- must contain: pub_id, citations_5y
+cit AS (
   SELECT
     pub_id,
     citations_5y
   FROM ${ref("pub_citations_5y")}
 ),
 
-pw AS (
-  -- must contain: pub_id, field22_code, w_field
+fw AS (
   SELECT
     pub_id,
     field22_code,
@@ -30,24 +28,24 @@ pw AS (
   FROM ${ref("pub_field_weights")}
 ),
 
-paper_field AS (
+panel AS (
   SELECT
-    c.pub_id,
-    c.pub_year,
-    pw.field22_code,
-    pw.w_field,
-    cits.citations_5y
-  FROM core c
-  JOIN pw
-    ON pw.pub_id = c.pub_id
-  LEFT JOIN cits
-    ON cits.pub_id = c.pub_id
-  WHERE c.pub_year IS NOT NULL
+    fw.field22_code,
+    core.pub_year,
+    fw.w_field,
+    IFNULL(cit.citations_5y, 0) AS citations_5y
+  FROM fw
+  JOIN core
+    ON core.pub_id = fw.pub_id
+  LEFT JOIN cit
+    ON cit.pub_id = fw.pub_id
+  WHERE core.pub_year IS NOT NULL
 )
 
 SELECT
   field22_code,
   pub_year,
-  AVG(COALESCE(citations_5y, 0.0)) AS exp_citations_5y
-FROM paper_field
+  SAFE_DIVIDE(SUM(w_field * citations_5y), SUM(w_field)) AS exp_citations_5y
+FROM panel
 GROUP BY field22_code, pub_year
+HAVING SUM(w_field) > 0
