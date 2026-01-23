@@ -1,65 +1,79 @@
 config {
   type: "table",
+  name: "patent_family_domestic_filing",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Family×country domestic filing indicator dom_filing, using time-varying EPO membership: national office OR EP if EPC active at family_app_dt."
+  description: "Family×country domestic filing indicator (national filing OR EP filing when EPO membership is active at family app date)."
 }
 
-WITH anchor AS (
-  SELECT family_id, family_app_dt, jurisdictions
-  FROM ${ref("patent_family_anchor")}
+WITH fam_anchor AS (
+  -- Anchor date per family (priority-timed)
+  SELECT
+    family_id,
+    MIN(doc_earliest_app_dt) AS family_app_dt
+  FROM ${ref("patent_family_base")}
+  WHERE doc_earliest_app_dt IS NOT NULL
+  GROUP BY family_id
 ),
 
-countries AS (
-  -- define the country set as union of inventor+assignee countries for that family
-  SELECT DISTINCT family_id, country_code
-  FROM (
-    SELECT family_id, country_code FROM ${ref("patent_family_inventor_weights")}
-    UNION DISTINCT
-    SELECT family_id, country_code FROM ${ref("patent_family_assignee_weights")}
-  )
+jur AS (
+  -- Jurisdictions observed in family
+  SELECT DISTINCT
+    family_id,
+    jurisdiction
+  FROM ${ref("patent_family_base")}
+  WHERE jurisdiction IS NOT NULL
 ),
 
 epo AS (
-  SELECT country_code, epo_start_date, epo_end_date
+  SELECT
+    country_code,
+    epo_start_date,
+    epo_end_date
   FROM ${ref("epo_membership")}
+),
+
+inv_countries AS (
+  -- Countries we care about for each family (must exist for inventor weights)
+  SELECT DISTINCT
+    family_id,
+    country_code
+  FROM ${ref("patent_family_inventor_weights")}
+),
+
+has_ep AS (
+  SELECT family_id, 1 AS has_ep
+  FROM jur
+  WHERE jurisdiction = 'EP'
+  GROUP BY family_id
+),
+
+has_nat AS (
+  SELECT
+    family_id,
+    jurisdiction AS country_code,
+    1 AS has_nat
+  FROM jur
+  WHERE REGEXP_CONTAINS(jurisdiction, r'^[A-Z]{2}$')
 )
 
 SELECT
-  c.family_id,
-  c.country_code,
-  a.family_app_dt,
-
-  -- national filing exists if jurisdiction list contains the country code
-  CASE WHEN EXISTS (
-    SELECT 1 FROM UNNEST(a.jurisdictions) j WHERE j = c.country_code
-  ) THEN 1 ELSE 0 END AS has_nat_filing,
-
-  CASE WHEN EXISTS (
-    SELECT 1 FROM UNNEST(a.jurisdictions) j WHERE j = 'EP'
-  ) THEN 1 ELSE 0 END AS has_ep_filing,
-
+  ic.family_id,
+  ic.country_code,
   CASE
-    WHEN e.country_code IS NULL THEN 0
-    WHEN a.family_app_dt >= e.epo_start_date
-     AND (e.epo_end_date IS NULL OR a.family_app_dt <= e.epo_end_date)
-    THEN 1 ELSE 0
-  END AS epo_active,
-
-  CASE
-    WHEN EXISTS (SELECT 1 FROM UNNEST(a.jurisdictions) j WHERE j = c.country_code) THEN 1
-    WHEN (
-      EXISTS (SELECT 1 FROM UNNEST(a.jurisdictions) j WHERE j = 'EP')
-      AND (
-        e.country_code IS NOT NULL
-        AND a.family_app_dt >= e.epo_start_date
-        AND (e.epo_end_date IS NULL OR a.family_app_dt <= e.epo_end_date)
-      )
-    ) THEN 1
+    WHEN COALESCE(n.has_nat, 0) = 1 THEN 1
+    WHEN COALESCE(e.has_ep, 0) = 1
+     AND fa.family_app_dt >= epo.epo_start_date
+     AND (epo.epo_end_date IS NULL OR fa.family_app_dt <= epo.epo_end_date)
+    THEN 1
     ELSE 0
   END AS dom_filing
-
-FROM countries c
-JOIN anchor a USING (family_id)
-LEFT JOIN epo e
-  ON e.country_code = c.country_code
+FROM inv_countries ic
+JOIN fam_anchor fa
+  ON fa.family_id = ic.family_id
+LEFT JOIN has_nat n
+  ON n.family_id = ic.family_id AND n.country_code = ic.country_code
+LEFT JOIN has_ep e
+  ON e.family_id = ic.family_id
+LEFT JOIN epo
+  ON epo.country_code = ic.country_code

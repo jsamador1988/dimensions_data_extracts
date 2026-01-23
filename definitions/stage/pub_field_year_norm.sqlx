@@ -1,47 +1,53 @@
 config {
   type: "table",
+  name: "pub_field_year_norm",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Field-year normalization for windowed citations: nc = cites_w / mean(cites_w) within (field,year)."
+  description: "Field-year expected citations (5y) for normalization. Produces E[citations_5y | field22_code, pub_year]."
 }
 
 WITH core AS (
-  SELECT pub_id, pub_year
+  SELECT
+    pub_id,
+    EXTRACT(YEAR FROM pub_dt_best) AS pub_year
   FROM ${ref("pub_core")}
 ),
 
-cites AS (
-  SELECT pub_id, cites_w
+cits AS (
+  -- must contain: pub_id, citations_5y
+  SELECT
+    pub_id,
+    citations_5y
   FROM ${ref("pub_citations_5y")}
+),
+
+pw AS (
+  -- must contain: pub_id, field22_code, w_field
+  SELECT
+    pub_id,
+    field22_code,
+    w_field
+  FROM ${ref("pub_field_weights")}
 ),
 
 paper_field AS (
   SELECT
-    f.pub_id,
-    f.field22_code,
+    c.pub_id,
     c.pub_year,
-    ci.cites_w
-  FROM ${ref("pub_fields_distinct")} f
-  JOIN core c USING (pub_id)
-  JOIN cites ci USING (pub_id)
-),
-
-field_year_mean AS (
-  SELECT
-    field22_code,
-    pub_year,
-    AVG(cites_w) AS mean_cites_w
-  FROM paper_field
-  GROUP BY field22_code, pub_year
+    pw.field22_code,
+    pw.w_field,
+    cits.citations_5y
+  FROM core c
+  JOIN pw
+    ON pw.pub_id = c.pub_id
+  LEFT JOIN cits
+    ON cits.pub_id = c.pub_id
+  WHERE c.pub_year IS NOT NULL
 )
 
 SELECT
-  pf.pub_id,
-  pf.field22_code,
-  pf.pub_year,
-  pf.cites_w,
-  m.mean_cites_w,
-  SAFE_DIVIDE(pf.cites_w, m.mean_cites_w) AS nc_w
-FROM paper_field pf
-JOIN field_year_mean m
-  USING (field22_code, pub_year)
+  field22_code,
+  pub_year,
+  AVG(COALESCE(citations_5y, 0.0)) AS exp_citations_5y
+FROM paper_field
+GROUP BY field22_code, pub_year
