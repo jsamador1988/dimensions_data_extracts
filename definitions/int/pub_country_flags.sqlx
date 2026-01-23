@@ -1,105 +1,79 @@
 config {
   type: "table",
-  name: "pub_country_flags",
   schema: "rd_int",
   tags: ["int"],
-  description: "Publication×country weights and production shares in long format (no pivots; safe for ISO2 codes like AT)."
+  description: "Publication×country flags and weights: affiliation weights + public/private production shares + country-specific gov/any funding flags from funder org types."
 }
 
-SELECT
-  pub_id,
-  quarter,
-  country_code,
-  w_aff,
-  w_public_prod,
-  w_private_prod
-FROM ${ref("pub_country_weights")}
+-- This table is keyed by (pub_id, quarter, country_code).
+-- It starts from your stage weights (pub_country_weights) and adds funding flags by country
+-- using publications.funder_orgs -> organizations (legal_country_code + types).
 
-
-aff_kept AS (
-  SELECT af.*
-  FROM aff_flat af
-  JOIN ${ref("country_list")} c
-    ON c.country_code = af.aff_country
-),
-
-aff_tot AS (
-  SELECT pub_id, COUNT(*) AS n_aff
-  FROM aff_kept
-  GROUP BY pub_id
-),
-
--- Public/private by org type (conservative: Government=public; Company=private)
-aff_types AS (
-  SELECT
-    ak.*,
-    ('Government' IN UNNEST(IFNULL(o.types, []))) AS is_public_org,
-    ('Company' IN UNNEST(IFNULL(o.types, []))) AS is_private_org
-  FROM aff_kept ak
-  LEFT JOIN ${ref("orgs_basic")} o
-    ON o.org_id = ak.aff_org_id
-),
-
-country_aff_agg AS (
+WITH w AS (
   SELECT
     pub_id,
-    pub_qtr,
-    pub_year,
-    journal_id,
-    aff_country AS country_code,
-    COUNT(*) AS n_aff_cty,
-    SUM(CASE WHEN is_public_org THEN 1 ELSE 0 END) AS n_public_aff_cty,
-    SUM(CASE WHEN is_private_org THEN 1 ELSE 0 END) AS n_private_aff_cty
-  FROM aff_types
-  GROUP BY pub_id, pub_qtr, pub_year, journal_id, country_code
+    quarter,
+    country_code,
+    w_aff,
+    w_public_prod,
+    w_private_prod
+  FROM ${ref("pub_country_weights")}
 ),
 
--- Funding flags by funder country (Government vs any-funder)
-funder_flat AS (
-  SELECT
-    p.pub_id,
-    fo AS funder_org_id
-  FROM p
-  JOIN UNNEST(IFNULL(p.funder_orgs, [])) fo
-),
-funder_enriched AS (
-  SELECT
-    ff.pub_id,
-    o.legal_country_code AS funder_country,
-    o.types AS funder_types
-  FROM funder_flat ff
-  LEFT JOIN ${ref("orgs_basic")} o
-    ON o.org_id = ff.funder_org_id
-),
 funder_flags AS (
   SELECT
-    pub_id,
-    funder_country AS country_code,
-    LOGICAL_OR('Government' IN UNNEST(IFNULL(funder_types, []))) AS paper_gov_funded_flag,
-    LOGICAL_OR(EXISTS(
-      SELECT 1 FROM UNNEST(IFNULL(funder_types, [])) t WHERE t IN ('Government','Funder')
-    )) AS paper_any_funded_flag
-  FROM funder_enriched
-  WHERE funder_country IS NOT NULL
+    p.id AS pub_id,
+    o.legal_country_code AS country_code,
+
+    -- Government-funded (strict): at least one funder org in country_code with type Government
+    MAX(
+      CASE
+        WHEN 'Government' IN UNNEST(IFNULL(o.types, CAST([] AS ARRAY<STRING>))) THEN 1
+        ELSE 0
+      END
+    ) AS gov_funded_flag,
+
+    -- Any-funded (broad, per your plan): Government OR Funder
+    MAX(
+      CASE
+        WHEN EXISTS (
+          SELECT 1
+          FROM UNNEST(IFNULL(o.types, CAST([] AS ARRAY<STRING>))) t
+          WHERE t IN ('Government', 'Funder')
+        ) THEN 1
+        ELSE 0
+      END
+    ) AS any_funded_flag
+
+  FROM `dimensions-ai.data_analytics.publications` p
+  LEFT JOIN UNNEST(IFNULL(p.funder_orgs, CAST([] AS ARRAY<STRING>))) AS funder_org_id
+  LEFT JOIN `dimensions-ai.data_analytics.organizations` o
+    ON o.id = funder_org_id
+  WHERE funder_org_id IS NOT NULL
+    AND o.legal_country_code IS NOT NULL
   GROUP BY pub_id, country_code
 )
 
 SELECT
-  ca.pub_id,
-  ca.pub_qtr AS quarter,
-  ca.pub_year,
-  ca.journal_id,
-  ca.country_code,
+  w.pub_id,
+  w.quarter,
+  w.country_code,
+  w.w_aff,
+  w.w_public_prod,
+  w.w_private_prod,
 
-  SAFE_DIVIDE(ca.n_aff_cty, at.n_aff) AS w_aff,
+  COALESCE(f.gov_funded_flag, 0) AS gov_funded_flag,
+  COALESCE(f.any_funded_flag, 0) AS any_funded_flag,
 
-  SAFE_DIVIDE(ca.n_public_aff_cty, at.n_aff) AS public_prod_share,
-  SAFE_DIVIDE(ca.n_private_aff_cty, at.n_aff) AS private_prod_share,
+  CASE WHEN w.w_private_prod > 0 THEN 1 ELSE 0 END AS private_prod_flag,
+  CASE WHEN w.w_public_prod  > 0 THEN 1 ELSE 0 END AS public_prod_flag,
 
-  COALESCE(ff.paper_gov_funded_flag, FALSE) AS paper_gov_funded_flag,
-  COALESCE(ff.paper_any_funded_flag, FALSE) AS paper_any_funded_flag
+  CASE
+    WHEN w.w_private_prod > 0 AND COALESCE(f.gov_funded_flag, 0) = 1 THEN 1
+    ELSE 0
+  END AS private_prod_gov_funded_flag
 
-FROM country_aff_agg ca
-JOIN aff_tot at USING (pub_id)
-LEFT JOIN funder_flags ff
-  ON ff.pub_id = ca.pub_id AND ff.country_code = ca.country_code
+FROM w
+LEFT JOIN funder_flags f
+  ON f.pub_id = w.pub_id
+ AND f.country_code = w.country_code

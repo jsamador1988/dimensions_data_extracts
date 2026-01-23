@@ -2,120 +2,168 @@ config {
   type: "table",
   schema: "rd_int",
   tags: ["int"],
-  description: "Family×country weights: inventor fractional weight, assignee fractional weight, gov-assignee weight, domestic filing flag (EPO time-varying)."
+  description: "Patent family×country fractional weights: inventor country (w_inv), assignee legal country (w_assg), and government-assignee share (w_assg_gov). Includes family-level missingness diagnostics repeated on each row."
 }
 
-WITH base AS (
-  SELECT * FROM ${ref("patent_family_base")}
-),
-
--- inventor counts by family×country (restrict to macro country list)
-inv_counts AS (
+WITH pbase AS (
   SELECT
-    b.family_id,
-    c.country_code,
-    COUNT(*) AS inv_n
-  FROM base b
-  JOIN UNNEST(b.inventor_countries_raw) AS inv_cc
-  JOIN ${ref("country_list")} c
-    ON c.country_code = inv_cc
-  GROUP BY b.family_id, c.country_code
-),
-inv_tot AS (
-  SELECT family_id, SUM(inv_n) AS inv_total_obs
-  FROM inv_counts
-  GROUP BY family_id
+    family_id,
+    inventors,
+    assignee_orgs
+  FROM `dimensions-ai.data_analytics.patents`
+  WHERE family_id IS NOT NULL
 ),
 
--- assignee orgs → legal country + government type (restrict to macro list)
+/* -----------------------
+   Inventor country weights
+   ----------------------- */
+
+inv_totals AS (
+  SELECT
+    p.family_id,
+    IFNULL(ARRAY_LENGTH(p.inventors), 0) AS n_inv_total_raw,
+    COUNTIF(inv.address.country IS NOT NULL AND inv.address.country != '') AS n_inv_obs
+  FROM pbase p
+  LEFT JOIN UNNEST(p.inventors) AS inv
+  GROUP BY p.family_id, n_inv_total_raw
+),
+
+inv_by_country AS (
+  SELECT
+    p.family_id,
+    UPPER(inv.address.country) AS country_code,
+    COUNT(*) AS n_inv_country
+  FROM pbase p
+  JOIN UNNEST(p.inventors) AS inv
+  WHERE inv.address.country IS NOT NULL
+    AND inv.address.country != ''
+    AND LENGTH(UPPER(inv.address.country)) = 2
+  GROUP BY p.family_id, country_code
+),
+
+/* -----------------------
+   Assignee country weights
+   ----------------------- */
+
 assg_flat AS (
   SELECT
-    b.family_id,
-    ao AS assg_org_id
-  FROM base b
-  JOIN UNNEST(b.assignee_orgs) AS ao
+    p.family_id,
+    org_id
+  FROM pbase p
+  JOIN UNNEST(IFNULL(p.assignee_orgs, CAST([] AS ARRAY<STRING>))) AS org_id
+  WHERE org_id IS NOT NULL
 ),
+
 assg_enriched AS (
   SELECT
-    af.family_id,
-    o.legal_country_code AS assg_country,
-    ('Government' IN UNNEST(IFNULL(o.types, []))) AS is_gov
-  FROM assg_flat af
-  LEFT JOIN ${ref("orgs_basic")} o
-    ON o.org_id = af.assg_org_id
+    a.family_id,
+    a.org_id,
+    o.legal_country_code AS country_code,
+    o.types AS org_types,
+    CASE
+      WHEN 'Government' IN UNNEST(IFNULL(o.types, CAST([] AS ARRAY<STRING>))) THEN 1
+      WHEN o.legal_country_code = 'DE'
+           AND wd.org_id IS NOT NULL THEN 1
+      ELSE 0
+    END AS is_gov
+  FROM assg_flat a
+  LEFT JOIN `dimensions-ai.data_analytics.organizations` o
+    ON o.id = a.org_id
+  LEFT JOIN ${ref("whitelist_de")} wd
+    ON wd.org_id = a.org_id
 ),
-assg_counts AS (
+
+assg_totals AS (
   SELECT
     family_id,
-    c.country_code,
-    COUNT(*) AS assg_n,
-    SUM(CASE WHEN is_gov THEN 1 ELSE 0 END) AS assg_gov_n
-  FROM assg_enriched ae
-  JOIN ${ref("country_list")} c
-    ON c.country_code = ae.assg_country
-  GROUP BY family_id, c.country_code
-),
-assg_tot AS (
-  SELECT
-    family_id,
-    SUM(assg_n) AS assg_total_obs
-  FROM assg_counts
+    COUNT(DISTINCT org_id) AS n_assg_total_raw,
+    COUNT(DISTINCT IF(country_code IS NOT NULL AND country_code != '', org_id, NULL)) AS n_assg_obs
+  FROM assg_enriched
   GROUP BY family_id
 ),
 
--- domestic filing: national office OR EP when epo_active
-juris AS (
-  SELECT family_id, jurisdictions, family_app_dt
-  FROM base
-),
-epo AS (
-  SELECT * FROM ${ref("epo_membership")}
+assg_by_country AS (
+  SELECT
+    family_id,
+    country_code,
+    COUNT(DISTINCT org_id) AS n_assg_country,
+    COUNT(DISTINCT IF(is_gov = 1, org_id, NULL)) AS n_assg_gov_country
+  FROM assg_enriched
+  WHERE country_code IS NOT NULL
+    AND country_code != ''
+    AND LENGTH(country_code) = 2
+  GROUP BY family_id, country_code
 ),
 
--- build the set of (family×country) that appear in inventor countries (your patent universe driver)
-family_countries AS (
-  SELECT DISTINCT family_id, country_code
-  FROM inv_counts
+/* -----------------------
+   Union of countries observed
+   ----------------------- */
+
+country_universe AS (
+  SELECT DISTINCT family_id, country_code FROM inv_by_country
+  UNION DISTINCT
+  SELECT DISTINCT family_id, country_code FROM assg_by_country
+),
+
+/* -----------------------
+   Combine + compute weights
+   ----------------------- */
+
+combined AS (
+  SELECT
+    u.family_id,
+    u.country_code,
+
+    -- inventor counts
+    it.n_inv_total_raw,
+    it.n_inv_obs,
+    COALESCE(ic.n_inv_country, 0) AS n_inv_country,
+
+    -- assignee counts
+    ast.n_assg_total_raw,
+    ast.n_assg_obs,
+    COALESCE(ac.n_assg_country, 0) AS n_assg_country,
+    COALESCE(ac.n_assg_gov_country, 0) AS n_assg_gov_country
+
+  FROM country_universe u
+  LEFT JOIN inv_totals it
+    ON it.family_id = u.family_id
+  LEFT JOIN inv_by_country ic
+    ON ic.family_id = u.family_id
+   AND ic.country_code = u.country_code
+  LEFT JOIN assg_totals ast
+    ON ast.family_id = u.family_id
+  LEFT JOIN assg_by_country ac
+    ON ac.family_id = u.family_id
+   AND ac.country_code = u.country_code
 )
 
 SELECT
-  fc.family_id,
-  fc.country_code,
-  b.family_app_qtr,
+  family_id,
+  country_code,
 
-  -- inventor fractional weight (normalized over observed macro-country inventors)
-  SAFE_DIVIDE(ic.inv_n, it.inv_total_obs) AS w_inv,
+  -- Fractional inventor weight (normalized over OBSERVED inventor countries)
+  SAFE_DIVIDE(n_inv_country, NULLIF(n_inv_obs, 0)) AS w_inv,
 
-  -- assignee fractional weight (normalized over observed macro-country assignees)
-  SAFE_DIVIDE(ac.assg_n, at.assg_total_obs) AS w_assg,
+  -- Fractional assignee weight (normalized over OBSERVED assignee legal countries)
+  SAFE_DIVIDE(n_assg_country, NULLIF(n_assg_obs, 0)) AS w_assg,
 
-  -- government assignee weight (NOT broadened)
-  SAFE_DIVIDE(ac.assg_gov_n, at.assg_total_obs) AS w_assg_gov,
+  -- Government-owned assignee share (STRICT government, normalized over OBSERVED assignee legal countries)
+  SAFE_DIVIDE(n_assg_gov_country, NULLIF(n_assg_obs, 0)) AS w_assg_gov,
 
-  -- domestic filing flag (time-varying EP rule)
+  -- Family-level missingness diagnostics (repeated per row)
   CASE
-    WHEN fc.country_code IN UNNEST(j.jurisdictions) THEN 1
-    WHEN 'EP' IN UNNEST(j.jurisdictions)
-      AND EXISTS (
-        SELECT 1
-        FROM epo e
-        WHERE e.country_code = fc.country_code
-          AND j.family_app_dt >= e.epo_start_date
-          AND (e.epo_end_date IS NULL OR j.family_app_dt <= e.epo_end_date)
-      )
-    THEN 1
-    ELSE 0
-  END AS dom_filing,
+    WHEN n_inv_total_raw > 0 THEN 1 - SAFE_DIVIDE(n_inv_obs, n_inv_total_raw)
+    ELSE NULL
+  END AS share_missing_inv_country,
 
-  -- tier1 (keep conservative: US-only)
-  CASE WHEN fc.country_code = 'US' AND b.has_federal_support THEN 1 ELSE 0 END AS tier1_pubfund_flag
+  CASE
+    WHEN n_assg_total_raw > 0 THEN 1 - SAFE_DIVIDE(n_assg_obs, n_assg_total_raw)
+    ELSE NULL
+  END AS share_missing_assg_country,
 
-FROM family_countries fc
-JOIN base b USING (family_id)
-JOIN inv_counts ic
-  ON ic.family_id = fc.family_id AND ic.country_code = fc.country_code
-JOIN inv_tot it USING (family_id)
-LEFT JOIN assg_counts ac
-  ON ac.family_id = fc.family_id AND ac.country_code = fc.country_code
-LEFT JOIN assg_tot at USING (family_id)
-LEFT JOIN juris j USING (family_id)
+  n_inv_total_raw,
+  n_inv_obs,
+  n_assg_total_raw,
+  n_assg_obs
+FROM combined
