@@ -2,34 +2,122 @@ config {
   type: "table",
   schema: "rd_mart",
   tags: ["mart"],
-  bigquery: { partitionBy: "quarter", clusterBy: ["country_code"] },
-  description: "Final country-quarter panel: patents + publications (wide) merged on (country_code, quarter)."
+  description: "Wide country×quarter publication panel: overall + 22 field cols + 22 top5 field cols + 6+6 discipline cols.",
+  bigquery: {
+    partitionBy: "quarter",
+    clusterBy: ["country_code"]
+  }
 }
 
-WITH keys AS (
-  SELECT country_code, quarter FROM ${ref("pat_country_quarter_wide")}
-  UNION DISTINCT
-  SELECT country_code, quarter FROM ${ref("pub_country_quarter_wide")}
+WITH overall AS (
+  SELECT *
+  FROM ${ref("pub_country_quarter_overall")}
 ),
 
-pat AS (
-  SELECT * FROM ${ref("pat_country_quarter_wide")}
+field_long AS (
+  SELECT *
+  FROM ${ref("pub_country_quarter_field_long")}
 ),
 
-pub AS (
-  SELECT * FROM ${ref("pub_country_quarter_wide")}
+disc_long AS (
+  SELECT *
+  FROM ${ref("pub_country_quarter_disc_long")}
+),
+
+-- Pivot fields via conditional aggregation (explicit codes)
+field_wide AS (
+  SELECT
+    country_code,
+    quarter,
+
+    SUM(IF(field22_code = 'AGRI',     pub_field_ctq, 0)) AS pub_field_AGRI_ctq,
+    SUM(IF(field22_code = 'BIO',      pub_field_ctq, 0)) AS pub_field_BIO_ctq,
+    SUM(IF(field22_code = 'BIOMED',   pub_field_ctq, 0)) AS pub_field_BIOMED_ctq,
+    SUM(IF(field22_code = 'BUILT',    pub_field_ctq, 0)) AS pub_field_BUILT_ctq,
+    SUM(IF(field22_code = 'CHEM',     pub_field_ctq, 0)) AS pub_field_CHEM_ctq,
+    SUM(IF(field22_code = 'COMMERCE', pub_field_ctq, 0)) AS pub_field_COMMERCE_ctq,
+    SUM(IF(field22_code = 'CREATIVE', pub_field_ctq, 0)) AS pub_field_CREATIVE_ctq,
+    SUM(IF(field22_code = 'EARTH',    pub_field_ctq, 0)) AS pub_field_EARTH_ctq,
+    SUM(IF(field22_code = 'ECON',     pub_field_ctq, 0)) AS pub_field_ECON_ctq,
+    SUM(IF(field22_code = 'EDUC',     pub_field_ctq, 0)) AS pub_field_EDUC_ctq,
+    SUM(IF(field22_code = 'ENG',      pub_field_ctq, 0)) AS pub_field_ENG_ctq,
+    SUM(IF(field22_code = 'ENV',      pub_field_ctq, 0)) AS pub_field_ENV_ctq,
+    SUM(IF(field22_code = 'HEALTH',   pub_field_ctq, 0)) AS pub_field_HEALTH_ctq,
+    SUM(IF(field22_code = 'HISTORY',  pub_field_ctq, 0)) AS pub_field_HISTORY_ctq,
+    SUM(IF(field22_code = 'HUMAN',    pub_field_ctq, 0)) AS pub_field_HUMAN_ctq,
+    SUM(IF(field22_code = 'INFOCOMP', pub_field_ctq, 0)) AS pub_field_INFOCOMP_ctq,
+    SUM(IF(field22_code = 'LANG',     pub_field_ctq, 0)) AS pub_field_LANG_ctq,
+    SUM(IF(field22_code = 'LAW',      pub_field_ctq, 0)) AS pub_field_LAW_ctq,
+    SUM(IF(field22_code = 'MATH',     pub_field_ctq, 0)) AS pub_field_MATH_ctq,
+    SUM(IF(field22_code = 'PHIL',     pub_field_ctq, 0)) AS pub_field_PHIL_ctq,
+    SUM(IF(field22_code = 'PHYSICAL', pub_field_ctq, 0)) AS pub_field_PHYSICAL_ctq,
+    SUM(IF(field22_code = 'PSYCH',    pub_field_ctq, 0)) AS pub_field_PSYCH_ctq,
+
+    SUM(IF(field22_code = 'AGRI',     pub_field_top5_ctq, 0)) AS pub_field_AGRI_top5_ctq,
+    SUM(IF(field22_code = 'BIO',      pub_field_top5_ctq, 0)) AS pub_field_BIO_top5_ctq,
+    SUM(IF(field22_code = 'BIOMED',   pub_field_top5_ctq, 0)) AS pub_field_BIOMED_top5_ctq,
+    SUM(IF(field22_code = 'BUILT',    pub_field_top5_ctq, 0)) AS pub_field_BUILT_top5_ctq,
+    SUM(IF(field22_code = 'CHEM',     pub_field_top5_ctq, 0)) AS pub_field_CHEM_top5_ctq,
+    SUM(IF(field22_code = 'COMMERCE', pub_field_top5_ctq, 0)) AS pub_field_COMMERCE_top5_ctq,
+    SUM(IF(field22_code = 'CREATIVE', pub_field_top5_ctq, 0)) AS pub_field_CREATIVE_top5_ctq,
+    SUM(IF(field22_code = 'EARTH',    pub_field_top5_ctq, 0)) AS pub_field_EARTH_top5_ctq,
+    SUM(IF(field22_code = 'ECON',     pub_field_top5_ctq, 0)) AS pub_field_ECON_top5_ctq,
+    SUM(IF(field22_code = 'EDUC',     pub_field_top5_ctq, 0)) AS pub_field_EDUC_top5_ctq,
+    SUM(IF(field22_code = 'ENG',      pub_field_top5_ctq, 0)) AS pub_field_ENG_top5_ctq,
+    SUM(IF(field22_code = 'ENV',      pub_field_top5_ctq, 0)) AS pub_field_ENV_top5_ctq,
+    SUM(IF(field22_code = 'HEALTH',   pub_field_top5_ctq, 0)) AS pub_field_HEALTH_top5_ctq,
+    SUM(IF(field22_code = 'HISTORY',  pub_field_top5_ctq, 0)) AS pub_field_HISTORY_top5_ctq,
+    SUM(IF(field22_code = 'HUMAN',    pub_field_top5_ctq, 0)) AS pub_field_HUMAN_top5_ctq,
+    SUM(IF(field22_code = 'INFOCOMP', pub_field_top5_ctq, 0)) AS pub_field_INFOCOMP_top5_ctq,
+    SUM(IF(field22_code = 'LANG',     pub_field_top5_ctq, 0)) AS pub_field_LANG_top5_ctq,
+    SUM(IF(field22_code = 'LAW',      pub_field_top5_ctq, 0)) AS pub_field_LAW_top5_ctq,
+    SUM(IF(field22_code = 'MATH',     pub_field_top5_ctq, 0)) AS pub_field_MATH_top5_ctq,
+    SUM(IF(field22_code = 'PHIL',     pub_field_top5_ctq, 0)) AS pub_field_PHIL_top5_ctq,
+    SUM(IF(field22_code = 'PHYSICAL', pub_field_top5_ctq, 0)) AS pub_field_PHYSICAL_top5_ctq,
+    SUM(IF(field22_code = 'PSYCH',    pub_field_top5_ctq, 0)) AS pub_field_PSYCH_top5_ctq
+
+  FROM field_long
+  GROUP BY country_code, quarter
+),
+
+-- Pivot disciplines similarly (explicit disc6_code values; adjust to yours)
+disc_wide AS (
+  SELECT
+    country_code,
+    quarter,
+
+    SUM(IF(disc6_code = 'DISC1', pub_disc_ctq, 0)) AS pub_disc_DISC1_ctq,
+    SUM(IF(disc6_code = 'DISC2', pub_disc_ctq, 0)) AS pub_disc_DISC2_ctq,
+    SUM(IF(disc6_code = 'DISC3', pub_disc_ctq, 0)) AS pub_disc_DISC3_ctq,
+    SUM(IF(disc6_code = 'DISC4', pub_disc_ctq, 0)) AS pub_disc_DISC4_ctq,
+    SUM(IF(disc6_code = 'DISC5', pub_disc_ctq, 0)) AS pub_disc_DISC5_ctq,
+    SUM(IF(disc6_code = 'DISC6', pub_disc_ctq, 0)) AS pub_disc_DISC6_ctq,
+
+    SUM(IF(disc6_code = 'DISC1', pub_disc_top5_ctq, 0)) AS pub_disc_DISC1_top5_ctq,
+    SUM(IF(disc6_code = 'DISC2', pub_disc_top5_ctq, 0)) AS pub_disc_DISC2_top5_ctq,
+    SUM(IF(disc6_code = 'DISC3', pub_disc_top5_ctq, 0)) AS pub_disc_DISC3_top5_ctq,
+    SUM(IF(disc6_code = 'DISC4', pub_disc_top5_ctq, 0)) AS pub_disc_DISC4_top5_ctq,
+    SUM(IF(disc6_code = 'DISC5', pub_disc_top5_ctq, 0)) AS pub_disc_DISC5_top5_ctq,
+    SUM(IF(disc6_code = 'DISC6', pub_disc_top5_ctq, 0)) AS pub_disc_DISC6_top5_ctq
+
+  FROM disc_long
+  GROUP BY country_code, quarter
 )
 
 SELECT
-  k.country_code,
-  k.quarter,
+  o.country_code,
+  o.quarter,
 
-  -- patents
-  pat.* EXCEPT(country_code, quarter),
+  o.pub_total_ctq,
+  o.pub_top5_ctq,
+  o.pub_break_ctq,
+  o.pub_break_eligible_weight_ctq,
+  o.pub_public_produced_ctq,
+  o.pub_private_produced_ctq,
 
-  -- publications
-  pub.* EXCEPT(country_code, quarter)
+  fw.* EXCEPT(country_code, quarter),
+  dw.* EXCEPT(country_code, quarter)
 
-FROM keys k
-LEFT JOIN pat USING (country_code, quarter)
-LEFT JOIN pub USING (country_code, quarter)
+FROM overall o
+LEFT JOIN field_wide fw USING (country_code, quarter)
+LEFT JOIN disc_wide  dw USING (country_code, quarter)
