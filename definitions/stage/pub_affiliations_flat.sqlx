@@ -3,95 +3,49 @@ config {
   name: "pub_affiliations_flat",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Flatten publication affiliations to (pub_id, quarter, country_code, org_id). Filters to month-level publication dates within the analysis window."
+  description: "Publication×affiliation rows: (pub_id, quarter, org_id, country_code). Joins org_id->organizations to get ISO2 country_code."
 }
 
--- Helper: parse publication dates (daily). We keep only month-level-or-better.
--- We treat 'YYYY-MM' as month-level and set day=01; 'YYYY' only is dropped.
-WITH base AS (
-  SELECT
-    p.id AS pub_id,
-
-    -- Parse three candidate dates.
-    SAFE.PARSE_DATE('%Y-%m-%d', p.date) AS dt_date,
-    SAFE.PARSE_DATE('%Y-%m-%d', p.date_online) AS dt_online,
-    SAFE.PARSE_DATE('%Y-%m-%d', p.date_print) AS dt_print,
-
-    -- Month-level parsing fallbacks (YYYY-MM -> YYYY-MM-01)
-    SAFE.PARSE_DATE('%Y-%m', p.date) AS ym_date,
-    SAFE.PARSE_DATE('%Y-%m', p.date_online) AS ym_online,
-    SAFE.PARSE_DATE('%Y-%m', p.date_print) AS ym_print,
-
-    -- Keep a handle to affiliations array (name differs across extracts; see note below)
-    p.research_orgs AS research_orgs
-
-  FROM `dimensions-ai.data_analytics.publications` p
-),
-
-pub_dates AS (
+-- We assume pub_core already defines the publication universe (research articles, month-level dates, sample window)
+WITH core AS (
   SELECT
     pub_id,
-
-    -- Choose earliest among day-level, else earliest among month-level.
-    -- If only year-level exists (no YYYY-MM anywhere), pub_dt_best will be NULL -> dropped.
-    DATE_TRUNC(
-      COALESCE(
-        LEAST(
-          IF(dt_date   IS NULL, DATE '9999-12-31', dt_date),
-          IF(dt_online IS NULL, DATE '9999-12-31', dt_online),
-          IF(dt_print  IS NULL, DATE '9999-12-31', dt_print)
-        ),
-        LEAST(
-          IF(ym_date   IS NULL, DATE '9999-12-31', DATE(EXTRACT(YEAR FROM ym_date), EXTRACT(MONTH FROM ym_date), 1)),
-          IF(ym_online IS NULL, DATE '9999-12-31', DATE(EXTRACT(YEAR FROM ym_online), EXTRACT(MONTH FROM ym_online), 1)),
-          IF(ym_print  IS NULL, DATE '9999-12-31', DATE(EXTRACT(YEAR FROM ym_print), EXTRACT(MONTH FROM ym_print), 1))
-        )
-      ),
-      DAY
-    ) AS pub_dt_best
-
-  FROM base
+    quarter
+  FROM ${ref("pub_core")}
 ),
 
-filtered AS (
+pub_orgs AS (
   SELECT
-    b.pub_id,
-    d.pub_dt_best,
-    DATE_TRUNC(d.pub_dt_best, QUARTER) AS quarter,
-    b.research_orgs
-  FROM base b
-  JOIN pub_dates d USING (pub_id)
-  WHERE d.pub_dt_best IS NOT NULL
-    AND d.pub_dt_best >= DATE('${dataform.projectConfig.vars.sample_start}')
-    AND d.pub_dt_best <= DATE('${dataform.projectConfig.vars.sample_end}')
+    c.pub_id,
+    c.quarter,
+    org_id
+  FROM core c
+  JOIN `dimensions-ai.data_analytics.publications` p
+    ON p.id = c.pub_id
+  -- IMPORTANT: many Dimensions publication affiliation/org arrays are STRING org IDs.
+  -- Do NOT try org_id.country_code.
+  LEFT JOIN UNNEST(IFNULL(p.research_orgs, [])) AS org_id
+  WHERE org_id IS NOT NULL
 ),
 
--- Flatten affiliations.
--- NOTE: If your publications table uses a different affiliations field than research_orgs,
--- paste your publications schema snippet and I will swap this block to match exactly.
-aff AS (
+orgs AS (
   SELECT
-    f.pub_id,
-    f.quarter,
-
-    -- country code: normalize UK->GB and keep only two-letter codes
+    id AS org_id,
     CASE
-      WHEN ro.country_code = 'UK' THEN 'GB'
-      ELSE ro.country_code
-    END AS country_code,
-
-    -- org id: Dimensions typically uses GRID-like IDs for orgs
-    ro.id AS org_id
-
-  FROM filtered f
-  CROSS JOIN UNNEST(IFNULL(f.research_orgs, [])) AS ro
+      WHEN legal_country_code = 'UK' THEN 'GB'
+      ELSE legal_country_code
+    END AS country_code
+  FROM `dimensions-ai.data_analytics.organizations`
 )
 
 SELECT
-  pub_id,
-  quarter,
-  country_code,
-  org_id
-FROM aff
-WHERE country_code IS NOT NULL
-  AND REGEXP_CONTAINS(country_code, r'^[A-Z]{2}$')
+  po.pub_id,
+  po.quarter,
+  po.org_id,
+  o.country_code
+FROM pub_orgs po
+LEFT JOIN orgs o
+  ON o.org_id = po.org_id
+WHERE o.country_code IS NOT NULL
+  AND REGEXP_CONTAINS(o.country_code, r'^[A-Z]{2}$')
+  AND o.country_code NOT IN ('EP', 'WO')

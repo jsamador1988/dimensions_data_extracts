@@ -3,25 +3,24 @@ config {
   name: "pub_fields_distinct",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Distinct list of field22 and disc6 categories used to generate wide pub_field_* columns."
+  description: "Distinct field22 and disc6 categories used for wide publication outputs."
 }
 
 WITH m AS (
   SELECT
-    f.for4,
     f.field22_code,
     f.field22_name,
-    d.disc6,
+    d.disc6_code,
     d.disc6_name
   FROM ${ref("for4_to_field22")} f
   LEFT JOIN ${ref("field22_to_disc6")} d
-    ON d.field22 = f.field22_code
+    ON d.field22_code = f.field22_code
 )
 
 SELECT DISTINCT
   field22_code,
   field22_name,
-  disc6,
+  disc6_code,
   disc6_name
 FROM m
 WHERE field22_code IS NOT NULL

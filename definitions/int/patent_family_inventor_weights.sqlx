@@ -1,0 +1,49 @@
+config {
+  type: "table",
+  name: "patent_family_inventor_weights",
+  schema: "rd_int",
+  tags: ["int"],
+  description: "Family×country inventor fractional weights w_inv based on inventor address.country (normalized over observed inventor countries)."
+}
+
+WITH inv_flat AS (
+  SELECT
+    p.family_id,
+    CASE
+      WHEN inv.address.country = 'UK' THEN 'GB'
+      ELSE inv.address.country
+    END AS country_code
+  FROM ${ref("patent_family_base")} p
+  CROSS JOIN UNNEST(IFNULL(p.inventors, [])) AS inv
+  WHERE inv.address.country IS NOT NULL
+    AND REGEXP_CONTAINS(inv.address.country, r'^[A-Z]{2}$')
+    AND inv.address.country NOT IN ('EP', 'WO')
+),
+
+counts AS (
+  SELECT
+    family_id,
+    country_code,
+    COUNT(*) AS n_inv_country
+  FROM inv_flat
+  GROUP BY family_id, country_code
+),
+
+totals AS (
+  SELECT
+    family_id,
+    SUM(n_inv_country) AS n_inv_total_obs
+  FROM counts
+  GROUP BY family_id
+)
+
+SELECT
+  c.family_id,
+  c.country_code,
+  c.n_inv_country,
+  t.n_inv_total_obs,
+  SAFE_DIVIDE(c.n_inv_country, t.n_inv_total_obs) AS w_inv
+FROM counts c
+JOIN totals t
+  USING (family_id)
+WHERE t.n_inv_total_obs > 0

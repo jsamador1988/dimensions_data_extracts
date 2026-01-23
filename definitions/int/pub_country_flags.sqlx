@@ -1,28 +1,20 @@
 config {
   type: "table",
+  name: "pub_country_flags",
   schema: "rd_int",
   tags: ["int"],
-  description: "Paper×country weights from affiliations, plus public/private production shares and gov/any funding flags (by funder country)."
+  description: "Publication×country weights and production shares in long format (no pivots; safe for ISO2 codes like AT)."
 }
 
-WITH p AS (
-  SELECT * FROM ${ref("publications_base")}
-),
+SELECT
+  pub_id,
+  quarter,
+  country_code,
+  w_aff,
+  w_public_prod,
+  w_private_prod
+FROM ${ref("pub_country_weights")}
 
--- Flatten affiliation addresses (country_code + grid_id)
-aff_flat AS (
-  SELECT
-    p.pub_id,
-    p.pub_qtr,
-    p.pub_year,
-    p.journal_id,
-    aaff.country_code AS aff_country,
-    aaff.grid_id AS aff_org_id
-  FROM p
-  JOIN UNNEST(IFNULL(p.authors, [])) a
-  JOIN UNNEST(IFNULL(a.affiliations_address, [])) aaff
-  WHERE aaff.country_code IS NOT NULL
-),
 
 aff_kept AS (
   SELECT af.*

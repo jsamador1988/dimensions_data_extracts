@@ -1,41 +1,36 @@
 config {
   type: "table",
+  name: "field22_to_disc6",
   schema: "rd_ref",
   tags: ["ref"],
-  description: "Map field22_code (22 fields) -> disc6_code (6 broad disciplines) used for aggregated series."
+  description: "Map 22 field codes -> 6 discipline codes. Includes both field22_code and field22 for compatibility."
 }
 
--- Disciplines (example):
--- LIFE     = life/biomed/health/ag/env
--- PHYS     = math/physical/chem/earth
--- ENGTECH  = engineering + built + computing
--- SOCSCI   = economics + education + commerce + society + psychology + law
--- HUMARTS  = history + language + philosophy + creative arts
--- OTHER    = spare bucket if you later add fields
+-- Disciplines (6): STEM_LIFE, STEM_PHYSENG, STEM_MATHCOMP, SOCSCI, HUMANITIES, ARTS
+SELECT 'AGRICULTURE'  AS field22_code, 'AGRICULTURE'  AS field22, 'STEM_LIFE'     AS disc6_code, 'STEM_LIFE'     AS disc6, 'STEM: Life/Health/Environment' AS disc6_name UNION ALL
+SELECT 'BIOLOGY',        'BIOLOGY',        'STEM_LIFE',     'STEM_LIFE',     'STEM: Life/Health/Environment' UNION ALL
+SELECT 'BIOMEDICAL',     'BIOMEDICAL',     'STEM_LIFE',     'STEM_LIFE',     'STEM: Life/Health/Environment' UNION ALL
+SELECT 'HEALTH',         'HEALTH',         'STEM_LIFE',     'STEM_LIFE',     'STEM: Life/Health/Environment' UNION ALL
+SELECT 'ENVIRONMENT',    'ENVIRONMENT',    'STEM_LIFE',     'STEM_LIFE',     'STEM: Life/Health/Environment' UNION ALL
 
-SELECT 'AGRI'     AS field22_code, 'LIFE'    AS disc6_code, 'Life Sciences' AS disc6_name UNION ALL
-SELECT 'BIO',                       'LIFE',                 'Life Sciences' UNION ALL
-SELECT 'BIOMED',                    'LIFE',                 'Life Sciences' UNION ALL
-SELECT 'HEALTH',                    'LIFE',                 'Life Sciences' UNION ALL
-SELECT 'ENV',                       'LIFE',                 'Life Sciences' UNION ALL
+SELECT 'PHYSICAL',       'PHYSICAL',       'STEM_PHYSENG',  'STEM_PHYSENG',  'STEM: Physical/Chemical/Engineering' UNION ALL
+SELECT 'CHEMICAL',       'CHEMICAL',       'STEM_PHYSENG',  'STEM_PHYSENG',  'STEM: Physical/Chemical/Engineering' UNION ALL
+SELECT 'ENGINEERING',    'ENGINEERING',    'STEM_PHYSENG',  'STEM_PHYSENG',  'STEM: Physical/Chemical/Engineering' UNION ALL
+SELECT 'EARTH',          'EARTH',          'STEM_PHYSENG',  'STEM_PHYSENG',  'STEM: Physical/Chemical/Engineering' UNION ALL
+SELECT 'BUILT_ENV',      'BUILT_ENV',      'STEM_PHYSENG',  'STEM_PHYSENG',  'STEM: Physical/Chemical/Engineering' UNION ALL
 
-SELECT 'MATH',                      'PHYS',                 'Physical Sciences' UNION ALL
-SELECT 'PHYSICAL',                  'PHYS',                 'Physical Sciences' UNION ALL
-SELECT 'CHEM',                      'PHYS',                 'Physical Sciences' UNION ALL
-SELECT 'EARTH',                     'PHYS',                 'Physical Sciences' UNION ALL
+SELECT 'MATH',           'MATH',           'STEM_MATHCOMP', 'STEM_MATHCOMP', 'STEM: Math/Computing' UNION ALL
+SELECT 'INFO_COMP',      'INFO_COMP',      'STEM_MATHCOMP', 'STEM_MATHCOMP', 'STEM: Math/Computing' UNION ALL
 
-SELECT 'ENG',                       'ENGTECH',              'Engineering & Technology' UNION ALL
-SELECT 'BUILT',                     'ENGTECH',              'Engineering & Technology' UNION ALL
-SELECT 'INFOCOMP',                  'ENGTECH',              'Engineering & Technology' UNION ALL
+SELECT 'ECON',           'ECON',           'SOCSCI',        'SOCSCI',        'Social Sciences' UNION ALL
+SELECT 'COMMERCE',       'COMMERCE',       'SOCSCI',        'SOCSCI',        'Social Sciences' UNION ALL
+SELECT 'EDUCATION',      'EDUCATION',      'SOCSCI',        'SOCSCI',        'Social Sciences' UNION ALL
+SELECT 'HUMAN_SOCIETY',  'HUMAN_SOCIETY',  'SOCSCI',        'SOCSCI',        'Social Sciences' UNION ALL
+SELECT 'PSYCHOLOGY',     'PSYCHOLOGY',     'SOCSCI',        'SOCSCI',        'Social Sciences' UNION ALL
+SELECT 'LAW',            'LAW',            'SOCSCI',        'SOCSCI',        'Social Sciences' UNION ALL
 
-SELECT 'ECON',                      'SOCSCI',               'Social Sciences' UNION ALL
-SELECT 'EDUC',                      'SOCSCI',               'Social Sciences' UNION ALL
-SELECT 'COMMERCE',                  'SOCSCI',               'Social Sciences' UNION ALL
-SELECT 'SOCIETY',                   'SOCSCI',               'Social Sciences' UNION ALL
-SELECT 'PSYCH',                     'SOCSCI',               'Social Sciences' UNION ALL
-SELECT 'LAW',                       'SOCSCI',               'Social Sciences' UNION ALL
+SELECT 'HISTORY',        'HISTORY',        'HUMANITIES',    'HUMANITIES',    'Humanities' UNION ALL
+SELECT 'LANGUAGE',       'LANGUAGE',       'HUMANITIES',    'HUMANITIES',    'Humanities' UNION ALL
+SELECT 'PHILOSOPHY',     'PHILOSOPHY',     'HUMANITIES',    'HUMANITIES',    'Humanities' UNION ALL
 
-SELECT 'HISTORY',                   'HUMARTS',              'Humanities & Arts' UNION ALL
-SELECT 'LANGUAGE',                  'HUMARTS',              'Humanities & Arts' UNION ALL
-SELECT 'PHIL',                      'HUMARTS',              'Humanities & Arts' UNION ALL
-SELECT 'CREATIVE',                  'HUMARTS',              'Humanities & Arts'
+SELECT 'CREATIVE',       'CREATIVE',       'ARTS',          'ARTS',          'Arts & Creative'
