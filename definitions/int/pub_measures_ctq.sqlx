@@ -2,21 +2,81 @@ config {
   type: "table",
   schema: "rd_int",
   tags: ["int"],
-  description: "Country-quarter publication measures: total, public-produced, private-produced, gov-funded, any-funded, and private×gov-funded."
+  description: "Publication quarterly measures by country: totals, public/private production, and gov/any funding using pub_country_weights + pub_country_flags."
 }
 
+-- Produces one row per (country_code, quarter)
+-- Measures:
+--  pub_total_ctq
+--  pub_public_produced_ctq
+--  pub_private_produced_ctq
+--  pub_gov_funded_ctq
+--  pub_any_funded_ctq
+--  pub_private_produced_gov_funded_ctq
+
+WITH w AS (
+  -- pub_country_weights must contain:
+  -- (pub_id, quarter, country_code, w_aff, w_public_prod, w_private_prod)
+  SELECT
+    pub_id,
+    quarter,
+    country_code,
+    w_aff,
+    w_public_prod,
+    w_private_prod
+  FROM ${ref("pub_country_weights")}
+),
+
+flags AS (
+  -- pub_country_flags must contain:
+  -- (pub_id, quarter, country_code, gov_funded_flag, any_funded_flag, private_prod_flag)
+  SELECT
+    pub_id,
+    quarter,
+    country_code,
+    gov_funded_flag,
+    any_funded_flag,
+    private_prod_flag
+  FROM ${ref("pub_country_flags")}
+),
+
+scored AS (
+  SELECT
+    w.country_code,
+    w.quarter,
+
+    w.w_aff AS w_aff,
+    w.w_public_prod  AS w_public_prod,
+    w.w_private_prod AS w_private_prod,
+
+    -- funding measures are inventor-weighted by affiliation weights (w_aff), per your plan
+    (w.w_aff * COALESCE(f.gov_funded_flag, 0)) AS w_gov_funded,
+    (w.w_aff * COALESCE(f.any_funded_flag, 0)) AS w_any_funded,
+
+    -- cross: private-produced (any private share) AND gov-funded
+    (w.w_aff * COALESCE(f.private_prod_flag, 0) * COALESCE(f.gov_funded_flag, 0)) AS w_privprod_govfund
+
+  FROM w
+  LEFT JOIN flags f
+    ON f.pub_id = w.pub_id
+   AND f.quarter = w.quarter
+   AND f.country_code = w.country_code
+)
+
 SELECT
-  country_code,
-  quarter,
+  c.country_code,
+  q.quarter,
 
-  SUM(w_aff) AS pub_total_ctq,
-  SUM(public_prod_share) AS pub_public_produced_ctq,
-  SUM(private_prod_share) AS pub_private_produced_ctq,
+  COALESCE(SUM(s.w_aff), 0)             AS pub_total_ctq,
+  COALESCE(SUM(s.w_public_prod), 0)     AS pub_public_produced_ctq,
+  COALESCE(SUM(s.w_private_prod), 0)    AS pub_private_produced_ctq,
+  COALESCE(SUM(s.w_gov_funded), 0)      AS pub_gov_funded_ctq,
+  COALESCE(SUM(s.w_any_funded), 0)      AS pub_any_funded_ctq,
+  COALESCE(SUM(s.w_privprod_govfund), 0) AS pub_private_produced_gov_funded_ctq
 
-  SUM(w_aff * CAST(paper_gov_funded_flag AS INT64)) AS pub_gov_funded_ctq,
-  SUM(w_aff * CAST(paper_any_funded_flag AS INT64)) AS pub_any_funded_ctq,
-
-  SUM(w_aff * CAST(private_prod_share > 0 AS INT64) * CAST(paper_gov_funded_flag AS INT64)) AS pub_private_produced_gov_funded_ctq
-
-FROM ${ref("pub_country_flags")}
-GROUP BY country_code, quarter
+FROM ${ref("country_list")} c
+JOIN ${ref("quarter_grid")} q ON TRUE
+LEFT JOIN scored s
+  ON s.country_code = c.country_code
+ AND s.quarter = q.quarter
+GROUP BY c.country_code, q.quarter
