@@ -1,0 +1,54 @@
+config {
+  type: "table",
+  name: "for4_to_field22",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Mapping from FoR4 (4-digit) codes to 22 broad field buckets (field22_code) using the FoR2 prefix (first 2 digits)."
+}
+
+WITH for4_distinct AS (
+  SELECT DISTINCT
+    CAST(for4 AS STRING) AS for4
+  FROM ${ref("pub_core")} c
+  CROSS JOIN UNNEST(IFNULL(c.for4_codes, [])) AS for4
+  WHERE for4 IS NOT NULL
+),
+
+mapped AS (
+  SELECT
+    for4,
+    SUBSTR(for4, 1, 2) AS for2_code,
+    CASE SUBSTR(for4, 1, 2)
+      WHEN '30' THEN 'AGRI'
+      WHEN '31' THEN 'BIO'
+      WHEN '32' THEN 'BIOMED'
+      WHEN '33' THEN 'BUILT'
+      WHEN '34' THEN 'CHEM'
+      WHEN '35' THEN 'COMMERCE'
+      WHEN '36' THEN 'CREATIVE'
+      WHEN '37' THEN 'EARTH'
+      WHEN '38' THEN 'ECON'
+      WHEN '39' THEN 'EDUC'
+      WHEN '40' THEN 'ENG'
+      WHEN '41' THEN 'ENV'
+      WHEN '42' THEN 'HEALTH'
+      WHEN '43' THEN 'HISTORY'
+      WHEN '44' THEN 'HUMAN'
+      WHEN '45' THEN 'HUMAN'      -- rare, safe default
+      WHEN '46' THEN 'INFOCOMP'
+      WHEN '47' THEN 'LANG'
+      WHEN '48' THEN 'LAW'
+      WHEN '49' THEN 'MATH'
+      WHEN '50' THEN 'PHIL'
+      WHEN '51' THEN 'PHYSICAL'
+      WHEN '52' THEN 'PSYCH'
+      ELSE NULL
+    END AS field22_code
+  FROM for4_distinct
+)
+
+SELECT
+  for4,
+  field22_code
+FROM mapped
+WHERE field22_code IS NOT NULL;
