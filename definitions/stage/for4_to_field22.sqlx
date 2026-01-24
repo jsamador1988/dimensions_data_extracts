@@ -17,7 +17,6 @@ WITH for4_distinct AS (
 mapped AS (
   SELECT
     for4,
-    SUBSTR(for4, 1, 2) AS for2_code,
     CASE SUBSTR(for4, 1, 2)
       WHEN '30' THEN 'AGRI'
       WHEN '31' THEN 'BIO'
@@ -34,7 +33,7 @@ mapped AS (
       WHEN '42' THEN 'HEALTH'
       WHEN '43' THEN 'HISTORY'
       WHEN '44' THEN 'HUMAN'
-      WHEN '45' THEN 'HUMAN'      -- rare, safe default
+      WHEN '45' THEN 'HUMAN'
       WHEN '46' THEN 'INFOCOMP'
       WHEN '47' THEN 'LANG'
       WHEN '48' THEN 'LAW'
@@ -51,4 +50,4 @@ SELECT
   for4,
   field22_code
 FROM mapped
-WHERE field22_code IS NOT NULL;
+WHERE field22_code IS NOT NULL
