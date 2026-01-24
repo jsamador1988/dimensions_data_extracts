@@ -3,8 +3,14 @@ config {
   name: "pub_country_quarter_wide",
   schema: "rd_mart",
   tags: ["mart"],
-  description: "Publication-based country×quarter panel with totals, public/private produced, field22 + disc6 splits, and top-5 journal splits."
+  description: "Publication-based country×quarter panel with totals, public/private produced, field22 + disc6 splits, and top-5 journal splits.",
+
+  bigquery: {
+    partitionBy: "quarter",
+    clusterBy: ["country_code"]
+  }
 }
+
 
 WITH base AS (
   SELECT
