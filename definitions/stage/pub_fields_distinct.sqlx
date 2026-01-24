@@ -1,4 +1,4 @@
-config {
+config { 
   type: "table",
   name: "pub_fields_distinct",
   schema: "rd_stage",
@@ -6,21 +6,27 @@ config {
   description: "Distinct field22 and disc6 categories used for wide publication outputs."
 }
 
-WITH m AS (
+WITH f AS (
+  SELECT DISTINCT
+    field22_code,
+    field22_name
+  FROM ${ref("rd_ref", "for4_to_field22")}
+),
+
+d AS (
   SELECT
-    f.field22_code,
-    f.field22_name,
-    d.disc6_code,
-    d.disc6_name
-  FROM ${ref("for4_to_field22")} f
-  LEFT JOIN ${ref("field22_to_disc6")} d
-    ON d.field22_code = f.field22_code
+    field22_code,
+    disc6_code,
+    disc6_name
+  FROM ${ref("rd_ref", "field22_to_disc6")}
 )
 
 SELECT DISTINCT
-  field22_code,
-  field22_name,
-  disc6_code,
-  disc6_name
-FROM m
-WHERE field22_code IS NOT NULL
+  f.field22_code,
+  f.field22_name,
+  d.disc6_code,
+  d.disc6_name
+FROM f
+LEFT JOIN d
+  USING (field22_code)
+WHERE f.field22_code IS NOT NULL

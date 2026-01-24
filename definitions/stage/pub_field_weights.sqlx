@@ -3,7 +3,7 @@ config {
   name: "pub_field_weights",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Publication×for4 fractional weights w_field based on distinct FoR4 codes on the paper (temporary: replaces missing for4_to_field22 mapping)."
+  description: "Publication×field22 fractional weights w_field based on distinct mapped FoR4 codes on the paper."
 }
 
 WITH core AS (
@@ -11,7 +11,7 @@ WITH core AS (
     pub_id,
     quarter,
     for4_codes
-  FROM ${ref("pub_core")}
+  FROM ${ref("rd_stage", "pub_core")}
   WHERE pub_id IS NOT NULL AND quarter IS NOT NULL
 ),
 
@@ -19,7 +19,7 @@ for4_flat AS (
   SELECT
     c.pub_id,
     c.quarter,
-    CAST(for4 AS STRING) AS field22_code
+    CAST(for4 AS STRING) AS for4
   FROM core c
   CROSS JOIN UNNEST(IFNULL(c.for4_codes, [])) AS for4
   WHERE for4 IS NOT NULL
@@ -27,17 +27,20 @@ for4_flat AS (
 
 mapped AS (
   SELECT DISTINCT
-    pub_id,
-    quarter,
-    field22_code
-  FROM for4_flat
+    f.pub_id,
+    f.quarter,
+    m.field22_code
+  FROM for4_flat f
+  JOIN ${ref("rd_ref", "for4_to_field22")} m
+    ON m.for4 = f.for4
+  WHERE m.field22_code IS NOT NULL
 ),
 
 totals AS (
   SELECT
     pub_id,
     quarter,
-    COUNT(*) AS n_fields
+    COUNT(DISTINCT field22_code) AS n_fields
   FROM mapped
   GROUP BY pub_id, quarter
 )

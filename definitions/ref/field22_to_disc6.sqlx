@@ -2,35 +2,38 @@ config {
   type: "table",
   name: "field22_to_disc6",
   schema: "rd_ref",
-  tags: ["ref"],
-  description: "Map 22 field codes -> 6 discipline codes. Includes both field22_code and field22 for compatibility."
+  tags: ["stage", "ref"],
+  description: "Mapping from 22 broad fields (field22_code) to 6 discipline buckets (disc6_code)."
 }
 
--- Disciplines (6): STEM_LIFE, STEM_PHYSENG, STEM_MATHCOMP, SOCSCI, HUMANITIES, ARTS
-SELECT 'AGRICULTURE'  AS field22_code, 'AGRICULTURE'  AS field22, 'STEM_LIFE'     AS disc6_code, 'STEM_LIFE'     AS disc6, 'STEM: Life/Health/Environment' AS disc6_name UNION ALL
-SELECT 'BIOLOGY',        'BIOLOGY',        'STEM_LIFE',     'STEM_LIFE',     'STEM: Life/Health/Environment' UNION ALL
-SELECT 'BIOMEDICAL',     'BIOMEDICAL',     'STEM_LIFE',     'STEM_LIFE',     'STEM: Life/Health/Environment' UNION ALL
-SELECT 'HEALTH',         'HEALTH',         'STEM_LIFE',     'STEM_LIFE',     'STEM: Life/Health/Environment' UNION ALL
-SELECT 'ENVIRONMENT',    'ENVIRONMENT',    'STEM_LIFE',     'STEM_LIFE',     'STEM: Life/Health/Environment' UNION ALL
+WITH m AS (
+  SELECT 'AGRI'     AS field22_code, 'DISC1' AS disc6_code, 'Life & Health'                 AS disc6_name UNION ALL
+  SELECT 'BIO'      AS field22_code, 'DISC1' AS disc6_code, 'Life & Health'                 AS disc6_name UNION ALL
+  SELECT 'BIOMED'   AS field22_code, 'DISC1' AS disc6_code, 'Life & Health'                 AS disc6_name UNION ALL
+  SELECT 'HEALTH'   AS field22_code, 'DISC1' AS disc6_code, 'Life & Health'                 AS disc6_name UNION ALL
+  SELECT 'PSYCH'    AS field22_code, 'DISC1' AS disc6_code, 'Life & Health'                 AS disc6_name UNION ALL
 
-SELECT 'PHYSICAL',       'PHYSICAL',       'STEM_PHYSENG',  'STEM_PHYSENG',  'STEM: Physical/Chemical/Engineering' UNION ALL
-SELECT 'CHEMICAL',       'CHEMICAL',       'STEM_PHYSENG',  'STEM_PHYSENG',  'STEM: Physical/Chemical/Engineering' UNION ALL
-SELECT 'ENGINEERING',    'ENGINEERING',    'STEM_PHYSENG',  'STEM_PHYSENG',  'STEM: Physical/Chemical/Engineering' UNION ALL
-SELECT 'EARTH',          'EARTH',          'STEM_PHYSENG',  'STEM_PHYSENG',  'STEM: Physical/Chemical/Engineering' UNION ALL
-SELECT 'BUILT_ENV',      'BUILT_ENV',      'STEM_PHYSENG',  'STEM_PHYSENG',  'STEM: Physical/Chemical/Engineering' UNION ALL
+  SELECT 'CHEM'     AS field22_code, 'DISC2' AS disc6_code, 'Physical, Math & Engineering'  AS disc6_name UNION ALL
+  SELECT 'ENG'      AS field22_code, 'DISC2' AS disc6_code, 'Physical, Math & Engineering'  AS disc6_name UNION ALL
+  SELECT 'MATH'     AS field22_code, 'DISC2' AS disc6_code, 'Physical, Math & Engineering'  AS disc6_name UNION ALL
+  SELECT 'PHYSICAL' AS field22_code, 'DISC2' AS disc6_code, 'Physical, Math & Engineering'  AS disc6_name UNION ALL
 
-SELECT 'MATH',           'MATH',           'STEM_MATHCOMP', 'STEM_MATHCOMP', 'STEM: Math/Computing' UNION ALL
-SELECT 'INFO_COMP',      'INFO_COMP',      'STEM_MATHCOMP', 'STEM_MATHCOMP', 'STEM: Math/Computing' UNION ALL
+  SELECT 'EARTH'    AS field22_code, 'DISC3' AS disc6_code, 'Earth & Environment'           AS disc6_name UNION ALL
+  SELECT 'ENV'      AS field22_code, 'DISC3' AS disc6_code, 'Earth & Environment'           AS disc6_name UNION ALL
 
-SELECT 'ECON',           'ECON',           'SOCSCI',        'SOCSCI',        'Social Sciences' UNION ALL
-SELECT 'COMMERCE',       'COMMERCE',       'SOCSCI',        'SOCSCI',        'Social Sciences' UNION ALL
-SELECT 'EDUCATION',      'EDUCATION',      'SOCSCI',        'SOCSCI',        'Social Sciences' UNION ALL
-SELECT 'HUMAN_SOCIETY',  'HUMAN_SOCIETY',  'SOCSCI',        'SOCSCI',        'Social Sciences' UNION ALL
-SELECT 'PSYCHOLOGY',     'PSYCHOLOGY',     'SOCSCI',        'SOCSCI',        'Social Sciences' UNION ALL
-SELECT 'LAW',            'LAW',            'SOCSCI',        'SOCSCI',        'Social Sciences' UNION ALL
+  SELECT 'ECON'     AS field22_code, 'DISC4' AS disc6_code, 'Social Sciences'               AS disc6_name UNION ALL
+  SELECT 'EDUC'     AS field22_code, 'DISC4' AS disc6_code, 'Social Sciences'               AS disc6_name UNION ALL
+  SELECT 'COMMERCE' AS field22_code, 'DISC4' AS disc6_code, 'Social Sciences'               AS disc6_name UNION ALL
+  SELECT 'HUMAN'    AS field22_code, 'DISC4' AS disc6_code, 'Social Sciences'               AS disc6_name UNION ALL
+  SELECT 'INFOCOMP' AS field22_code, 'DISC4' AS disc6_code, 'Social Sciences'               AS disc6_name UNION ALL
 
-SELECT 'HISTORY',        'HISTORY',        'HUMANITIES',    'HUMANITIES',    'Humanities' UNION ALL
-SELECT 'LANGUAGE',       'LANGUAGE',       'HUMANITIES',    'HUMANITIES',    'Humanities' UNION ALL
-SELECT 'PHILOSOPHY',     'PHILOSOPHY',     'HUMANITIES',    'HUMANITIES',    'Humanities' UNION ALL
+  SELECT 'HISTORY'  AS field22_code, 'DISC5' AS disc6_code, 'Arts & Humanities'             AS disc6_name UNION ALL
+  SELECT 'LANG'     AS field22_code, 'DISC5' AS disc6_code, 'Arts & Humanities'             AS disc6_name UNION ALL
+  SELECT 'LAW'      AS field22_code, 'DISC5' AS disc6_code, 'Arts & Humanities'             AS disc6_name UNION ALL
+  SELECT 'PHIL'     AS field22_code, 'DISC5' AS disc6_code, 'Arts & Humanities'             AS disc6_name UNION ALL
+  SELECT 'CREATIVE' AS field22_code, 'DISC5' AS disc6_code, 'Arts & Humanities'             AS disc6_name UNION ALL
 
-SELECT 'CREATIVE',       'CREATIVE',       'ARTS',          'ARTS',          'Arts & Creative'
+  SELECT 'BUILT'    AS field22_code, 'DISC6' AS disc6_code, 'Built & Other'                 AS disc6_name
+)
+
+SELECT * FROM m
