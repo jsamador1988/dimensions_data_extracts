@@ -13,24 +13,24 @@ config {
 
 WITH pub AS (
   SELECT
-    * EXCEPT(country_code, quarter, __build_id)
+    * EXCEPT(__build_id)
   FROM ${ref("rd_mart", "pub_country_quarter_wide")}
 ),
 
 pat AS (
   SELECT
-    * EXCEPT(country_code, quarter)
+    *
   FROM ${ref("rd_mart", "pat_country_quarter_wide")}
 )
 
 SELECT
-  'panel_country_quarter_wide_v2' AS __build_id,
+  'panel_country_quarter_wide_v4' AS __build_id,
 
-  COALESCE(p.country_code, t.country_code) AS country_code,
-  COALESCE(p.quarter, t.quarter) AS quarter,
+  COALESCE(pub.country_code, pat.country_code) AS country_code,
+  COALESCE(pub.quarter, pat.quarter) AS quarter,
 
-  p.*,
-  t.*
-FROM ${ref("rd_mart", "pub_country_quarter_wide")} p
-FULL OUTER JOIN ${ref("rd_mart", "pat_country_quarter_wide")} t
+  pub.* EXCEPT(country_code, quarter),
+  pat.* EXCEPT(country_code, quarter)
+FROM pub
+FULL OUTER JOIN pat
 USING (country_code, quarter)
