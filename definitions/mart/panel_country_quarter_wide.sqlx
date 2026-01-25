@@ -4,7 +4,6 @@ config {
   schema: "rd_mart",
   tags: ["mart"],
   description: "Combined publication + patent country×quarter wide panel.",
-
   bigquery: {
     partitionBy: "quarter",
     clusterBy: ["country_code"]
@@ -12,19 +11,22 @@ config {
 }
 
 WITH pub AS (
-  SELECT *
-  FROM ${ref({schema: "rd_mart", name: "pub_country_quarter_wide"})}
+  SELECT
+    *
+  FROM ${ref("rd_mart", "pub_country_quarter_wide")}
 ),
 
 pat AS (
-  SELECT *
-  FROM ${ref({schema: "rd_mart", name: "pat_country_quarter_wide"})}
+  SELECT
+    *
+  FROM ${ref("rd_mart", "pat_country_quarter_wide")}
 )
 
 SELECT
-  -- USING() already returns a single country_code + quarter column
-  country_code,
-  quarter,
+  'panel_country_quarter_wide_v4' AS __build_id,
+
+  COALESCE(pub.country_code, pat.country_code) AS country_code,
+  COALESCE(pub.quarter, pat.quarter) AS quarter,
 
   pub.* EXCEPT(country_code, quarter),
   pat.* EXCEPT(country_code, quarter)
