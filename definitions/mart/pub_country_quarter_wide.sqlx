@@ -19,15 +19,11 @@ WITH overall AS (
     pub_break_ctq,
     pub_break_eligible_weight_ctq,
     pub_public_produced_ctq,
-    pub_private_produced_ctq,
-
-    -- Residual sector mass (NOT a source column; derived diagnostic)
-    (pub_total_ctq - pub_public_produced_ctq - pub_private_produced_ctq) AS pub_unknown_produced_ctq
+    pub_private_produced_ctq
   FROM ${ref("rd_int", "pub_country_quarter_overall")}
 ),
 
 field_long AS (
-  -- expected cols: country_code, quarter, field22_code, pub_field_ctq, pub_field_top5_ctq
   SELECT
     country_code,
     quarter,
@@ -38,7 +34,6 @@ field_long AS (
 ),
 
 disc_long AS (
-  -- expected cols: country_code, quarter, disc6_code, pub_disc_ctq, pub_disc_top5_ctq
   SELECT
     country_code,
     quarter,
@@ -49,11 +44,12 @@ disc_long AS (
 ),
 
 field_wide AS (
+  -- Build wide off OVERALL keys so every (country,quarter) exists and pivots become 0 (not NULL).
   SELECT
     o.country_code,
     o.quarter,
 
-    -- ===== field totals =====
+    -- field totals
     SUM(IF(fl.field22_code = 'AGRI',     fl.pub_field_ctq, 0)) AS pub_field_AGRI_ctq,
     SUM(IF(fl.field22_code = 'BIO',      fl.pub_field_ctq, 0)) AS pub_field_BIO_ctq,
     SUM(IF(fl.field22_code = 'BIOMED',   fl.pub_field_ctq, 0)) AS pub_field_BIOMED_ctq,
@@ -77,7 +73,7 @@ field_wide AS (
     SUM(IF(fl.field22_code = 'PHYSICAL', fl.pub_field_ctq, 0)) AS pub_field_PHYSICAL_ctq,
     SUM(IF(fl.field22_code = 'PSYCH',    fl.pub_field_ctq, 0)) AS pub_field_PSYCH_ctq,
 
-    -- ===== field top5 totals =====
+    -- field top5 totals
     SUM(IF(fl.field22_code = 'AGRI',     fl.pub_field_top5_ctq, 0)) AS pub_field_AGRI_top5_ctq,
     SUM(IF(fl.field22_code = 'BIO',      fl.pub_field_top5_ctq, 0)) AS pub_field_BIO_top5_ctq,
     SUM(IF(fl.field22_code = 'BIOMED',   fl.pub_field_top5_ctq, 0)) AS pub_field_BIOMED_top5_ctq,
@@ -103,8 +99,7 @@ field_wide AS (
 
   FROM overall o
   LEFT JOIN field_long fl
-    ON fl.country_code = o.country_code
-   AND fl.quarter = o.quarter
+    ON fl.country_code = o.country_code AND fl.quarter = o.quarter
   GROUP BY o.country_code, o.quarter
 ),
 
@@ -113,7 +108,6 @@ disc_wide AS (
     o.country_code,
     o.quarter,
 
-    -- ===== discipline totals =====
     SUM(IF(dl.disc6_code = 'DISC1', dl.pub_disc_ctq, 0)) AS pub_disc_DISC1_ctq,
     SUM(IF(dl.disc6_code = 'DISC2', dl.pub_disc_ctq, 0)) AS pub_disc_DISC2_ctq,
     SUM(IF(dl.disc6_code = 'DISC3', dl.pub_disc_ctq, 0)) AS pub_disc_DISC3_ctq,
@@ -121,7 +115,6 @@ disc_wide AS (
     SUM(IF(dl.disc6_code = 'DISC5', dl.pub_disc_ctq, 0)) AS pub_disc_DISC5_ctq,
     SUM(IF(dl.disc6_code = 'DISC6', dl.pub_disc_ctq, 0)) AS pub_disc_DISC6_ctq,
 
-    -- ===== discipline top5 totals =====
     SUM(IF(dl.disc6_code = 'DISC1', dl.pub_disc_top5_ctq, 0)) AS pub_disc_DISC1_top5_ctq,
     SUM(IF(dl.disc6_code = 'DISC2', dl.pub_disc_top5_ctq, 0)) AS pub_disc_DISC2_top5_ctq,
     SUM(IF(dl.disc6_code = 'DISC3', dl.pub_disc_top5_ctq, 0)) AS pub_disc_DISC3_top5_ctq,
@@ -131,29 +124,37 @@ disc_wide AS (
 
   FROM overall o
   LEFT JOIN disc_long dl
-    ON dl.country_code = o.country_code
-   AND dl.quarter = o.quarter
+    ON dl.country_code = o.country_code AND dl.quarter = o.quarter
   GROUP BY o.country_code, o.quarter
 )
 
 SELECT
+  'pub_country_quarter_wide_v3_fix_unknown_reference' AS __build_id,
+
   o.country_code,
   o.quarter,
 
+  -- overall measures
   o.pub_total_ctq,
   o.pub_top5_ctq,
+
+  -- breakthrough: keep as-is (if you prefer NULL when ineligible, tell me and I’ll give the 2-line edit)
   o.pub_break_ctq,
   o.pub_break_eligible_weight_ctq,
 
   o.pub_public_produced_ctq,
   o.pub_private_produced_ctq,
-  o.pub_unknown_produced_ctq,
 
-  f.* EXCEPT(country_code, quarter),
-  d.* EXCEPT(country_code, quarter)
+  -- residual (computed here; NOT read from overall)
+  GREATEST(
+    o.pub_total_ctq - o.pub_public_produced_ctq - o.pub_private_produced_ctq,
+    0
+  ) AS pub_unknown_produced_ctq,
+
+  -- pivots
+  fw.* EXCEPT(country_code, quarter),
+  dw.* EXCEPT(country_code, quarter)
 
 FROM overall o
-LEFT JOIN field_wide f
-  USING (country_code, quarter)
-LEFT JOIN disc_wide d
-  USING (country_code, quarter)
+LEFT JOIN field_wide fw USING (country_code, quarter)
+LEFT JOIN disc_wide  dw USING (country_code, quarter)
