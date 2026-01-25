@@ -19,7 +19,10 @@ WITH overall AS (
     pub_break_ctq,
     pub_break_eligible_weight_ctq,
     pub_public_produced_ctq,
-    pub_private_produced_ctq
+    pub_private_produced_ctq,
+
+    -- Residual sector mass (NOT a source column; derived diagnostic)
+    (pub_total_ctq - pub_public_produced_ctq - pub_private_produced_ctq) AS pub_unknown_produced_ctq
   FROM ${ref("rd_int", "pub_country_quarter_overall")}
 ),
 
@@ -46,60 +49,62 @@ disc_long AS (
 ),
 
 field_wide AS (
-  -- Build wide off OVERALL keys so every (country,quarter) exists and pivots become 0 (not NULL).
   SELECT
     o.country_code,
     o.quarter,
 
-    -- field totals
-    SUM(IF(fl.field22_code = 'AGRI',    fl.pub_field_ctq, 0)) AS pub_field_AGRI_ctq,
-    SUM(IF(fl.field22_code = 'BIO',     fl.pub_field_ctq, 0)) AS pub_field_BIO_ctq,
-    SUM(IF(fl.field22_code = 'CHEM',    fl.pub_field_ctq, 0)) AS pub_field_CHEM_ctq,
-    SUM(IF(fl.field22_code = 'COMP',    fl.pub_field_ctq, 0)) AS pub_field_COMP_ctq,
-    SUM(IF(fl.field22_code = 'DEC',     fl.pub_field_ctq, 0)) AS pub_field_DEC_ctq,
-    SUM(IF(fl.field22_code = 'DENT',    fl.pub_field_ctq, 0)) AS pub_field_DENT_ctq,
-    SUM(IF(fl.field22_code = 'EARTH',   fl.pub_field_ctq, 0)) AS pub_field_EARTH_ctq,
-    SUM(IF(fl.field22_code = 'ECON',    fl.pub_field_ctq, 0)) AS pub_field_ECON_ctq,
-    SUM(IF(fl.field22_code = 'EDUC',    fl.pub_field_ctq, 0)) AS pub_field_EDUC_ctq,
-    SUM(IF(fl.field22_code = 'ENG',     fl.pub_field_ctq, 0)) AS pub_field_ENG_ctq,
-    SUM(IF(fl.field22_code = 'ENV',     fl.pub_field_ctq, 0)) AS pub_field_ENV_ctq,
-    SUM(IF(fl.field22_code = 'GEO',     fl.pub_field_ctq, 0)) AS pub_field_GEO_ctq,
-    SUM(IF(fl.field22_code = 'HISTORY', fl.pub_field_ctq, 0)) AS pub_field_HISTORY_ctq,
-    SUM(IF(fl.field22_code = 'LAW',     fl.pub_field_ctq, 0)) AS pub_field_LAW_ctq,
-    SUM(IF(fl.field22_code = 'MATH',    fl.pub_field_ctq, 0)) AS pub_field_MATH_ctq,
-    SUM(IF(fl.field22_code = 'MATSCI',  fl.pub_field_ctq, 0)) AS pub_field_MATSCI_ctq,
-    SUM(IF(fl.field22_code = 'MED',     fl.pub_field_ctq, 0)) AS pub_field_MED_ctq,
-    SUM(IF(fl.field22_code = 'PHYS',    fl.pub_field_ctq, 0)) AS pub_field_PHYS_ctq,
-    SUM(IF(fl.field22_code = 'POL',     fl.pub_field_ctq, 0)) AS pub_field_POL_ctq,
-    SUM(IF(fl.field22_code = 'PSYCH',   fl.pub_field_ctq, 0)) AS pub_field_PSYCH_ctq,
-    SUM(IF(fl.field22_code = 'SOC',     fl.pub_field_ctq, 0)) AS pub_field_SOC_ctq,
+    -- ===== field totals =====
+    SUM(IF(fl.field22_code = 'AGRI',     fl.pub_field_ctq, 0)) AS pub_field_AGRI_ctq,
+    SUM(IF(fl.field22_code = 'BIO',      fl.pub_field_ctq, 0)) AS pub_field_BIO_ctq,
+    SUM(IF(fl.field22_code = 'BIOMED',   fl.pub_field_ctq, 0)) AS pub_field_BIOMED_ctq,
+    SUM(IF(fl.field22_code = 'BUILT',    fl.pub_field_ctq, 0)) AS pub_field_BUILT_ctq,
+    SUM(IF(fl.field22_code = 'CHEM',     fl.pub_field_ctq, 0)) AS pub_field_CHEM_ctq,
+    SUM(IF(fl.field22_code = 'COMMERCE', fl.pub_field_ctq, 0)) AS pub_field_COMMERCE_ctq,
+    SUM(IF(fl.field22_code = 'CREATIVE', fl.pub_field_ctq, 0)) AS pub_field_CREATIVE_ctq,
+    SUM(IF(fl.field22_code = 'EARTH',    fl.pub_field_ctq, 0)) AS pub_field_EARTH_ctq,
+    SUM(IF(fl.field22_code = 'ECON',     fl.pub_field_ctq, 0)) AS pub_field_ECON_ctq,
+    SUM(IF(fl.field22_code = 'EDUC',     fl.pub_field_ctq, 0)) AS pub_field_EDUC_ctq,
+    SUM(IF(fl.field22_code = 'ENG',      fl.pub_field_ctq, 0)) AS pub_field_ENG_ctq,
+    SUM(IF(fl.field22_code = 'ENV',      fl.pub_field_ctq, 0)) AS pub_field_ENV_ctq,
+    SUM(IF(fl.field22_code = 'HEALTH',   fl.pub_field_ctq, 0)) AS pub_field_HEALTH_ctq,
+    SUM(IF(fl.field22_code = 'HISTORY',  fl.pub_field_ctq, 0)) AS pub_field_HISTORY_ctq,
+    SUM(IF(fl.field22_code = 'HUMAN',    fl.pub_field_ctq, 0)) AS pub_field_HUMAN_ctq,
+    SUM(IF(fl.field22_code = 'INFOCOMP', fl.pub_field_ctq, 0)) AS pub_field_INFOCOMP_ctq,
+    SUM(IF(fl.field22_code = 'LANG',     fl.pub_field_ctq, 0)) AS pub_field_LANG_ctq,
+    SUM(IF(fl.field22_code = 'LAW',      fl.pub_field_ctq, 0)) AS pub_field_LAW_ctq,
+    SUM(IF(fl.field22_code = 'MATH',     fl.pub_field_ctq, 0)) AS pub_field_MATH_ctq,
+    SUM(IF(fl.field22_code = 'PHIL',     fl.pub_field_ctq, 0)) AS pub_field_PHIL_ctq,
+    SUM(IF(fl.field22_code = 'PHYSICAL', fl.pub_field_ctq, 0)) AS pub_field_PHYSICAL_ctq,
+    SUM(IF(fl.field22_code = 'PSYCH',    fl.pub_field_ctq, 0)) AS pub_field_PSYCH_ctq,
 
-    -- field top5 totals
-    SUM(IF(fl.field22_code = 'AGRI',    fl.pub_field_top5_ctq, 0)) AS pub_field_AGRI_top5_ctq,
-    SUM(IF(fl.field22_code = 'BIO',     fl.pub_field_top5_ctq, 0)) AS pub_field_BIO_top5_ctq,
-    SUM(IF(fl.field22_code = 'CHEM',    fl.pub_field_top5_ctq, 0)) AS pub_field_CHEM_top5_ctq,
-    SUM(IF(fl.field22_code = 'COMP',    fl.pub_field_top5_ctq, 0)) AS pub_field_COMP_top5_ctq,
-    SUM(IF(fl.field22_code = 'DEC',     fl.pub_field_top5_ctq, 0)) AS pub_field_DEC_top5_ctq,
-    SUM(IF(fl.field22_code = 'DENT',    fl.pub_field_top5_ctq, 0)) AS pub_field_DENT_top5_ctq,
-    SUM(IF(fl.field22_code = 'EARTH',   fl.pub_field_top5_ctq, 0)) AS pub_field_EARTH_top5_ctq,
-    SUM(IF(fl.field22_code = 'ECON',    fl.pub_field_top5_ctq, 0)) AS pub_field_ECON_top5_ctq,
-    SUM(IF(fl.field22_code = 'EDUC',    fl.pub_field_top5_ctq, 0)) AS pub_field_EDUC_top5_ctq,
-    SUM(IF(fl.field22_code = 'ENG',     fl.pub_field_top5_ctq, 0)) AS pub_field_ENG_top5_ctq,
-    SUM(IF(fl.field22_code = 'ENV',     fl.pub_field_top5_ctq, 0)) AS pub_field_ENV_top5_ctq,
-    SUM(IF(fl.field22_code = 'GEO',     fl.pub_field_top5_ctq, 0)) AS pub_field_GEO_top5_ctq,
-    SUM(IF(fl.field22_code = 'HISTORY', fl.pub_field_top5_ctq, 0)) AS pub_field_HISTORY_top5_ctq,
-    SUM(IF(fl.field22_code = 'LAW',     fl.pub_field_top5_ctq, 0)) AS pub_field_LAW_top5_ctq,
-    SUM(IF(fl.field22_code = 'MATH',    fl.pub_field_top5_ctq, 0)) AS pub_field_MATH_top5_ctq,
-    SUM(IF(fl.field22_code = 'MATSCI',  fl.pub_field_top5_ctq, 0)) AS pub_field_MATSCI_top5_ctq,
-    SUM(IF(fl.field22_code = 'MED',     fl.pub_field_top5_ctq, 0)) AS pub_field_MED_top5_ctq,
-    SUM(IF(fl.field22_code = 'PHYS',    fl.pub_field_top5_ctq, 0)) AS pub_field_PHYS_top5_ctq,
-    SUM(IF(fl.field22_code = 'POL',     fl.pub_field_top5_ctq, 0)) AS pub_field_POL_top5_ctq,
-    SUM(IF(fl.field22_code = 'PSYCH',   fl.pub_field_top5_ctq, 0)) AS pub_field_PSYCH_top5_ctq,
-    SUM(IF(fl.field22_code = 'SOC',     fl.pub_field_top5_ctq, 0)) AS pub_field_SOC_top5_ctq
+    -- ===== field top5 totals =====
+    SUM(IF(fl.field22_code = 'AGRI',     fl.pub_field_top5_ctq, 0)) AS pub_field_AGRI_top5_ctq,
+    SUM(IF(fl.field22_code = 'BIO',      fl.pub_field_top5_ctq, 0)) AS pub_field_BIO_top5_ctq,
+    SUM(IF(fl.field22_code = 'BIOMED',   fl.pub_field_top5_ctq, 0)) AS pub_field_BIOMED_top5_ctq,
+    SUM(IF(fl.field22_code = 'BUILT',    fl.pub_field_top5_ctq, 0)) AS pub_field_BUILT_top5_ctq,
+    SUM(IF(fl.field22_code = 'CHEM',     fl.pub_field_top5_ctq, 0)) AS pub_field_CHEM_top5_ctq,
+    SUM(IF(fl.field22_code = 'COMMERCE', fl.pub_field_top5_ctq, 0)) AS pub_field_COMMERCE_top5_ctq,
+    SUM(IF(fl.field22_code = 'CREATIVE', fl.pub_field_top5_ctq, 0)) AS pub_field_CREATIVE_top5_ctq,
+    SUM(IF(fl.field22_code = 'EARTH',    fl.pub_field_top5_ctq, 0)) AS pub_field_EARTH_top5_ctq,
+    SUM(IF(fl.field22_code = 'ECON',     fl.pub_field_top5_ctq, 0)) AS pub_field_ECON_top5_ctq,
+    SUM(IF(fl.field22_code = 'EDUC',     fl.pub_field_top5_ctq, 0)) AS pub_field_EDUC_top5_ctq,
+    SUM(IF(fl.field22_code = 'ENG',      fl.pub_field_top5_ctq, 0)) AS pub_field_ENG_top5_ctq,
+    SUM(IF(fl.field22_code = 'ENV',      fl.pub_field_top5_ctq, 0)) AS pub_field_ENV_top5_ctq,
+    SUM(IF(fl.field22_code = 'HEALTH',   fl.pub_field_top5_ctq, 0)) AS pub_field_HEALTH_top5_ctq,
+    SUM(IF(fl.field22_code = 'HISTORY',  fl.pub_field_top5_ctq, 0)) AS pub_field_HISTORY_top5_ctq,
+    SUM(IF(fl.field22_code = 'HUMAN',    fl.pub_field_top5_ctq, 0)) AS pub_field_HUMAN_top5_ctq,
+    SUM(IF(fl.field22_code = 'INFOCOMP', fl.pub_field_top5_ctq, 0)) AS pub_field_INFOCOMP_top5_ctq,
+    SUM(IF(fl.field22_code = 'LANG',     fl.pub_field_top5_ctq, 0)) AS pub_field_LANG_top5_ctq,
+    SUM(IF(fl.field22_code = 'LAW',      fl.pub_field_top5_ctq, 0)) AS pub_field_LAW_top5_ctq,
+    SUM(IF(fl.field22_code = 'MATH',     fl.pub_field_top5_ctq, 0)) AS pub_field_MATH_top5_ctq,
+    SUM(IF(fl.field22_code = 'PHIL',     fl.pub_field_top5_ctq, 0)) AS pub_field_PHIL_top5_ctq,
+    SUM(IF(fl.field22_code = 'PHYSICAL', fl.pub_field_top5_ctq, 0)) AS pub_field_PHYSICAL_top5_ctq,
+    SUM(IF(fl.field22_code = 'PSYCH',    fl.pub_field_top5_ctq, 0)) AS pub_field_PSYCH_top5_ctq
 
   FROM overall o
   LEFT JOIN field_long fl
-    ON fl.country_code = o.country_code AND fl.quarter = o.quarter
+    ON fl.country_code = o.country_code
+   AND fl.quarter = o.quarter
   GROUP BY o.country_code, o.quarter
 ),
 
@@ -108,6 +113,7 @@ disc_wide AS (
     o.country_code,
     o.quarter,
 
+    -- ===== discipline totals =====
     SUM(IF(dl.disc6_code = 'DISC1', dl.pub_disc_ctq, 0)) AS pub_disc_DISC1_ctq,
     SUM(IF(dl.disc6_code = 'DISC2', dl.pub_disc_ctq, 0)) AS pub_disc_DISC2_ctq,
     SUM(IF(dl.disc6_code = 'DISC3', dl.pub_disc_ctq, 0)) AS pub_disc_DISC3_ctq,
@@ -115,6 +121,7 @@ disc_wide AS (
     SUM(IF(dl.disc6_code = 'DISC5', dl.pub_disc_ctq, 0)) AS pub_disc_DISC5_ctq,
     SUM(IF(dl.disc6_code = 'DISC6', dl.pub_disc_ctq, 0)) AS pub_disc_DISC6_ctq,
 
+    -- ===== discipline top5 totals =====
     SUM(IF(dl.disc6_code = 'DISC1', dl.pub_disc_top5_ctq, 0)) AS pub_disc_DISC1_top5_ctq,
     SUM(IF(dl.disc6_code = 'DISC2', dl.pub_disc_top5_ctq, 0)) AS pub_disc_DISC2_top5_ctq,
     SUM(IF(dl.disc6_code = 'DISC3', dl.pub_disc_top5_ctq, 0)) AS pub_disc_DISC3_top5_ctq,
@@ -124,7 +131,8 @@ disc_wide AS (
 
   FROM overall o
   LEFT JOIN disc_long dl
-    ON dl.country_code = o.country_code AND dl.quarter = o.quarter
+    ON dl.country_code = o.country_code
+   AND dl.quarter = o.quarter
   GROUP BY o.country_code, o.quarter
 )
 
@@ -132,7 +140,6 @@ SELECT
   o.country_code,
   o.quarter,
 
-  -- overall measures (THIS is what was going missing)
   o.pub_total_ctq,
   o.pub_top5_ctq,
   o.pub_break_ctq,
@@ -140,12 +147,13 @@ SELECT
 
   o.pub_public_produced_ctq,
   o.pub_private_produced_ctq,
-  (o.pub_total_ctq - o.pub_public_produced_ctq - o.pub_private_produced_ctq) AS pub_unknown_produced_ctq,
+  o.pub_unknown_produced_ctq,
 
-  -- pivots
-  fw.* EXCEPT(country_code, quarter),
-  dw.* EXCEPT(country_code, quarter)
+  f.* EXCEPT(country_code, quarter),
+  d.* EXCEPT(country_code, quarter)
 
 FROM overall o
-LEFT JOIN field_wide fw USING (country_code, quarter)
-LEFT JOIN disc_wide  dw USING (country_code, quarter)
+LEFT JOIN field_wide f
+  USING (country_code, quarter)
+LEFT JOIN disc_wide d
+  USING (country_code, quarter)
