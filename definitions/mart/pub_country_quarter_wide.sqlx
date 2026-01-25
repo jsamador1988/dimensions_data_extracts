@@ -3,7 +3,7 @@ config {
   name: "pub_country_quarter_wide",
   schema: "rd_mart",
   tags: ["mart"],
-  description: "Publication country×quarter wide panel: overall totals + 22-field + 6-discipline pivots. Built off rd_int.pub_country_quarter_overall so breakthrough columns cannot go missing.",
+  description: "Publication country×quarter wide panel: overall totals + 22-field + 6-discipline pivots, plus classified/unclassified mass for field coverage transparency.",
   bigquery: {
     partitionBy: "quarter",
     clusterBy: ["country_code"]
@@ -21,6 +21,25 @@ WITH overall AS (
     pub_public_produced_ctq,
     pub_private_produced_ctq
   FROM ${ref("rd_int", "pub_country_quarter_overall")}
+),
+
+-- pubs that have at least one mapped field weight
+field_weight_pubs AS (
+  SELECT DISTINCT pub_id
+  FROM ${ref("rd_stage", "pub_field_weights")}
+),
+
+classified_totals AS (
+  -- recompute totals from the underlying pub_country_weights (rd_stage)
+  SELECT
+    cw.country_code,
+    cw.quarter,
+    SUM(cw.w_aff) AS pub_total_recomputed_ctq,
+    SUM(IF(fwp.pub_id IS NOT NULL, cw.w_aff, 0)) AS pub_total_classified_ctq,
+    SUM(IF(fwp.pub_id IS NULL,  cw.w_aff, 0)) AS pub_total_unclassified_ctq
+  FROM ${ref("rd_stage", "pub_country_weights")} cw
+  LEFT JOIN field_weight_pubs fwp USING (pub_id)
+  GROUP BY 1,2
 ),
 
 field_long AS (
@@ -44,12 +63,10 @@ disc_long AS (
 ),
 
 field_wide AS (
-  -- Build wide off OVERALL keys so every (country,quarter) exists and pivots become 0 (not NULL).
   SELECT
     o.country_code,
     o.quarter,
 
-    -- field totals
     SUM(IF(fl.field22_code = 'AGRI',     fl.pub_field_ctq, 0)) AS pub_field_AGRI_ctq,
     SUM(IF(fl.field22_code = 'BIO',      fl.pub_field_ctq, 0)) AS pub_field_BIO_ctq,
     SUM(IF(fl.field22_code = 'BIOMED',   fl.pub_field_ctq, 0)) AS pub_field_BIOMED_ctq,
@@ -73,7 +90,6 @@ field_wide AS (
     SUM(IF(fl.field22_code = 'PHYSICAL', fl.pub_field_ctq, 0)) AS pub_field_PHYSICAL_ctq,
     SUM(IF(fl.field22_code = 'PSYCH',    fl.pub_field_ctq, 0)) AS pub_field_PSYCH_ctq,
 
-    -- field top5 totals
     SUM(IF(fl.field22_code = 'AGRI',     fl.pub_field_top5_ctq, 0)) AS pub_field_AGRI_top5_ctq,
     SUM(IF(fl.field22_code = 'BIO',      fl.pub_field_top5_ctq, 0)) AS pub_field_BIO_top5_ctq,
     SUM(IF(fl.field22_code = 'BIOMED',   fl.pub_field_top5_ctq, 0)) AS pub_field_BIOMED_top5_ctq,
@@ -129,32 +145,34 @@ disc_wide AS (
 )
 
 SELECT
-  'pub_country_quarter_wide_v3_fix_unknown_reference' AS __build_id,
+  'pub_country_quarter_wide_v4_add_classified_unclassified' AS __build_id,
 
   o.country_code,
   o.quarter,
 
-  -- overall measures
   o.pub_total_ctq,
   o.pub_top5_ctq,
-
-  -- breakthrough: keep as-is (if you prefer NULL when ineligible, tell me and I’ll give the 2-line edit)
   o.pub_break_ctq,
   o.pub_break_eligible_weight_ctq,
 
   o.pub_public_produced_ctq,
   o.pub_private_produced_ctq,
 
-  -- residual (computed here; NOT read from overall)
-  GREATEST(
-    o.pub_total_ctq - o.pub_public_produced_ctq - o.pub_private_produced_ctq,
-    0
-  ) AS pub_unknown_produced_ctq,
+  -- sector residual
+  GREATEST(o.pub_total_ctq - o.pub_public_produced_ctq - o.pub_private_produced_ctq, 0) AS pub_unknown_produced_ctq,
 
-  -- pivots
+  -- field coverage transparency (computed from rd_stage.pub_country_weights and rd_stage.pub_field_weights)
+  COALESCE(ct.pub_total_classified_ctq, 0) AS pub_total_classified_ctq,
+  COALESCE(ct.pub_total_unclassified_ctq, 0) AS pub_total_unclassified_ctq,
+  SAFE_DIVIDE(COALESCE(ct.pub_total_unclassified_ctq, 0), NULLIF(o.pub_total_ctq, 0)) AS pub_unclassified_share_ctq,
+
+  -- optional consistency check (helpful to keep)
+  COALESCE(ct.pub_total_recomputed_ctq, 0) AS pub_total_recomputed_ctq,
+
   fw.* EXCEPT(country_code, quarter),
   dw.* EXCEPT(country_code, quarter)
 
 FROM overall o
+LEFT JOIN classified_totals ct USING (country_code, quarter)
 LEFT JOIN field_wide fw USING (country_code, quarter)
 LEFT JOIN disc_wide  dw USING (country_code, quarter)
