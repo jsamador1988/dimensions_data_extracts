@@ -1,35 +1,132 @@
 config {
   type: "table",
-  name: "panel_country_quarter_wide",
   schema: "rd_mart",
-  tags: ["mart"],
-  description: "Combined publication + patent country×quarter wide panel.",
-  bigquery: {
-    partitionBy: "quarter",
-    clusterBy: ["country_code"]
-  }
+  name: "panel_country_quarter_wide",
+  description: "Balanced OECD-only quarterly panel (US/CA/AU/CH/GB + OECD EU members).",
+  tags: ["mart", "phase1"]
 }
 
-WITH pub AS (
-  -- pub_country_quarter_wide HAS __build_id, so drop it to avoid duplicates in the panel
-  SELECT
-    * EXCEPT(__build_id)
-  FROM ${ref("rd_mart", "pub_country_quarter_wide")}
+WITH grid AS (
+  SELECT country_code, quarter
+  FROM ${ref("rd_stage","analysis_country_quarter_grid")}
+),
+
+pub AS (
+  SELECT *
+  FROM ${ref("rd_mart","pub_country_quarter_wide")}
 ),
 
 pat AS (
-  -- pat_country_quarter_wide does NOT have __build_id in your pipeline, so do not EXCEPT it
-  SELECT
-    *
-  FROM ${ref("rd_mart", "pat_country_quarter_wide")}
+  -- If your patent wide mart table name differs, STOP and tell me the actual name
+  SELECT *
+  FROM ${ref("rd_mart","pat_country_quarter_wide")}
 )
 
 SELECT
-  "panel_country_quarter_wide_v8_fix_buildid" AS __build_id,
-  country_code,
-  quarter,
-  pub.* EXCEPT(country_code, quarter),
-  pat.* EXCEPT(country_code, quarter)
-FROM pub
-FULL OUTER JOIN pat
-USING (country_code, quarter)
+  'panel_country_quarter_wide_v9_phase1_balanced_oecd' AS __build_id,
+  g.country_code,
+  g.quarter,
+
+  -- =========================
+  -- Patents (COALESCE to 0)
+  -- =========================
+  COALESCE(pat.pat_inv_total_ctq, 0) AS pat_inv_total_ctq,
+  COALESCE(pat.pat_inv_assg_total_ctq, 0) AS pat_inv_assg_total_ctq,
+  COALESCE(pat.pat_inv_assg_file_total_ctq, 0) AS pat_inv_assg_file_total_ctq,
+  COALESCE(pat.pat_public_owned_ctq, 0) AS pat_public_owned_ctq,
+
+  COALESCE(pat.pat_pubfund_tier1_ctq, 0) AS pat_pubfund_tier1_ctq,
+  COALESCE(pat.pat_pubfund_tier2_any_ctq, 0) AS pat_pubfund_tier2_any_ctq,
+  COALESCE(pat.pat_pubfund_tier2_inst_ctq, 0) AS pat_pubfund_tier2_inst_ctq,
+  COALESCE(pat.pat_pubfund_tier2_rid_ctq, 0) AS pat_pubfund_tier2_rid_ctq,
+  COALESCE(pat.pat_pubfund_tier3_pubscience_ctq, 0) AS pat_pubfund_tier3_pubscience_ctq,
+
+  COALESCE(pat.matched_grants_tier2_ctq, 0) AS matched_grants_tier2_ctq,
+  COALESCE(pat.matched_grants_amount_usd_tier2_startqtr_ctq, 0) AS matched_grants_amount_usd_tier2_startqtr_ctq,
+
+  -- =========================
+  -- Publications (COALESCE to 0)
+  -- =========================
+  COALESCE(pub.pub_total_ctq, 0) AS pub_total_ctq,
+  COALESCE(pub.pub_total_recomputed_ctq, 0) AS pub_total_recomputed_ctq,
+  COALESCE(pub.pub_total_classified_ctq, 0) AS pub_total_classified_ctq,
+  COALESCE(pub.pub_total_unclassified_ctq, 0) AS pub_total_unclassified_ctq,
+
+  -- recompute share robustly (avoid 0/0)
+  SAFE_DIVIDE(COALESCE(pub.pub_total_unclassified_ctq,0), NULLIF(COALESCE(pub.pub_total_ctq,0),0)) AS pub_unclassified_share_ctq,
+
+  COALESCE(pub.pub_top5_ctq, 0) AS pub_top5_ctq,
+  COALESCE(pub.pub_break_ctq, 0) AS pub_break_ctq,
+  COALESCE(pub.pub_break_eligible_weight_ctq, 0) AS pub_break_eligible_weight_ctq,
+
+  COALESCE(pub.pub_public_produced_ctq, 0) AS pub_public_produced_ctq,
+  COALESCE(pub.pub_private_produced_ctq, 0) AS pub_private_produced_ctq,
+  COALESCE(pub.pub_unknown_produced_ctq, 0) AS pub_unknown_produced_ctq,
+
+  -- Disciplines
+  COALESCE(pub.pub_disc_DISC1_ctq, 0) AS pub_disc_DISC1_ctq,
+  COALESCE(pub.pub_disc_DISC1_top5_ctq, 0) AS pub_disc_DISC1_top5_ctq,
+  COALESCE(pub.pub_disc_DISC2_ctq, 0) AS pub_disc_DISC2_ctq,
+  COALESCE(pub.pub_disc_DISC2_top5_ctq, 0) AS pub_disc_DISC2_top5_ctq,
+  COALESCE(pub.pub_disc_DISC3_ctq, 0) AS pub_disc_DISC3_ctq,
+  COALESCE(pub.pub_disc_DISC3_top5_ctq, 0) AS pub_disc_DISC3_top5_ctq,
+  COALESCE(pub.pub_disc_DISC4_ctq, 0) AS pub_disc_DISC4_ctq,
+  COALESCE(pub.pub_disc_DISC4_top5_ctq, 0) AS pub_disc_DISC4_top5_ctq,
+  COALESCE(pub.pub_disc_DISC5_ctq, 0) AS pub_disc_DISC5_ctq,
+  COALESCE(pub.pub_disc_DISC5_top5_ctq, 0) AS pub_disc_DISC5_top5_ctq,
+  COALESCE(pub.pub_disc_DISC6_ctq, 0) AS pub_disc_DISC6_ctq,
+  COALESCE(pub.pub_disc_DISC6_top5_ctq, 0) AS pub_disc_DISC6_top5_ctq,
+
+  -- Fields (22)
+  COALESCE(pub.pub_field_AGRI_ctq, 0) AS pub_field_AGRI_ctq,
+  COALESCE(pub.pub_field_AGRI_top5_ctq, 0) AS pub_field_AGRI_top5_ctq,
+  COALESCE(pub.pub_field_BIO_ctq, 0) AS pub_field_BIO_ctq,
+  COALESCE(pub.pub_field_BIO_top5_ctq, 0) AS pub_field_BIO_top5_ctq,
+  COALESCE(pub.pub_field_BIOMED_ctq, 0) AS pub_field_BIOMED_ctq,
+  COALESCE(pub.pub_field_BIOMED_top5_ctq, 0) AS pub_field_BIOMED_top5_ctq,
+  COALESCE(pub.pub_field_BUILT_ctq, 0) AS pub_field_BUILT_ctq,
+  COALESCE(pub.pub_field_BUILT_top5_ctq, 0) AS pub_field_BUILT_top5_ctq,
+  COALESCE(pub.pub_field_CHEM_ctq, 0) AS pub_field_CHEM_ctq,
+  COALESCE(pub.pub_field_CHEM_top5_ctq, 0) AS pub_field_CHEM_top5_ctq,
+  COALESCE(pub.pub_field_COMMERCE_ctq, 0) AS pub_field_COMMERCE_ctq,
+  COALESCE(pub.pub_field_COMMERCE_top5_ctq, 0) AS pub_field_COMMERCE_top5_ctq,
+  COALESCE(pub.pub_field_CREATIVE_ctq, 0) AS pub_field_CREATIVE_ctq,
+  COALESCE(pub.pub_field_CREATIVE_top5_ctq, 0) AS pub_field_CREATIVE_top5_ctq,
+  COALESCE(pub.pub_field_EARTH_ctq, 0) AS pub_field_EARTH_ctq,
+  COALESCE(pub.pub_field_EARTH_top5_ctq, 0) AS pub_field_EARTH_top5_ctq,
+  COALESCE(pub.pub_field_ECON_ctq, 0) AS pub_field_ECON_ctq,
+  COALESCE(pub.pub_field_ECON_top5_ctq, 0) AS pub_field_ECON_top5_ctq,
+  COALESCE(pub.pub_field_EDUC_ctq, 0) AS pub_field_EDUC_ctq,
+  COALESCE(pub.pub_field_EDUC_top5_ctq, 0) AS pub_field_EDUC_top5_ctq,
+  COALESCE(pub.pub_field_ENG_ctq, 0) AS pub_field_ENG_ctq,
+  COALESCE(pub.pub_field_ENG_top5_ctq, 0) AS pub_field_ENG_top5_ctq,
+  COALESCE(pub.pub_field_ENV_ctq, 0) AS pub_field_ENV_ctq,
+  COALESCE(pub.pub_field_ENV_top5_ctq, 0) AS pub_field_ENV_top5_ctq,
+  COALESCE(pub.pub_field_HEALTH_ctq, 0) AS pub_field_HEALTH_ctq,
+  COALESCE(pub.pub_field_HEALTH_top5_ctq, 0) AS pub_field_HEALTH_top5_ctq,
+  COALESCE(pub.pub_field_HISTORY_ctq, 0) AS pub_field_HISTORY_ctq,
+  COALESCE(pub.pub_field_HISTORY_top5_ctq, 0) AS pub_field_HISTORY_top5_ctq,
+  COALESCE(pub.pub_field_HUMAN_ctq, 0) AS pub_field_HUMAN_ctq,
+  COALESCE(pub.pub_field_HUMAN_top5_ctq, 0) AS pub_field_HUMAN_top5_ctq,
+  COALESCE(pub.pub_field_INFOCOMP_ctq, 0) AS pub_field_INFOCOMP_ctq,
+  COALESCE(pub.pub_field_INFOCOMP_top5_ctq, 0) AS pub_field_INFOCOMP_top5_ctq,
+  COALESCE(pub.pub_field_LANG_ctq, 0) AS pub_field_LANG_ctq,
+  COALESCE(pub.pub_field_LANG_top5_ctq, 0) AS pub_field_LANG_top5_ctq,
+  COALESCE(pub.pub_field_LAW_ctq, 0) AS pub_field_LAW_ctq,
+  COALESCE(pub.pub_field_LAW_top5_ctq, 0) AS pub_field_LAW_top5_ctq,
+  COALESCE(pub.pub_field_MATH_ctq, 0) AS pub_field_MATH_ctq,
+  COALESCE(pub.pub_field_MATH_top5_ctq, 0) AS pub_field_MATH_top5_ctq,
+  COALESCE(pub.pub_field_PHIL_ctq, 0) AS pub_field_PHIL_ctq,
+  COALESCE(pub.pub_field_PHIL_top5_ctq, 0) AS pub_field_PHIL_top5_ctq,
+  COALESCE(pub.pub_field_PHYSICAL_ctq, 0) AS pub_field_PHYSICAL_ctq,
+  COALESCE(pub.pub_field_PHYSICAL_top5_ctq, 0) AS pub_field_PHYSICAL_top5_ctq,
+  COALESCE(pub.pub_field_PSYCH_ctq, 0) AS pub_field_PSYCH_ctq,
+  COALESCE(pub.pub_field_PSYCH_top5_ctq, 0) AS pub_field_PSYCH_top5_ctq
+
+FROM grid g
+LEFT JOIN pub
+  ON pub.country_code = g.country_code
+ AND pub.quarter = g.quarter
+LEFT JOIN pat
+  ON pat.country_code = g.country_code
+ AND pat.quarter = g.quarter

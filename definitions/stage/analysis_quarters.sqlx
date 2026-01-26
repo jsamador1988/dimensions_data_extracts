@@ -1,0 +1,19 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "analysis_quarters",
+  description: "Quarter dimension for balanced panel. Edit start_date here if needed.",
+  tags: ["analysis", "phase1"]
+}
+
+-- EDIT THIS IF YOU WANT A DIFFERENT PANEL START:
+WITH params AS (
+  SELECT
+    DATE '1970-01-01' AS start_date,
+    DATE_TRUNC(CURRENT_DATE(), QUARTER) AS end_date
+)
+
+SELECT
+  DATE_TRUNC(d, QUARTER) AS quarter
+FROM params,
+UNNEST(GENERATE_DATE_ARRAY(start_date, end_date, INTERVAL 1 QUARTER)) AS d
