@@ -3,7 +3,7 @@ config {
   name: "pub_country_quarter_wide",
   schema: "rd_mart",
   tags: ["mart", "phase4"],
-  description: "Publication country×quarter wide panel: overall totals + 22-field + 6-discipline pivots. Built off rd_int.pub_country_quarter_overall so breakthrough/produced columns cannot go missing. Produced: public=Surico government; private=non-government; company subset.",
+  description: "Publication country×quarter wide panel: overall totals + 22-field + 6-discipline pivots. Produced: public=Surico government; private=NON-government; company subset. Includes classification/unclassified diagnostics expected by panel.",
   bigquery: {
     partitionBy: "quarter",
     clusterBy: ["country_code"]
@@ -52,6 +52,10 @@ field_wide AS (
     o.country_code,
     o.quarter,
 
+    -- total classified (FoR-based) mass
+    SUM(IFNULL(fl.pub_field_ctq, 0)) AS pub_total_classified_ctq,
+
+    -- 22-field totals
     SUM(IF(fl.field22_code = 'AGRI',      fl.pub_field_ctq, 0)) AS pub_field_AGRI_ctq,
     SUM(IF(fl.field22_code = 'BIO',       fl.pub_field_ctq, 0)) AS pub_field_BIO_ctq,
     SUM(IF(fl.field22_code = 'BIOMED',    fl.pub_field_ctq, 0)) AS pub_field_BIOMED_ctq,
@@ -75,6 +79,7 @@ field_wide AS (
     SUM(IF(fl.field22_code = 'PHYSICAL',  fl.pub_field_ctq, 0)) AS pub_field_PHYSICAL_ctq,
     SUM(IF(fl.field22_code = 'PSYCH',     fl.pub_field_ctq, 0)) AS pub_field_PSYCH_ctq,
 
+    -- 22-field top5 totals
     SUM(IF(fl.field22_code = 'AGRI',      fl.pub_field_top5_ctq, 0)) AS pub_field_AGRI_top5_ctq,
     SUM(IF(fl.field22_code = 'BIO',       fl.pub_field_top5_ctq, 0)) AS pub_field_BIO_top5_ctq,
     SUM(IF(fl.field22_code = 'BIOMED',    fl.pub_field_top5_ctq, 0)) AS pub_field_BIOMED_top5_ctq,
@@ -130,6 +135,8 @@ disc_wide AS (
 )
 
 SELECT
+  'pub_country_quarter_wide_v_phase4_fix_diagnostics' AS __build_id,
+
   o.country_code,
   o.quarter,
 
@@ -139,14 +146,24 @@ SELECT
   o.pub_break_ctq,
   o.pub_break_eligible_weight_ctq,
 
-  -- produced decomposition
-  o.pub_public_produced_ctq,          -- Surico government
-  o.pub_private_produced_ctq,         -- NON-government (includes universities, nonprofits, hospitals, companies)
-  o.pub_company_produced_ctq,         -- company subset of non-government
+  -- produced decomposition (Surico)
+  o.pub_public_produced_ctq,          -- government
+  o.pub_private_produced_ctq,         -- NON-government (universities+nonprofits+hospitals+companies)
+  o.pub_company_produced_ctq,         -- company subset
+
+  -- produced residual (should be ~0 except floating error)
   (o.pub_total_ctq - o.pub_public_produced_ctq - o.pub_private_produced_ctq) AS pub_unknown_produced_ctq,
 
+  -- diagnostics expected by panel
+  fw.pub_total_classified_ctq,
+  (o.pub_total_ctq - fw.pub_total_classified_ctq) AS pub_total_unclassified_ctq,
+  SAFE_DIVIDE((o.pub_total_ctq - fw.pub_total_classified_ctq), NULLIF(o.pub_total_ctq, 0)) AS pub_unclassified_share_ctq,
+  (o.pub_public_produced_ctq + o.pub_private_produced_ctq
+    + (o.pub_total_ctq - o.pub_public_produced_ctq - o.pub_private_produced_ctq)
+  ) AS pub_total_recomputed_ctq,
+
   -- pivots
-  fw.* EXCEPT(country_code, quarter),
+  fw.* EXCEPT(country_code, quarter, pub_total_classified_ctq),
   dw.* EXCEPT(country_code, quarter)
 
 FROM overall o
