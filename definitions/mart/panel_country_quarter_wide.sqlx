@@ -39,11 +39,11 @@ SELECT
   COALESCE(pat.pat_inv_assg_file_total_ctq, 0) AS pat_inv_assg_file_total_ctq,
   COALESCE(pat.pat_public_owned_ctq, 0) AS pat_public_owned_ctq,
 
-  COALESCE(pat.pat_pubfund_tier1_ctq, 0) AS pat_pubfund_tier1_ctq,
+ 
   COALESCE(pat.pat_pubfund_tier2_any_ctq, 0) AS pat_pubfund_tier2_any_ctq,
   COALESCE(pat.pat_pubfund_tier2_inst_ctq, 0) AS pat_pubfund_tier2_inst_ctq,
   COALESCE(pat.pat_pubfund_tier2_rid_ctq, 0) AS pat_pubfund_tier2_rid_ctq,
-  COALESCE(pat.pat_pubfund_tier3_pubscience_ctq, 0) AS pat_pubfund_tier3_pubscience_ctq,
+
 
   COALESCE(pat.matched_grants_tier2_ctq, 0) AS matched_grants_tier2_ctq,
   COALESCE(pat.matched_grants_amount_usd_tier2_startqtr_ctq, 0) AS matched_grants_amount_usd_tier2_startqtr_ctq,
