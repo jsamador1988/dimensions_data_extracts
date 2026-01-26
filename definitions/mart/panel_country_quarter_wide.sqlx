@@ -1,21 +1,31 @@
 config {
   type: "table",
+  name: "panel_country_quarter_wide",
   schema: "rd_mart",
-  name: "panel_country_quarter_wide"
+  tags: ["mart"],
+  description: "Combined publication + patent country×quarter wide panel.",
+  bigquery: {
+    partitionBy: "quarter",
+    clusterBy: ["country_code"]
+  }
 }
 
-WITH
-  pub AS (
-    SELECT *
-    FROM ${ref("rd_mart", "pub_country_quarter_wide")}
-  ),
-  pat AS (
-    SELECT *
-    FROM ${ref("rd_mart", "pat_country_quarter_wide")}
-  )
+WITH pub AS (
+  -- pub_country_quarter_wide HAS __build_id, so drop it to avoid duplicates in the panel
+  SELECT
+    * EXCEPT(__build_id)
+  FROM ${ref("rd_mart", "pub_country_quarter_wide")}
+),
+
+pat AS (
+  -- pat_country_quarter_wide does NOT have __build_id in your pipeline, so do not EXCEPT it
+  SELECT
+    *
+  FROM ${ref("rd_mart", "pat_country_quarter_wide")}
+)
 
 SELECT
-  "panel_country_quarter_wide_v5_fix_build_id" AS __build_id,
+  "panel_country_quarter_wide_v8_fix_buildid" AS __build_id,
   country_code,
   quarter,
   pub.* EXCEPT(country_code, quarter),
