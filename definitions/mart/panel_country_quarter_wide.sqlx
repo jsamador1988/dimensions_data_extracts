@@ -4,8 +4,6 @@ config {
   name: "panel_country_quarter_wide",
   description: "Balanced OECD-only quarterly panel (US/CA/AU/CH/GB + OECD EU members).",
   tags: ["mart", "phase1"],
-
-  
   partitionBy: "quarter",
   clusterBy: ["country_code"]
 }
