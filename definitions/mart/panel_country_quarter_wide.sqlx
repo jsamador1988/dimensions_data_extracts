@@ -11,22 +11,22 @@ config {
 }
 
 WITH pub AS (
-  -- Drop pub-side __build_id to avoid duplicate column name in the final SELECT
+  -- pub_country_quarter_wide DOES have __build_id; drop it to avoid duplicates in the final panel.
   SELECT
     * EXCEPT(__build_id)
   FROM ${ref("rd_mart", "pub_country_quarter_wide")}
 ),
 
 pat AS (
+  -- pat_country_quarter_wide does NOT have __build_id (in your current pipeline), so do not EXCEPT it.
   SELECT
     *
   FROM ${ref("rd_mart", "pat_country_quarter_wide")}
 )
 
 SELECT
-  'panel_country_quarter_wide_v6_drop_pub_buildid' AS __build_id,
+  'panel_country_quarter_wide_v7_fix_buildid' AS __build_id,
 
-  -- USING() already yields one country_code and one quarter column
   country_code,
   quarter,
 
