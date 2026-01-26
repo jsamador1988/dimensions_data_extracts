@@ -1,8 +1,9 @@
 config {
   type: "table",
   schema: "rd_stage",
-  tags: ["stage"],
-  description: "Per-publication author×country stats for author-weighted country fractional counting. Aggregates affiliation addresses to author-country level and counts public/private affiliation mass for produced shares."
+  name: "pub_author_country_stats",
+  tags: ["stage", "phase4"],
+  description: "Per-publication author×country stats for author-weighted country fractional counting. Government ownership uses Surico-consistent gov definition (Government type OR whitelist)."
 }
 
 WITH core AS (
@@ -17,9 +18,16 @@ WITH core AS (
 org_dim AS (
   SELECT
     o.id AS org_id,
-    o.legal_country_code,
+    CASE WHEN o.legal_country_code = 'UK' THEN 'GB' ELSE o.legal_country_code END AS legal_country_code,
     o.types
   FROM `dimensions-ai.data_analytics.organizations` o
+),
+
+gov_dim AS (
+  SELECT
+    org_id,
+    is_gov_surico
+  FROM ${ref("rd_ref", "org_gov_surico")}
 ),
 
 author_aff AS (
@@ -57,22 +65,18 @@ author_aff_norm AS (
       ELSE od.legal_country_code
     END AS country_code,
 
-    -- ownership type flags (TEMP definition; Surico-consistent government comes later)
+    -- private = Company
     CASE WHEN 'Company' IN UNNEST(IFNULL(od.types, [])) THEN 1 ELSE 0 END AS is_private,
 
-    CASE
-      WHEN (
-        'Government' IN UNNEST(IFNULL(od.types, []))
-        OR 'Education' IN UNNEST(IFNULL(od.types, []))
-        OR 'Healthcare' IN UNNEST(IFNULL(od.types, []))
-      ) THEN 1 ELSE 0
-    END AS is_public
+    -- government = Surico-consistent definition (Government OR whitelist)
+    CASE WHEN IFNULL(gd.is_gov_surico, FALSE) THEN 1 ELSE 0 END AS is_gov
 
   FROM author_aff aa
   LEFT JOIN org_dim od
     ON od.org_id = aa.org_id
+  LEFT JOIN gov_dim gd
+    ON gd.org_id = aa.org_id
   WHERE
-    -- keep only plausible ISO2 country codes after fallback
     (
       (aa.aff_country_code IS NOT NULL AND REGEXP_CONTAINS(aa.aff_country_code, r'^[A-Z]{2}$'))
       OR (aa.aff_country_code IS NULL AND od.legal_country_code IS NOT NULL AND REGEXP_CONTAINS(od.legal_country_code, r'^[A-Z]{2}$'))
@@ -87,7 +91,7 @@ dedup AS (
     author_uid,
     country_code,
     org_id,
-    is_public,
+    is_gov,
     is_private
   FROM author_aff_norm
   WHERE country_code IS NOT NULL
@@ -101,7 +105,7 @@ author_country AS (
     country_code,
 
     COUNT(*) AS n_aff_units,
-    SUM(is_public) AS n_public_units,
+    SUM(is_gov) AS n_gov_units,
     SUM(is_private) AS n_private_units
   FROM dedup
   GROUP BY pub_id, quarter, author_uid, country_code
@@ -113,6 +117,6 @@ SELECT
   author_uid,
   country_code,
   n_aff_units,
-  n_public_units,
+  n_gov_units,
   n_private_units
 FROM author_country

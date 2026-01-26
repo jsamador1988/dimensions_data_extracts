@@ -2,8 +2,8 @@ config {
   type: "table",
   name: "pub_country_weights",
   schema: "rd_stage",
-  tags: ["stage"],
-  description: "Publication×country fractional weights using author-weighted counting (paper-style). Each author contributes equally; authors split equally across their distinct affiliation countries. Public/private produced shares are computed consistently with author weights."
+  tags: ["stage", "phase4"],
+  description: "Publication×country fractional weights using author-weighted counting. Government-produced uses Surico gov definition. Output field names kept for pipeline compatibility."
 }
 
 WITH ac AS (
@@ -13,7 +13,7 @@ WITH ac AS (
     author_uid,
     country_code,
     n_aff_units,
-    n_public_units,
+    n_gov_units,
     n_private_units
   FROM ${ref("pub_author_country_stats")}
 ),
@@ -38,7 +38,7 @@ author_country_shares AS (
     SAFE_DIVIDE(1.0, acc.n_countries_for_author) AS author_country_share,
 
     -- within (author,country), allocate produced type shares proportional to affiliation units
-    SAFE_DIVIDE(ac.n_public_units, NULLIF(ac.n_aff_units, 0))  AS public_within_author_country,
+    SAFE_DIVIDE(ac.n_gov_units, NULLIF(ac.n_aff_units, 0))     AS gov_within_author_country,
     SAFE_DIVIDE(ac.n_private_units, NULLIF(ac.n_aff_units, 0)) AS private_within_author_country
 
   FROM ac
@@ -48,7 +48,6 @@ author_country_shares AS (
 ),
 
 pub_author_totals AS (
-  -- number of distinct authors with at least one country assignment
   SELECT
     pub_id,
     quarter,
@@ -65,7 +64,7 @@ country_sums AS (
 
     SUM(author_country_share) AS sum_author_country_share,
 
-    SUM(author_country_share * public_within_author_country)  AS sum_author_public_share,
+    SUM(author_country_share * gov_within_author_country)     AS sum_author_gov_share,
     SUM(author_country_share * private_within_author_country) AS sum_author_private_share
 
   FROM author_country_shares
@@ -78,7 +77,11 @@ SELECT
   cs.country_code,
 
   SAFE_DIVIDE(cs.sum_author_country_share, pa.n_authors_with_country) AS w_aff,
-  SAFE_DIVIDE(cs.sum_author_public_share,  pa.n_authors_with_country) AS w_public_prod,
+
+  -- KEEP COLUMN NAME for compatibility: this now means "government produced" (Surico)
+  SAFE_DIVIDE(cs.sum_author_gov_share, pa.n_authors_with_country) AS w_public_prod,
+
+  -- still "Company produced"
   SAFE_DIVIDE(cs.sum_author_private_share, pa.n_authors_with_country) AS w_private_prod
 
 FROM country_sums cs
