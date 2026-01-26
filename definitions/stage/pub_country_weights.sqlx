@@ -3,73 +3,85 @@ config {
   name: "pub_country_weights",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Publication×country fractional affiliation weights."
+  description: "Publication×country fractional weights using author-weighted counting (paper-style). Each author contributes equally; authors split equally across their distinct affiliation countries. Public/private produced shares are computed consistently with author weights."
 }
 
-WITH aff AS (
+WITH ac AS (
   SELECT
-    a.pub_id,
-    a.quarter,
-    a.country_code,
-    a.org_id
-  FROM ${ref("pub_affiliations_flat")} a
+    pub_id,
+    quarter,
+    author_uid,
+    country_code,
+    n_aff_units,
+    n_public_units,
+    n_private_units
+  FROM ${ref("pub_author_country_stats")}
 ),
 
-org_types AS (
+author_country_counts AS (
   SELECT
-    o.id AS org_id,
-    o.types
-  FROM `dimensions-ai.data_analytics.organizations` o
+    pub_id,
+    quarter,
+    author_uid,
+    COUNT(DISTINCT country_code) AS n_countries_for_author
+  FROM ac
+  GROUP BY pub_id, quarter, author_uid
 ),
 
-aff_typed AS (
+author_country_shares AS (
   SELECT
-    a.pub_id,
-    a.quarter,
-    a.country_code,
+    ac.pub_id,
+    ac.quarter,
+    ac.author_uid,
+    ac.country_code,
 
-    CASE WHEN 'Company' IN UNNEST(IFNULL(t.types, [])) THEN 1 ELSE 0 END AS is_private,
+    SAFE_DIVIDE(1.0, acc.n_countries_for_author) AS author_country_share,
 
-    CASE
-      WHEN ('Government' IN UNNEST(IFNULL(t.types, []))
-         OR 'Education' IN UNNEST(IFNULL(t.types, []))
-         OR 'Healthcare' IN UNNEST(IFNULL(t.types, [])))
-      THEN 1 ELSE 0
-    END AS is_public
+    -- within (author,country), allocate produced type shares proportional to affiliation units
+    SAFE_DIVIDE(ac.n_public_units, NULLIF(ac.n_aff_units, 0))  AS public_within_author_country,
+    SAFE_DIVIDE(ac.n_private_units, NULLIF(ac.n_aff_units, 0)) AS private_within_author_country
 
-  FROM aff a
-  LEFT JOIN org_types t
-    ON t.org_id = a.org_id
+  FROM ac
+  JOIN author_country_counts acc
+    USING (pub_id, quarter, author_uid)
+  WHERE acc.n_countries_for_author > 0
 ),
 
-counts AS (
+pub_author_totals AS (
+  -- number of distinct authors with at least one country assignment
+  SELECT
+    pub_id,
+    quarter,
+    COUNT(DISTINCT author_uid) AS n_authors_with_country
+  FROM author_country_shares
+  GROUP BY pub_id, quarter
+),
+
+country_sums AS (
   SELECT
     pub_id,
     quarter,
     country_code,
-    COUNT(*) AS n_aff_country,
-    SUM(is_public)  AS n_aff_public_country,
-    SUM(is_private) AS n_aff_private_country
-  FROM aff_typed
-  GROUP BY pub_id, quarter, country_code
-),
 
-totals AS (
-  SELECT
-    pub_id,
-    quarter,
-    SUM(n_aff_country) AS n_aff_total
-  FROM counts
-  GROUP BY pub_id, quarter
+    SUM(author_country_share) AS sum_author_country_share,
+
+    SUM(author_country_share * public_within_author_country)  AS sum_author_public_share,
+    SUM(author_country_share * private_within_author_country) AS sum_author_private_share
+
+  FROM author_country_shares
+  GROUP BY pub_id, quarter, country_code
 )
 
 SELECT
-  c.pub_id,
-  c.quarter,
-  c.country_code,
-  SAFE_DIVIDE(c.n_aff_country, t.n_aff_total) AS w_aff,
-  SAFE_DIVIDE(c.n_aff_public_country, t.n_aff_total) AS w_public_prod,
-  SAFE_DIVIDE(c.n_aff_private_country, t.n_aff_total) AS w_private_prod
-FROM counts c
-JOIN totals t USING (pub_id, quarter)
-WHERE t.n_aff_total > 0
+  cs.pub_id,
+  cs.quarter,
+  cs.country_code,
+
+  SAFE_DIVIDE(cs.sum_author_country_share, pa.n_authors_with_country) AS w_aff,
+  SAFE_DIVIDE(cs.sum_author_public_share,  pa.n_authors_with_country) AS w_public_prod,
+  SAFE_DIVIDE(cs.sum_author_private_share, pa.n_authors_with_country) AS w_private_prod
+
+FROM country_sums cs
+JOIN pub_author_totals pa
+  USING (pub_id, quarter)
+WHERE pa.n_authors_with_country > 0
