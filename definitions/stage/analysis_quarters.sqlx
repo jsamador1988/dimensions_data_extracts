@@ -6,7 +6,6 @@ config {
   tags: ["analysis", "phase1"]
 }
 
--- EDIT THIS IF YOU WANT A DIFFERENT PANEL START:
 WITH params AS (
   SELECT
     DATE '1970-01-01' AS start_date,

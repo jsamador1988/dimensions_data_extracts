@@ -3,7 +3,11 @@ config {
   schema: "rd_mart",
   name: "panel_country_quarter_wide",
   description: "Balanced OECD-only quarterly panel (US/CA/AU/CH/GB + OECD EU members).",
-  tags: ["mart", "phase1"]
+  tags: ["mart", "phase1"],
+
+  -- IMPORTANT: must match existing table spec to allow replacement
+  partitionBy: "quarter",
+  clusterBy: ["country_code"]
 }
 
 WITH grid AS (
@@ -17,7 +21,7 @@ pub AS (
 ),
 
 pat AS (
-  -- If your patent wide mart table name differs, STOP and tell me the actual name
+  -- If this table name differs in your environment, we must update it.
   SELECT *
   FROM ${ref("rd_mart","pat_country_quarter_wide")}
 )
@@ -52,7 +56,6 @@ SELECT
   COALESCE(pub.pub_total_classified_ctq, 0) AS pub_total_classified_ctq,
   COALESCE(pub.pub_total_unclassified_ctq, 0) AS pub_total_unclassified_ctq,
 
-  -- recompute share robustly (avoid 0/0)
   SAFE_DIVIDE(COALESCE(pub.pub_total_unclassified_ctq,0), NULLIF(COALESCE(pub.pub_total_ctq,0),0)) AS pub_unclassified_share_ctq,
 
   COALESCE(pub.pub_top5_ctq, 0) AS pub_top5_ctq,
