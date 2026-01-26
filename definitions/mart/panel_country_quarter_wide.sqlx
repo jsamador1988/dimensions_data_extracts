@@ -5,7 +5,7 @@ config {
   description: "Balanced OECD-only quarterly panel (US/CA/AU/CH/GB + OECD EU members).",
   tags: ["mart", "phase1"],
 
-  -- IMPORTANT: must match existing table spec to allow replacement
+  
   partitionBy: "quarter",
   clusterBy: ["country_code"]
 }
