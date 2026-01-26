@@ -25,7 +25,8 @@ pat AS (
 )
 
 SELECT
-  'panel_country_quarter_wide_v10_phase2_author_weights' AS __build_id,
+  'panel_country_quarter_wide_v12_phase5_pat_surico' AS __build_id,
+
 
   g.country_code,
   g.quarter,

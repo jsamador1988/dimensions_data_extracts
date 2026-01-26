@@ -1,0 +1,183 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  tags: ["int"],
+  bigquery: { partitionBy: "quarter", clusterBy: ["country_code"] },
+  description: "Surico-style patent ownership/funding decomposition + grant totals + matched-grant series (quarterly)."
+}
+
+WITH fam AS (
+  SELECT
+    country_code,
+    family_id,
+    family_app_dt,
+    family_app_qtr AS quarter,
+    w_inv
+  FROM ${ref("patent_family_country_features")}
+  WHERE w_inv > 0
+),
+
+assg AS (
+  SELECT
+    family_id,
+    country_code,
+    dom_assg_flag,
+    dom_gov_assg_flag
+  FROM ${ref("patent_family_assignee_flags_surico")}
+),
+
+rid AS (
+  SELECT DISTINCT country_code, family_id, quarter, grant_id
+  FROM ${ref("pat_tier2_rid_matches")}
+),
+
+inst AS (
+  SELECT DISTINCT country_code, family_id, quarter, grant_id
+  FROM ${ref("pat_tier2_inst_matches")}
+),
+
+tier2_flags AS (
+  SELECT
+    f.country_code,
+    f.family_id,
+    f.quarter,
+    MAX(CASE WHEN r.family_id IS NOT NULL THEN 1 ELSE 0 END) AS tier2_rid_flag,
+    MAX(CASE WHEN i.family_id IS NOT NULL THEN 1 ELSE 0 END) AS tier2_inst_flag,
+    MAX(CASE WHEN (r.family_id IS NOT NULL OR i.family_id IS NOT NULL) THEN 1 ELSE 0 END) AS tier2_any_flag
+  FROM fam f
+  LEFT JOIN rid r
+    ON r.country_code=f.country_code AND r.family_id=f.family_id AND r.quarter=f.quarter
+  LEFT JOIN inst i
+    ON i.country_code=f.country_code AND i.family_id=f.family_id AND i.quarter=f.quarter
+  GROUP BY f.country_code, f.family_id, f.quarter
+),
+
+fam_enriched AS (
+  SELECT
+    f.country_code,
+    f.family_id,
+    f.quarter,
+    f.w_inv,
+    COALESCE(a.dom_assg_flag, 0) AS dom_assg_flag,
+    COALESCE(a.dom_gov_assg_flag, 0) AS dom_gov_assg_flag,
+    COALESCE(t.tier2_rid_flag, 0) AS tier2_rid_flag,
+    COALESCE(t.tier2_inst_flag, 0) AS tier2_inst_flag,
+    COALESCE(t.tier2_any_flag, 0) AS tier2_any_flag
+  FROM fam f
+  LEFT JOIN assg a
+    ON a.family_id=f.family_id AND a.country_code=f.country_code
+  LEFT JOIN tier2_flags t
+    ON t.country_code=f.country_code AND t.family_id=f.family_id AND t.quarter=f.quarter
+),
+
+-- Quarterly decomposition (inventor-weighted family mass)
+decomp AS (
+  SELECT
+    country_code,
+    quarter,
+    SUM(w_inv) AS pat_total_domestic_inventor_ctq,
+    SUM(w_inv * dom_gov_assg_flag) AS pat_public_owned_ctq,
+    SUM(w_inv * tier2_rid_flag) AS pat_matched_by_inventor_ctq,
+    SUM(w_inv * tier2_inst_flag) AS pat_matched_by_institution_ctq,
+    SUM(w_inv * tier2_any_flag) AS pat_matched_by_either_ctq,
+    SUM(w_inv * dom_assg_flag * (1 - dom_gov_assg_flag) * tier2_any_flag) AS pat_funded_private_owned_ctq
+  FROM fam_enriched
+  GROUP BY country_code, quarter
+),
+
+decomp2 AS (
+  SELECT
+    country_code,
+    quarter,
+    pat_total_domestic_inventor_ctq,
+    pat_public_owned_ctq,
+    pat_funded_private_owned_ctq,
+    (pat_total_domestic_inventor_ctq - pat_public_owned_ctq - pat_funded_private_owned_ctq) AS pat_private_private_ctq,
+    pat_matched_by_inventor_ctq,
+    pat_matched_by_institution_ctq,
+    pat_matched_by_either_ctq
+  FROM decomp
+),
+
+-- Matched grants (counted in PATENT quarter)
+matched_grants_patq AS (
+  SELECT
+    country_code,
+    quarter,
+    COUNT(DISTINCT grant_id) AS matched_grants_ctq
+  FROM (
+    SELECT * FROM rid
+    UNION DISTINCT
+    SELECT * FROM inst
+  )
+  GROUP BY country_code, quarter
+),
+
+-- Matched grant USD (counted once, in GRANT START quarter)
+matched_amount_startq AS (
+  SELECT
+    g.country_code,
+    DATE_TRUNC(g.start_dt, QUARTER) AS quarter,
+    SUM(COALESCE(g.funding_usd, 0)) AS matched_grants_amount_usd_startqtr_ctq
+  FROM (
+    SELECT DISTINCT country_code, grant_id
+    FROM (
+      SELECT country_code, grant_id FROM rid
+      UNION DISTINCT
+      SELECT country_code, grant_id FROM inst
+    )
+  ) m
+  JOIN ${ref("grants_gov_core")} g
+    ON g.country_code = m.country_code
+   AND g.grant_id = m.grant_id
+  GROUP BY g.country_code, quarter
+),
+
+-- Total grants (ANY funder type) by start quarter
+grants_any_q AS (
+  SELECT
+    country_code,
+    DATE_TRUNC(start_dt, QUARTER) AS quarter,
+    COUNT(DISTINCT grant_id) AS total_grants_any_funders_ctq
+  FROM ${ref("grants_any_core")}
+  GROUP BY country_code, quarter
+),
+
+-- Total grants (GOV Surico) by start quarter
+grants_gov_q AS (
+  SELECT
+    country_code,
+    DATE_TRUNC(start_dt, QUARTER) AS quarter,
+    COUNT(DISTINCT grant_id) AS total_grants_government_ctq
+  FROM ${ref("grants_gov_core")}
+  GROUP BY country_code, quarter
+)
+
+SELECT
+  d.country_code,
+  d.quarter,
+
+  d.pat_total_domestic_inventor_ctq,
+  d.pat_public_owned_ctq,
+  d.pat_funded_private_owned_ctq,
+  d.pat_private_private_ctq,
+
+  d.pat_matched_by_inventor_ctq,
+  d.pat_matched_by_institution_ctq,
+  d.pat_matched_by_either_ctq,
+
+  COALESCE(mg.matched_grants_ctq, 0) AS matched_grants_ctq,
+  COALESCE(ma.matched_grants_amount_usd_startqtr_ctq, 0) AS matched_grants_amount_usd_startqtr_ctq,
+
+  COALESCE(ga.total_grants_any_funders_ctq, 0) AS total_grants_any_funders_ctq,
+  COALESCE(gg.total_grants_government_ctq, 0) AS total_grants_government_ctq
+
+FROM decomp2 d
+LEFT JOIN matched_grants_patq mg
+  USING (country_code, quarter)
+LEFT JOIN matched_amount_startq ma
+  USING (country_code, quarter)
+LEFT JOIN grants_any_q ga
+  USING (country_code, quarter)
+LEFT JOIN grants_gov_q gg
+  USING (country_code, quarter)
