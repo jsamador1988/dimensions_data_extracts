@@ -11,8 +11,9 @@ config {
 }
 
 WITH pub AS (
+  -- Drop pub-side __build_id to avoid duplicate column name in the final SELECT
   SELECT
-    *
+    * EXCEPT(__build_id)
   FROM ${ref("rd_mart", "pub_country_quarter_wide")}
 ),
 
@@ -23,10 +24,11 @@ pat AS (
 )
 
 SELECT
-  'panel_country_quarter_wide_v4' AS __build_id,
+  'panel_country_quarter_wide_v6_drop_pub_buildid' AS __build_id,
 
-  COALESCE(pub.country_code, pat.country_code) AS country_code,
-  COALESCE(pub.quarter, pat.quarter) AS quarter,
+  -- USING() already yields one country_code and one quarter column
+  country_code,
+  quarter,
 
   pub.* EXCEPT(country_code, quarter),
   pat.* EXCEPT(country_code, quarter)
