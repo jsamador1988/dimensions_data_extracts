@@ -3,7 +3,7 @@ config {
   name: "pub_country_weights",
   schema: "rd_stage",
   tags: ["stage", "phase4"],
-  description: "Publication×country fractional weights using author-weighted counting. Government-produced uses Surico gov definition. Output field names kept for pipeline compatibility."
+  description: "Publication×country fractional weights using author-weighted counting. w_public_prod=government (Surico); w_private_prod=non-government; w_company_prod=Company subset."
 }
 
 WITH ac AS (
@@ -14,7 +14,8 @@ WITH ac AS (
     country_code,
     n_aff_units,
     n_gov_units,
-    n_private_units
+    n_nongov_units,
+    n_company_units
   FROM ${ref("pub_author_country_stats")}
 ),
 
@@ -37,9 +38,9 @@ author_country_shares AS (
 
     SAFE_DIVIDE(1.0, acc.n_countries_for_author) AS author_country_share,
 
-    -- within (author,country), allocate produced type shares proportional to affiliation units
     SAFE_DIVIDE(ac.n_gov_units, NULLIF(ac.n_aff_units, 0))     AS gov_within_author_country,
-    SAFE_DIVIDE(ac.n_private_units, NULLIF(ac.n_aff_units, 0)) AS private_within_author_country
+    SAFE_DIVIDE(ac.n_nongov_units, NULLIF(ac.n_aff_units, 0))  AS nongov_within_author_country,
+    SAFE_DIVIDE(ac.n_company_units, NULLIF(ac.n_aff_units, 0)) AS company_within_author_country
 
   FROM ac
   JOIN author_country_counts acc
@@ -65,7 +66,8 @@ country_sums AS (
     SUM(author_country_share) AS sum_author_country_share,
 
     SUM(author_country_share * gov_within_author_country)     AS sum_author_gov_share,
-    SUM(author_country_share * private_within_author_country) AS sum_author_private_share
+    SUM(author_country_share * nongov_within_author_country)  AS sum_author_nongov_share,
+    SUM(author_country_share * company_within_author_country) AS sum_author_company_share
 
   FROM author_country_shares
   GROUP BY pub_id, quarter, country_code
@@ -78,11 +80,13 @@ SELECT
 
   SAFE_DIVIDE(cs.sum_author_country_share, pa.n_authors_with_country) AS w_aff,
 
-  -- KEEP COLUMN NAME for compatibility: this now means "government produced" (Surico)
   SAFE_DIVIDE(cs.sum_author_gov_share, pa.n_authors_with_country) AS w_public_prod,
 
-  -- still "Company produced"
-  SAFE_DIVIDE(cs.sum_author_private_share, pa.n_authors_with_country) AS w_private_prod
+  -- IMPORTANT CHANGE: "private" now means NON-GOVERNMENT (Surico-consistent)
+  SAFE_DIVIDE(cs.sum_author_nongov_share, pa.n_authors_with_country) AS w_private_prod,
+
+  -- extra optional series (company subset)
+  SAFE_DIVIDE(cs.sum_author_company_share, pa.n_authors_with_country) AS w_company_prod
 
 FROM country_sums cs
 JOIN pub_author_totals pa

@@ -1,8 +1,8 @@
 config {
   type: "table",
   schema: "rd_int",
-  tags: ["int"],
-  description: "Country×quarter publication measures: total, top5 (field-weighted), breakthrough (field-weighted, eligible-only), public/private produced."
+  tags: ["int", "phase4"],
+  description: "Country×quarter publication measures: total, top5 (field-weighted), breakthrough (field-weighted, eligible-only), produced splits where public=Surico government; private=non-government; plus company subset."
 }
 
 WITH cw AS (
@@ -12,7 +12,8 @@ WITH cw AS (
     country_code,
     w_aff,
     w_public_prod,
-    w_private_prod
+    w_private_prod,
+    w_company_prod
   FROM ${ref("pub_country_weights")}
 ),
 
@@ -34,6 +35,7 @@ joined AS (
     cw.w_aff,
     cw.w_public_prod,
     cw.w_private_prod,
+    cw.w_company_prod,
     IFNULL(pf.top5_share, 0) AS top5_share,
     IFNULL(pf.break_share, 0) AS break_share,
     IFNULL(pf.break_eligible, 0) AS break_eligible
@@ -45,10 +47,10 @@ SELECT
   country_code,
   quarter,
 
-  -- total publications (fractional by affiliation-country)
+  -- total publications (author-weighted country fractional)
   SUM(w_aff) AS pub_total_ctq,
 
-  -- top5 journals (field-weighted; then affiliation-weighted)
+  -- top5 journals (field-weighted; then country-weighted)
   SUM(w_aff * top5_share) AS pub_top5_ctq,
 
   -- breakthrough (eligible-only)
@@ -57,9 +59,15 @@ SELECT
   -- diagnostics: how much pub mass is eligible for breakthrough window
   SUM(w_aff * break_eligible) AS pub_break_eligible_weight_ctq,
 
-  -- public/private produced (counts-as-mass; additive)
+  -- produced series:
+  -- public = Surico government only
   SUM(w_public_prod) AS pub_public_produced_ctq,
-  SUM(w_private_prod) AS pub_private_produced_ctq
+
+  -- private = NON-government (includes universities, nonprofits, hospitals, companies, etc.)
+  SUM(w_private_prod) AS pub_private_produced_ctq,
+
+  -- company subset (component of non-government)
+  SUM(w_company_prod) AS pub_company_produced_ctq
 
 FROM joined
 GROUP BY country_code, quarter

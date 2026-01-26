@@ -3,7 +3,7 @@ config {
   schema: "rd_stage",
   name: "pub_author_country_stats",
   tags: ["stage", "phase4"],
-  description: "Per-publication author×country stats for author-weighted country fractional counting. Government ownership uses Surico-consistent gov definition (Government type OR whitelist)."
+  description: "Per-publication author×country stats for author-weighted country fractional counting. Ownership uses Surico gov definition; non-gov includes universities/nonprofits/companies/etc."
 }
 
 WITH core AS (
@@ -34,18 +34,9 @@ author_aff AS (
   SELECT
     c.pub_id,
     c.quarter,
-
-    -- stable author key: researcher_id if present, else pub_id + author index
     COALESCE(a.researcher_id, CONCAT(c.pub_id, ':a', CAST(author_offset AS STRING))) AS author_uid,
-
     aff.grid_id AS org_id,
-
-    -- raw country from affiliation address
-    CASE
-      WHEN aff.country_code = 'UK' THEN 'GB'
-      ELSE aff.country_code
-    END AS aff_country_code
-
+    CASE WHEN aff.country_code = 'UK' THEN 'GB' ELSE aff.country_code END AS aff_country_code
   FROM core c
   CROSS JOIN UNNEST(IFNULL(c.authors, [])) AS a WITH OFFSET AS author_offset
   LEFT JOIN UNNEST(IFNULL(a.affiliations_address, [])) AS aff
@@ -58,18 +49,16 @@ author_aff_norm AS (
     aa.author_uid,
     aa.org_id,
 
-    -- fallback to org legal country if affiliation country missing
     CASE
       WHEN aa.aff_country_code IS NOT NULL THEN aa.aff_country_code
-      WHEN od.legal_country_code = 'UK' THEN 'GB'
       ELSE od.legal_country_code
     END AS country_code,
 
-    -- private = Company
-    CASE WHEN 'Company' IN UNNEST(IFNULL(od.types, [])) THEN 1 ELSE 0 END AS is_private,
+    -- Surico government flag
+    IFNULL(gd.is_gov_surico, FALSE) AS is_gov,
 
-    -- government = Surico-consistent definition (Government OR whitelist)
-    CASE WHEN IFNULL(gd.is_gov_surico, FALSE) THEN 1 ELSE 0 END AS is_gov
+    -- Company flag (subcomponent of non-gov)
+    ('Company' IN UNNEST(IFNULL(od.types, []))) AS is_company
 
   FROM author_aff aa
   LEFT JOIN org_dim od
@@ -84,7 +73,6 @@ author_aff_norm AS (
 ),
 
 dedup AS (
-  -- Deduplicate (author, country, org) to avoid double-counting repeated addresses
   SELECT DISTINCT
     pub_id,
     quarter,
@@ -92,7 +80,7 @@ dedup AS (
     country_code,
     org_id,
     is_gov,
-    is_private
+    is_company
   FROM author_aff_norm
   WHERE country_code IS NOT NULL
 ),
@@ -105,8 +93,10 @@ author_country AS (
     country_code,
 
     COUNT(*) AS n_aff_units,
-    SUM(is_gov) AS n_gov_units,
-    SUM(is_private) AS n_private_units
+    SUM(CASE WHEN is_gov THEN 1 ELSE 0 END) AS n_gov_units,
+    SUM(CASE WHEN NOT is_gov THEN 1 ELSE 0 END) AS n_nongov_units,
+    SUM(CASE WHEN is_company THEN 1 ELSE 0 END) AS n_company_units
+
   FROM dedup
   GROUP BY pub_id, quarter, author_uid, country_code
 )
@@ -118,5 +108,6 @@ SELECT
   country_code,
   n_aff_units,
   n_gov_units,
-  n_private_units
+  n_nongov_units,
+  n_company_units
 FROM author_country
