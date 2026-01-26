@@ -3,7 +3,7 @@ config {
   schema: "rd_mart",
   tags: ["mart"],
   bigquery: { partitionBy: "quarter", clusterBy: ["country_code"] },
-  description: "WIDE patents quarterly mart with Surico-style ownership/funding decomposition + matched-grant + grant totals."
+  description: "WIDE patents quarterly mart with Surico-style ownership/funding decomposition + matched-grant + grant totals. (Tier1/Tier3 placeholders removed.)"
 }
 
 WITH core AS (
@@ -18,34 +18,30 @@ SELECT
   core.country_code,
   core.quarter,
 
-  -- keep existing core series
+  -- baseline totals
   core.pat_inv_total_ctq,
   core.pat_inv_assg_total_ctq,
   core.pat_inv_assg_file_total_ctq,
 
-  -- IMPORTANT: override gov-owned with Surico definition
+  -- Surico government-owned (domestic gov assignee)
   surico.pat_public_owned_ctq AS pat_public_owned_ctq,
 
-  -- Surico decomposition additions
+  -- Surico funded-private-owned + residual
   surico.pat_funded_private_owned_ctq,
   surico.pat_private_private_ctq,
 
-  -- keep Tier2-style “matched” measures but now consistent with Surico grants_gov_core
+  -- Tier2 matching flags (Surico gov grants)
   surico.pat_matched_by_inventor_ctq AS pat_pubfund_tier2_rid_ctq,
   surico.pat_matched_by_institution_ctq AS pat_pubfund_tier2_inst_ctq,
   surico.pat_matched_by_either_ctq AS pat_pubfund_tier2_any_ctq,
 
-  -- matched grants series
+  -- matched grants + amounts
   surico.matched_grants_ctq AS matched_grants_tier2_ctq,
   surico.matched_grants_amount_usd_startqtr_ctq AS matched_grants_amount_usd_tier2_startqtr_ctq,
 
-  -- grant totals
+  -- grant totals (start quarter)
   surico.total_grants_any_funders_ctq,
-  surico.total_grants_government_ctq,
-
-  -- legacy placeholders (we’ll replace/remove in Phase 6)
-  0.0 AS pat_pubfund_tier1_ctq,
-  0.0 AS pat_pubfund_tier3_pubscience_ctq
+  surico.total_grants_government_ctq
 
 FROM core
 LEFT JOIN surico
