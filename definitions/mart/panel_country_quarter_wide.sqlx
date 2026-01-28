@@ -2,8 +2,8 @@ config {
   type: "table",
   schema: "rd_mart",
   name: "panel_country_quarter_wide",
-  tags: ["release", "oecd", "balanced", "surico"],
-  description: "Balanced OECD quarterly panel (1970Q1–2026Q1). Option B: publication series set to NULL beyond last observed pub quarter (avoids artificial zeros in tail). Patents sourced from Surico Phase-5 snapshot to retain funded-private-owned and private-private splits.",
+  tags: ["release", "oecd", "balanced", "surico", "optionB"],
+  description: "Balanced OECD quarterly panel (1970Q1–2026Q1). Option B: set all publication series to NULL after last observed pub quarter (prevents artificial zeros in tail). Patents unchanged from v13 Surico-consistent definitions.",
   bigquery: {
     partitionBy: "quarter",
     clusterBy: ["country_code"]
@@ -11,119 +11,99 @@ config {
 }
 
 -- ============================================================
--- v14 PATCH: Option B tail handling for publications
---   - Keep balanced panel rows
---   - For quarters after last observed pub activity:
---       set ALL pub_* series to NULL (not zero)
---   - Patents sourced from phase-5 snapshot to include:
---       pat_funded_private_owned_ctq, pat_private_private_ctq
+-- OPTION B (v14): Tail-censor publications as NULL (not zero)
+--   - Keep balanced panel grid intact
+--   - For quarters after last observed pub_total_ctq>0 anywhere:
+--       set ALL pub_* series to NULL
+--   - Clamp tiny negative pub_unknown_produced_ctq to 0 and
+--     offset private by same epsilon to preserve identities.
+--   - Patents unchanged (use only columns that exist in v13).
 -- ============================================================
 
 WITH
-base_v13 AS (
+base AS (
   SELECT *
   FROM `dimensionsdataextracts.rd_snap.panel_country_quarter_wide_v13_phase6_no_placeholders`
 ),
-pat_v12 AS (
-  SELECT
-    country_code,
-    quarter,
-
-    -- Patent core + bridge totals
-    pat_inv_total_ctq,
-    pat_inv_assg_total_ctq,
-    pat_inv_assg_file_total_ctq,
-
-    -- Surico splits (the ones missing from your sanity pack)
-    pat_public_owned_ctq,
-    pat_funded_private_owned_ctq,
-    pat_private_private_ctq,
-
-    -- Funding/matching diagnostics (tier2)
-    pat_pubfund_tier2_any_ctq,
-    pat_pubfund_tier2_rid_ctq,
-    pat_pubfund_tier2_inst_ctq,
-    matched_grants_tier2_ctq,
-    matched_grants_amount_usd_tier2_startqtr_ctq,
-    total_grants_any_funders_ctq,
-    total_grants_government_ctq
-  FROM `dimensionsdataextracts.rd_snap.panel_country_quarter_wide_v12_phase5_pat_surico`
-),
 pub_last AS (
-  -- last quarter with ANY publication mass anywhere in the panel
   SELECT MAX(quarter) AS last_pub_quarter
-  FROM base_v13
+  FROM base
   WHERE pub_total_ctq > 0
-),
-final AS (
-  SELECT
-    -- >>> IMPORTANT: you said you already picked a v14 name you like.
-    -- If you want a different literal build id, change it ONLY here:
+)
+
+SELECT
+  b.* REPLACE (
+
+    -- >>> Set your v14 build id here (single place)
     'panel_country_quarter_wide_v14_release_surico_oecd_balanced_optionB' AS __build_id,
 
-    b.country_code,
-    b.quarter,
-
     -- =========================
-    -- PATENTS (from phase-5)
-    -- =========================
-    COALESCE(p.pat_inv_total_ctq, 0.0) AS pat_inv_total_ctq,
-    COALESCE(p.pat_inv_assg_total_ctq, 0.0) AS pat_inv_assg_total_ctq,
-    COALESCE(p.pat_inv_assg_file_total_ctq, 0.0) AS pat_inv_assg_file_total_ctq,
-
-    COALESCE(p.pat_public_owned_ctq, 0.0) AS pat_public_owned_ctq,
-    COALESCE(p.pat_funded_private_owned_ctq, 0.0) AS pat_funded_private_owned_ctq,
-    COALESCE(p.pat_private_private_ctq, 0.0) AS pat_private_private_ctq,
-
-    COALESCE(p.pat_pubfund_tier2_any_ctq, 0.0) AS pat_pubfund_tier2_any_ctq,
-    COALESCE(p.pat_pubfund_tier2_inst_ctq, 0.0) AS pat_pubfund_tier2_inst_ctq,
-    COALESCE(p.pat_pubfund_tier2_rid_ctq, 0.0) AS pat_pubfund_tier2_rid_ctq,
-
-    COALESCE(p.matched_grants_tier2_ctq, 0) AS matched_grants_tier2_ctq,
-    COALESCE(p.matched_grants_amount_usd_tier2_startqtr_ctq, 0.0) AS matched_grants_amount_usd_tier2_startqtr_ctq,
-    COALESCE(p.total_grants_any_funders_ctq, 0) AS total_grants_any_funders_ctq,
-    COALESCE(p.total_grants_government_ctq, 0) AS total_grants_government_ctq,
-
-    -- =========================
-    -- PUBLICATIONS (Option B tail NULL)
+    -- PUBLICATIONS: Option B tail handling
     -- =========================
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_total_ctq ELSE NULL END AS pub_total_ctq,
 
-    -- recomputed total: keep as NULL in tail, else keep existing
-    CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_total_recomputed_ctq ELSE NULL END AS pub_total_recomputed_ctq,
+    CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_total_ctq ELSE NULL END AS pub_total_recomputed_ctq,
 
-    -- Surico produced split: set tail to NULL
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_public_produced_ctq ELSE NULL END AS pub_public_produced_ctq,
-    CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_private_produced_ctq ELSE NULL END AS pub_private_produced_ctq,
 
-    -- Option B: force unknown to exactly 0 inside support (removes tiny negative float noise),
-    -- and NULL after last_pub_quarter
-    CASE WHEN b.quarter <= pl.last_pub_quarter THEN 0.0 ELSE NULL END AS pub_unknown_produced_ctq,
-
-    -- Classified/unclassified diagnostics re-derived to be internally consistent and tail-safe
+    -- Clamp tiny negative unknown to 0, and shift epsilon into private so:
+    -- pub_total = pub_public + pub_private + pub_unknown holds exactly.
     CASE
-      WHEN b.quarter <= pl.last_pub_quarter THEN (b.pub_public_produced_ctq + b.pub_private_produced_ctq)
+      WHEN b.quarter <= pl.last_pub_quarter
+      THEN (b.pub_private_produced_ctq + (b.pub_unknown_produced_ctq - GREATEST(0.0, b.pub_unknown_produced_ctq)))
+      ELSE NULL
+    END AS pub_private_produced_ctq,
+
+    CASE
+      WHEN b.quarter <= pl.last_pub_quarter
+      THEN GREATEST(0.0, b.pub_unknown_produced_ctq)
+      ELSE NULL
+    END AS pub_unknown_produced_ctq,
+
+    -- Re-derive diagnostics so they remain internally consistent under Option B
+    CASE
+      WHEN b.quarter <= pl.last_pub_quarter
+      THEN (
+        b.pub_public_produced_ctq
+        + (b.pub_private_produced_ctq + (b.pub_unknown_produced_ctq - GREATEST(0.0, b.pub_unknown_produced_ctq)))
+      )
       ELSE NULL
     END AS pub_total_classified_ctq,
+
     CASE
-      WHEN b.quarter <= pl.last_pub_quarter THEN (b.pub_total_ctq - (b.pub_public_produced_ctq + b.pub_private_produced_ctq))
+      WHEN b.quarter <= pl.last_pub_quarter
+      THEN (
+        b.pub_total_ctq
+        - (
+          b.pub_public_produced_ctq
+          + (b.pub_private_produced_ctq + (b.pub_unknown_produced_ctq - GREATEST(0.0, b.pub_unknown_produced_ctq)))
+        )
+      )
       ELSE NULL
     END AS pub_total_unclassified_ctq,
+
     CASE
-      WHEN b.quarter <= pl.last_pub_quarter THEN SAFE_DIVIDE(
-        (b.pub_total_ctq - (b.pub_public_produced_ctq + b.pub_private_produced_ctq)),
+      WHEN b.quarter <= pl.last_pub_quarter
+      THEN SAFE_DIVIDE(
+        (
+          b.pub_total_ctq
+          - (
+            b.pub_public_produced_ctq
+            + (b.pub_private_produced_ctq + (b.pub_unknown_produced_ctq - GREATEST(0.0, b.pub_unknown_produced_ctq)))
+          )
+        ),
         b.pub_total_ctq
       )
       ELSE NULL
     END AS pub_unclassified_share_ctq,
 
-    -- top5 + breakthrough + eligibility: set tail to NULL
+    -- Quality series: NULL in tail
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_top5_ctq ELSE NULL END AS pub_top5_ctq,
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_break_ctq ELSE NULL END AS pub_break_ctq,
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_break_eligible_weight_ctq ELSE NULL END AS pub_break_eligible_weight_ctq,
 
     -- =========================
-    -- DISCIPLINES (DISC1..DISC6) + top5
+    -- DISCIPLINES (DISC1..DISC6) + top5: NULL in tail
     -- =========================
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_disc_DISC1_ctq ELSE NULL END AS pub_disc_DISC1_ctq,
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_disc_DISC1_top5_ctq ELSE NULL END AS pub_disc_DISC1_top5_ctq,
@@ -139,7 +119,7 @@ final AS (
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_disc_DISC6_top5_ctq ELSE NULL END AS pub_disc_DISC6_top5_ctq,
 
     -- =========================
-    -- FIELDS (Field22) + top5
+    -- FIELDS (Field22) + top5: NULL in tail
     -- =========================
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_field_AGRI_ctq ELSE NULL END AS pub_field_AGRI_ctq,
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_field_AGRI_top5_ctq ELSE NULL END AS pub_field_AGRI_top5_ctq,
@@ -186,13 +166,7 @@ final AS (
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_field_PSYCH_ctq ELSE NULL END AS pub_field_PSYCH_ctq,
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_field_PSYCH_top5_ctq ELSE NULL END AS pub_field_PSYCH_top5_ctq
 
-  FROM base_v13 b
-  CROSS JOIN pub_last pl
-  LEFT JOIN pat_v12 p
-    ON p.country_code = b.country_code
-   AND p.quarter = b.quarter
-)
-
-SELECT *
-FROM final
-ORDER BY country_code, quarter;
+  )
+FROM base b
+CROSS JOIN pub_last pl
+ORDER BY b.country_code, b.quarter
