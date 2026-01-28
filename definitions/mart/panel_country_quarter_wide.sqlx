@@ -35,7 +35,7 @@ SELECT
   b.* REPLACE (
 
     -- >>> Set your v14 build id here (single place)
-    'panel_country_quarter_wide_v14_release_surico_oecd_balanced_optionB' AS __build_id,
+    'panel_country_quarter_wide_v14' AS __build_id,
 
     -- =========================
     -- PUBLICATIONS: Option B tail handling
@@ -169,4 +169,3 @@ SELECT
   )
 FROM base b
 CROSS JOIN pub_last pl
-ORDER BY b.country_code, b.quarter
