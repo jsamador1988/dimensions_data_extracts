@@ -6,7 +6,8 @@ config {
   description: "Balanced OECD quarterly panel (1970Q1–2026Q1). Option B: set all publication series to NULL after last observed pub quarter (prevents artificial zeros in tail). Patents unchanged from v13 Surico-consistent definitions.",
   bigquery: {
     partitionBy: "quarter",
-    clusterBy: ["country_code"]
+    clusterBy: ["country_code"],
+    requirePartitionFilter: true
   }
 }
 
