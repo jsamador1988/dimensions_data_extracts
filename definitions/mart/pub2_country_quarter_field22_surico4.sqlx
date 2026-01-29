@@ -1,23 +1,28 @@
 config {
   type: "table",
+  name: "pub2_country_quarter_field22_surico4",
   schema: "rd_mart",
-  tags: ["pub2", "mart", "publications"],
-  description: "Country×quarter×field22 Surico-4 decomposition for publications (Option-2 ownership buckets)."
+  tags: ["mart", "phase4", "pub2"],
+  description: "Country×quarter×field22 publications: totals + Surico-4 split using Option-2 ownership and gov_funded_flag."
 }
 
-WITH field22_list AS (
-  SELECT DISTINCT field22_code, field22_name
-  FROM ${ref("for_to_field22")}
+WITH field22_dim AS (
+  SELECT
+    field22_code,
+    ANY_VALUE(field22_name) AS field22_name
+  FROM ${ref("rd_ref", "for4_to_field22")}
+  WHERE field22_code IS NOT NULL
+  GROUP BY field22_code
 ),
 
 grid AS (
   SELECT
     g.country_code,
     g.quarter,
-    f.field22_code,
-    f.field22_name
+    d.field22_code,
+    d.field22_name
   FROM ${ref("quarter_grid")} g
-  CROSS JOIN field22_list f
+  CROSS JOIN field22_dim d
 ),
 
 base AS (
@@ -26,12 +31,12 @@ base AS (
     cf.quarter,
     fw.field22_code,
 
-    (cf.w_total        * fw.w_field22) AS w_total_f22,
-    (cf.w_owned        * fw.w_field22) AS w_owned_f22,
-    (cf.w_private      * fw.w_field22) AS w_private_f22,
-    (cf.w_unclassified * fw.w_field22) AS w_unclassified_f22,
+    (cf.w_aff * fw.w_field) AS w_total_f22,
+    (cf.w_public_prod * fw.w_field) AS w_owned_f22,
+    (cf.w_private_prod * fw.w_field) AS w_private_f22,
+    (cf.w_unclassified * fw.w_field) AS w_unclassified_f22,
 
-    cf.gov_funded_flag AS gov_funded_flag
+    cf.gov_funded_flag
   FROM ${ref("pub2_country_flags")} cf
   JOIN ${ref("pub_field_weights")} fw
     ON fw.pub_id = cf.pub_id
@@ -46,7 +51,6 @@ agg AS (
 
     SUM(w_total_f22) AS total_eng,
     SUM(w_owned_f22) AS owned_eng,
-
     SUM(IF(gov_funded_flag, w_total_f22, 0)) AS funded_any_eng,
 
     SUM(IF(gov_funded_flag, w_private_f22, 0)) AS funded_private_owned_eng,
@@ -73,4 +77,4 @@ LEFT JOIN agg a
   ON a.country_code = gr.country_code
  AND a.quarter = gr.quarter
  AND a.field22_code = gr.field22_code
-ORDER BY country_code, quarter, field22_code
+ORDER BY gr.country_code, gr.quarter, gr.field22_code
