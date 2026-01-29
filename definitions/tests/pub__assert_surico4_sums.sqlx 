@@ -1,0 +1,43 @@
+config {
+  type: "view",
+  name: "pub__assert_surico4_sums",
+  schema: "rd_stage",
+  tags: ["test"],
+  description: "Check that totals equal owned + funded_private_owned + private_private (+ tiny float error)."
+}
+
+WITH x AS (
+  SELECT
+    country_code,
+    quarter,
+    total_eng,
+    owned_eng + funded_private_owned_eng + private_private_eng AS sum_split,
+    total_eng - (owned_eng + funded_private_owned_eng + private_private_eng) AS diff
+  FROM ${ref("rd_mart", "pub2_country_quarter_surico4")}
+)
+SELECT *
+FROM x
+WHERE ABS(diff) > 1e-6
+SQLX
+
+cat > definitions/tests/pub__assert_unclassified_small.sqlx <<'SQLX'
+config {
+  type: "view",
+  name: "pub__assert_unclassified_small",
+  schema: "rd_stage",
+  tags: ["test"],
+  description: "Check that unclassified share is ~0."
+}
+
+WITH x AS (
+  SELECT
+    country_code,
+    SUM(unclassified_eng) AS sum_unclassified,
+    SUM(total_eng) AS sum_total,
+    SAFE_DIVIDE(SUM(unclassified_eng), NULLIF(SUM(total_eng), 0)) AS unclassified_share
+  FROM ${ref("rd_mart", "pub2_country_quarter_surico4")}
+  GROUP BY country_code
+)
+SELECT *
+FROM x
+WHERE unclassified_share > 1e-6
