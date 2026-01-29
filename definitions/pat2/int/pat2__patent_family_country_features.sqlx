@@ -3,11 +3,9 @@ config {
   schema: "rd_int",
   name: "pat2__patent_family_country_features",
   tags: ["pat2", "int"],
-  description: "Family×inventor-country features: anchor date/quarter, inventor weight (w_inv), assignee weight (w_assg), gov assignee share, domestic filing indicator.",
+  description: "Family×inventor-country features: anchor date/quarter, inventor weight (w_inv), assignee weight (w_assg), gov assignee share, domestic filing indicator. Clustered for join performance (no requirePartitionFilter).",
   bigquery: {
-    partitionBy: "family_app_qtr",
-    clusterBy: ["country_code", "family_id"],
-    requirePartitionFilter: true
+    clusterBy: ["country_code", "family_id"]
   }
 }
 
