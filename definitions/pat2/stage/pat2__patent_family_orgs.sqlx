@@ -19,12 +19,12 @@ WITH assg AS (
 inv_org AS (
   SELECT DISTINCT
     fr.family_id,
-    ro.id AS org_id
+    CAST(ro AS STRING) AS org_id
   FROM ${ref("pat2__patent_family_rids")} fr
   JOIN `dimensions-ai.data_analytics.researchers` r
     ON r.id = fr.researcher_id
   CROSS JOIN UNNEST(IFNULL(r.research_orgs, [])) AS ro
-  WHERE ro.id IS NOT NULL
+  WHERE ro IS NOT NULL
 )
 
 SELECT DISTINCT family_id, org_id
@@ -33,3 +33,4 @@ FROM (
   UNION ALL
   SELECT * FROM inv_org
 )
+WHERE org_id IS NOT NULL
