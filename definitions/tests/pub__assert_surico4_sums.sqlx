@@ -3,7 +3,7 @@ config {
   name: "pub__assert_surico4_sums",
   schema: "rd_stage",
   tags: ["test"],
-  description: "Check that totals equal owned + funded_private_owned + private_private (+ tiny float error)."
+  description: "Check that totals equal owned + funded_private_owned + private_private (tiny float error allowed)."
 }
 
 WITH x AS (
@@ -18,9 +18,9 @@ WITH x AS (
 SELECT *
 FROM x
 WHERE ABS(diff) > 1e-6
-SQLX
+EOF
 
-cat > definitions/tests/pub__assert_unclassified_small.sqlx <<'SQLX'
+cat > definitions/tests/pub__assert_unclassified_small.sqlx <<'EOF'
 config {
   type: "view",
   name: "pub__assert_unclassified_small",
