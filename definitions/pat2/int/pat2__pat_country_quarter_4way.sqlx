@@ -3,12 +3,14 @@ config {
   schema: "rd_int",
   name: "pat2__pat_country_quarter_4way",
   tags: ["pat2", "int"],
-  description: "Country×quarter patent aggregates with Surico-style 4-way split, for three base weighting schemes (inventor-only; inventor×assignee; inventor×assignee×domestic filing)."
+  description: "Country×quarter patent aggregates with Surico-style 4-way split, for three base weighting schemes (inventor-only; inventor×assignee; inventor×assignee×domestic filing). Includes explicit quarter filter for partition elimination."
 }
 
-WITH m AS (
+WITH micro AS (
   SELECT *
   FROM ${ref("pat2__patent_family_country_4way")}
+  WHERE quarter >= DATE_TRUNC(DATE('${dataform.projectConfig.vars.sample_start}'), QUARTER)
+    AND quarter <= DATE_TRUNC(DATE('${dataform.projectConfig.vars.sample_end}'),   QUARTER)
 ),
 
 agg AS (
@@ -22,27 +24,27 @@ agg AS (
     SUM(w_inv_assg_file) AS pat_inv_assg_file_total_ctq,
 
     -- 4-way split: inventor-only
-    SUM(w_inv * pat_public_public_flag)  AS pat_inv_public_public_ctq,
-    SUM(w_inv * pat_public_private_flag) AS pat_inv_public_private_ctq,
+    SUM(w_inv * pat_public_public_flag)   AS pat_inv_public_public_ctq,
+    SUM(w_inv * pat_public_private_flag)  AS pat_inv_public_private_ctq,
     SUM(w_inv * pat_private_private_flag) AS pat_inv_private_private_ctq,
-    SUM(w_inv * pat_unclassified_flag)   AS pat_inv_unclassified_ctq,
+    SUM(w_inv * pat_unclassified_flag)    AS pat_inv_unclassified_ctq,
 
     -- 4-way split: inventor×assignee
-    SUM(w_inv_assg * pat_public_public_flag)  AS pat_inv_assg_public_public_ctq,
-    SUM(w_inv_assg * pat_public_private_flag) AS pat_inv_assg_public_private_ctq,
+    SUM(w_inv_assg * pat_public_public_flag)   AS pat_inv_assg_public_public_ctq,
+    SUM(w_inv_assg * pat_public_private_flag)  AS pat_inv_assg_public_private_ctq,
     SUM(w_inv_assg * pat_private_private_flag) AS pat_inv_assg_private_private_ctq,
-    SUM(w_inv_assg * pat_unclassified_flag)   AS pat_inv_assg_unclassified_ctq,
+    SUM(w_inv_assg * pat_unclassified_flag)    AS pat_inv_assg_unclassified_ctq,
 
     -- 4-way split: inventor×assignee×domestic filing
-    SUM(w_inv_assg_file * pat_public_public_flag)  AS pat_inv_assg_file_public_public_ctq,
-    SUM(w_inv_assg_file * pat_public_private_flag) AS pat_inv_assg_file_public_private_ctq,
+    SUM(w_inv_assg_file * pat_public_public_flag)   AS pat_inv_assg_file_public_public_ctq,
+    SUM(w_inv_assg_file * pat_public_private_flag)  AS pat_inv_assg_file_public_private_ctq,
     SUM(w_inv_assg_file * pat_private_private_flag) AS pat_inv_assg_file_private_private_ctq,
-    SUM(w_inv_assg_file * pat_unclassified_flag)   AS pat_inv_assg_file_unclassified_ctq,
+    SUM(w_inv_assg_file * pat_unclassified_flag)    AS pat_inv_assg_file_unclassified_ctq,
 
-    -- Diagnostics: share of inventor-weighted patents with any domestic assignee
+    -- Diagnostics: share of rows with any domestic assignee (simple mean of indicator)
     AVG(CAST(dom_assg_flag AS FLOAT64)) AS share_families_with_dom_assignee_simple
 
-  FROM m
+  FROM micro
   GROUP BY country_code, quarter
 ),
 
@@ -82,7 +84,7 @@ pat_q AS (
     family_id,
     country_code,
     quarter
-  FROM ${ref("pat2__patent_family_country_4way")}
+  FROM micro
 ),
 
 matched AS (

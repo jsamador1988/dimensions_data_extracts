@@ -3,13 +3,20 @@ config {
   schema: "rd_int",
   name: "pat2__patent_family_country_field22_4way",
   tags: ["pat2", "int"],
-  description: "Micro table expanded to field22: (family×country×quarter×field22) with weights and 4-way split flags.",
+  description: "Micro table expanded to field22: (family×country×quarter×field22) with weights and 4-way split flags. Includes explicit quarter filter for partition elimination.",
   bigquery: {
     partitionBy: "quarter",
     clusterBy: ["country_code", "field22_code", "family_id"],
     requirePartitionFilter: true
   }
 }
+
+WITH micro AS (
+  SELECT *
+  FROM ${ref("pat2__patent_family_country_4way")}
+  WHERE quarter >= DATE_TRUNC(DATE('${dataform.projectConfig.vars.sample_start}'), QUARTER)
+    AND quarter <= DATE_TRUNC(DATE('${dataform.projectConfig.vars.sample_end}'),   QUARTER)
+)
 
 SELECT
   m.family_id,
@@ -28,6 +35,6 @@ SELECT
   m.pat_private_private_flag,
   m.pat_unclassified_flag
 
-FROM ${ref("pat2__patent_family_country_4way")} m
+FROM micro m
 JOIN ${ref("pat2__patent_family_field22_weights")} fw
   ON fw.family_id = m.family_id

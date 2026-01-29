@@ -2,7 +2,7 @@ config {
   type: "assertion",
   name: "pat2__assert_4way_flags_exhaustive",
   tags: ["pat2", "diag"],
-  description: "Check: 4-way split flags are mutually exclusive and exhaustive (sum to 1) for each family×country×quarter row."
+  description: "Check: 4-way split flags are mutually exclusive and exhaustive (sum to 1) for each family×country×quarter row (within sample window). Includes explicit quarter filter for partition elimination."
 }
 
 SELECT
@@ -11,4 +11,6 @@ SELECT
   quarter,
   (pat_public_public_flag + pat_public_private_flag + pat_private_private_flag + pat_unclassified_flag) AS flag_sum
 FROM ${ref("pat2__patent_family_country_4way")}
-WHERE (pat_public_public_flag + pat_public_private_flag + pat_private_private_flag + pat_unclassified_flag) != 1
+WHERE quarter >= DATE_TRUNC(DATE('${dataform.projectConfig.vars.sample_start}'), QUARTER)
+  AND quarter <= DATE_TRUNC(DATE('${dataform.projectConfig.vars.sample_end}'),   QUARTER)
+  AND (pat_public_public_flag + pat_public_private_flag + pat_private_private_flag + pat_unclassified_flag) != 1
