@@ -3,7 +3,7 @@ config {
   schema: "rd_int",
   name: "pat2__patent_family_country_field22_4way",
   tags: ["pat2", "int"],
-  description: "Micro table expanded to field22: (family×country×quarter×field22) with weights and 4-way split flags. Includes explicit quarter filter for partition elimination.",
+  description: "Micro table expanded to field22: (family×country×quarter×field22) with weights and 4-way split flags. Carries Tier2 funding flags for funded-by-field outputs.",
   bigquery: {
     partitionBy: "quarter",
     clusterBy: ["country_code", "field22_code", "family_id"],
@@ -33,7 +33,12 @@ SELECT
   m.pat_public_public_flag,
   m.pat_public_private_flag,
   m.pat_private_private_flag,
-  m.pat_unclassified_flag
+  m.pat_unclassified_flag,
+
+  -- Tier2 funding flags (carry through)
+  m.tier2_rid_flag,
+  m.tier2_inst_flag,
+  m.tier2_any_flag
 
 FROM micro m
 JOIN ${ref("pat2__patent_family_field22_weights")} fw

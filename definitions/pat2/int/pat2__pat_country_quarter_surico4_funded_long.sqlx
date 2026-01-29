@@ -1,0 +1,34 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat2__pat_country_quarter_surico4_funded_long",
+  tags: ["pat2", "int"],
+  description: "Country×quarter×Surico4 funded patent series (Tier2-funded-any), derived from Field22 funded long."
+}
+
+WITH f22 AS (
+  SELECT *
+  FROM ${ref("pat2__pat_country_quarter_field22_funded_long")}
+  WHERE quarter >= DATE_TRUNC(DATE('${dataform.projectConfig.vars.sample_start}'), QUARTER)
+    AND quarter <= DATE_TRUNC(DATE('${dataform.projectConfig.vars.sample_end}'),   QUARTER)
+),
+m AS (
+  SELECT field22_code, surico4_code, surico4_name
+  FROM ${ref("pat2__field22_to_surico4")}
+)
+
+SELECT
+  f22.country_code,
+  f22.quarter,
+  COALESCE(m.surico4_code, 'OTHER') AS surico4_code,
+  COALESCE(m.surico4_name, 'Other') AS surico4_name,
+
+  SUM(f22.pat_inv_funded_any_total_ctq) AS pat_inv_funded_any_total_ctq,
+  SUM(f22.pat_inv_funded_any_public_public_ctq) AS pat_inv_funded_any_public_public_ctq,
+  SUM(f22.pat_inv_funded_any_public_private_ctq) AS pat_inv_funded_any_public_private_ctq,
+  SUM(f22.pat_inv_funded_any_unclassified_ctq) AS pat_inv_funded_any_unclassified_ctq
+
+FROM f22
+LEFT JOIN m
+  ON m.field22_code = f22.field22_code
+GROUP BY 1,2,3,4
