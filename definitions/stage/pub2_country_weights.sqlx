@@ -1,0 +1,52 @@
+config {
+  type: "table",
+    schema: "rd_stage",
+  tags: ["pub2", "stage", "publications"],
+  description: "Paper×country×quarter weights with Option-2 ownership bucket (gov if any gov affiliation; else private; else unclassified)."
+}
+
+WITH per_pub_country AS (
+  SELECT
+    pub_id,
+    DATE_TRUNC(pub_date, QUARTER) AS quarter,
+    country_code,
+
+    -- paper-country weight: sum over authors of (1/n_authors_pub) * (1/n_countries_for_author)
+    SUM((1.0 / n_authors_pub) * (1.0 / n_authors_countries)) AS w_country,
+
+    -- counts of affiliation units (within pub×author×country aggregated upstream)
+    SUM(n_units) AS n_units,
+    SUM(n_gov_units) AS n_gov_units,
+    SUM(n_private_units) AS n_private_units,
+    SUM(n_company_units) AS n_company_units
+  FROM ${ref("pub_author_country_stats")}
+  GROUP BY pub_id, quarter, country_code
+),
+
+bucketed AS (
+  SELECT
+    pub_id,
+    quarter,
+    country_code,
+
+    w_country AS w_total,
+
+    (n_gov_units > 0) AS owned_gov_flag,
+    (n_private_units > 0) AS private_flag,
+    (n_gov_units = 0 AND n_private_units = 0) AS unclassified_flag,
+
+    -- Option 2 bucket weights
+    IF(n_gov_units > 0, w_country, 0) AS w_owned,
+    IF(n_gov_units = 0 AND n_private_units > 0, w_country, 0) AS w_private,
+    IF(n_gov_units = 0 AND n_private_units = 0, w_country, 0) AS w_unclassified,
+
+    -- Optional: company slice within private bucket (kept for continuity)
+    IF(
+      n_gov_units = 0 AND n_private_units > 0,
+      w_country * SAFE_DIVIDE(n_company_units, NULLIF(n_private_units, 0)),
+      0
+    ) AS w_company
+  FROM per_pub_country
+)
+
+SELECT * FROM bucketed

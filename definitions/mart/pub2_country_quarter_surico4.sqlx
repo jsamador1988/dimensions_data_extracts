@@ -1,0 +1,41 @@
+config {
+  type: "table",
+  schema: "rd_mart",
+  tags: ["pub2", "mart", "publications"],
+  description: "Country×quarter Surico-4 decomposition for publications using Option-2 ownership buckets."
+}
+
+WITH agg AS (
+  SELECT
+    country_code,
+    quarter,
+
+    SUM(w_total) AS total_eng,
+    SUM(w_owned) AS owned_eng,
+
+    -- gov funding regardless of ownership
+    SUM(IF(gov_funded_flag, w_total, 0)) AS funded_any_eng,
+
+    -- Surico-4 components
+    SUM(IF(gov_funded_flag, w_private, 0)) AS funded_private_owned_eng,
+    SUM(IF(NOT gov_funded_flag, w_private, 0)) AS private_private_eng,
+    SUM(w_unclassified) AS unclassified_eng
+  FROM ${ref("pub2_country_flags")}
+  GROUP BY country_code, quarter
+)
+
+SELECT
+  g.country_code,
+  g.quarter,
+
+  COALESCE(a.total_eng, 0) AS total_eng,
+  COALESCE(a.owned_eng, 0) AS owned_eng,
+  COALESCE(a.funded_any_eng, 0) AS funded_any_eng,
+  COALESCE(a.funded_private_owned_eng, 0) AS funded_private_owned_eng,
+  COALESCE(a.private_private_eng, 0) AS private_private_eng,
+  COALESCE(a.unclassified_eng, 0) AS unclassified_eng
+FROM ${ref("quarter_grid")} g
+LEFT JOIN agg a
+  ON a.country_code = g.country_code
+ AND a.quarter = g.quarter
+ORDER BY country_code, quarter
