@@ -1,0 +1,29 @@
+config {
+  type: "assertion",
+  name: "pat2__assert_ctq_4way_sums",
+  tags: ["pat2", "diag"],
+  description: "Check: in each country-quarter, totals equal sum of the 4-way split (for all three weighting schemes)."
+}
+
+WITH a AS (
+  SELECT *
+  FROM ${ref("pat2__pat_country_quarter_4way")}
+),
+checks AS (
+  SELECT
+    country_code,
+    quarter,
+
+    (pat_inv_total_ctq - (pat_inv_public_public_ctq + pat_inv_public_private_ctq + pat_inv_private_private_ctq + pat_inv_unclassified_ctq)) AS diff_inv,
+
+    (pat_inv_assg_total_ctq - (pat_inv_assg_public_public_ctq + pat_inv_assg_public_private_ctq + pat_inv_assg_private_private_ctq + pat_inv_assg_unclassified_ctq)) AS diff_inv_assg,
+
+    (pat_inv_assg_file_total_ctq - (pat_inv_assg_file_public_public_ctq + pat_inv_assg_file_public_private_ctq + pat_inv_assg_file_private_private_ctq + pat_inv_assg_file_unclassified_ctq)) AS diff_inv_assg_file
+  FROM a
+)
+
+SELECT *
+FROM checks
+WHERE ABS(diff_inv) > 1e-6
+   OR ABS(diff_inv_assg) > 1e-6
+   OR ABS(diff_inv_assg_file) > 1e-6

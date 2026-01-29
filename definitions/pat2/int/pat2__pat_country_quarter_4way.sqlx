@@ -3,7 +3,7 @@ config {
   schema: "rd_int",
   name: "pat2__pat_country_quarter_4way",
   tags: ["pat2", "int"],
-  description: "Country×quarter patent aggregates with Surico-style 4-way split, for three base weighting schemes (inventor-only; inventor×assignee; inventor×assignee×domestic filing). Includes explicit quarter filter for partition elimination."
+  description: "Country×quarter patent aggregates with Surico-style 4-way split, for three base weighting schemes. Includes Tier2 funding method totals and matched-grant USD counted in grant START quarter (Surico convention)."
 }
 
 WITH micro AS (
@@ -41,7 +41,12 @@ agg AS (
     SUM(w_inv_assg_file * pat_private_private_flag) AS pat_inv_assg_file_private_private_ctq,
     SUM(w_inv_assg_file * pat_unclassified_flag)    AS pat_inv_assg_file_unclassified_ctq,
 
-    -- Diagnostics: share of rows with any domestic assignee (simple mean of indicator)
+    -- Tier2 “gov funded” diagnostics (inventor-weighted, regardless of ownership bucket)
+    SUM(w_inv * tier2_rid_flag) AS pat_pubfund_tier2_rid_ctq,
+    SUM(w_inv * tier2_inst_flag) AS pat_pubfund_tier2_inst_ctq,
+    SUM(w_inv * tier2_any_flag) AS pat_pubfund_tier2_any_ctq,
+
+    -- Light diagnostic: share of rows with any domestic assignee (simple mean of indicator)
     AVG(CAST(dom_assg_flag AS FLOAT64)) AS share_families_with_dom_assignee_simple
 
   FROM micro
@@ -70,7 +75,7 @@ gr_gov AS (
   GROUP BY 1, 2
 ),
 
--- Grants matched to patents (count distinct grant_id per patent quarter)
+-- Patent–grant matches (distinct by family×country×grant)
 pg_union AS (
   SELECT DISTINCT family_id, country_code, grant_id
   FROM ${ref("pat2__pat_tier2_rid_matches")}
@@ -79,6 +84,7 @@ pg_union AS (
   FROM ${ref("pat2__pat_tier2_inst_matches")}
 ),
 
+-- Matched grants counted in PATENT quarter (count distinct grant_id per patent quarter)
 pat_q AS (
   SELECT DISTINCT
     family_id,
@@ -87,17 +93,36 @@ pat_q AS (
   FROM micro
 ),
 
-matched AS (
+matched_patq AS (
   SELECT
     pq.country_code,
     pq.quarter,
-    COUNT(DISTINCT pu.grant_id) AS pat_matched_grants_ctq,
-    SUM(DISTINCT IFNULL(g.funding_usd, 0.0)) AS pat_matched_grants_usd_ctq
+    COUNT(DISTINCT pu.grant_id) AS matched_grants_ctq
   FROM pg_union pu
   JOIN pat_q pq
     ON pq.family_id = pu.family_id AND pq.country_code = pu.country_code
-  LEFT JOIN ${ref("pat2__grants_gov_core")} g
-    ON g.country_code = pu.country_code AND g.grant_id = pu.grant_id
+  GROUP BY 1, 2
+),
+
+-- Matched grant counts + USD counted ONCE in GRANT START quarter (Surico convention)
+pg_distinct_grants AS (
+  SELECT DISTINCT
+    country_code,
+    grant_id
+  FROM pg_union
+),
+
+matched_startq AS (
+  SELECT
+    g.country_code,
+    DATE_TRUNC(g.start_dt, QUARTER) AS quarter,
+    COUNT(DISTINCT g.grant_id) AS matched_grants_startqtr_ctq,
+    SUM(IFNULL(g.funding_usd, 0.0)) AS matched_grants_amount_usd_startqtr_ctq
+  FROM pg_distinct_grants m
+  JOIN ${ref("pat2__grants_gov_core")} g
+    ON g.country_code = m.country_code
+   AND g.grant_id = m.grant_id
+  WHERE g.start_dt IS NOT NULL
   GROUP BY 1, 2
 )
 
@@ -106,12 +131,17 @@ SELECT
   COALESCE(ga.grants_any_count_ctq, 0) AS grants_any_count_ctq,
   COALESCE(gg.grants_gov_count_ctq, 0) AS grants_gov_count_ctq,
   COALESCE(gg.grants_gov_funding_usd_ctq, 0.0) AS grants_gov_funding_usd_ctq,
-  COALESCE(mg.pat_matched_grants_ctq, 0) AS pat_matched_grants_ctq,
-  COALESCE(mg.pat_matched_grants_usd_ctq, 0.0) AS pat_matched_grants_usd_ctq
+
+  COALESCE(mp.matched_grants_ctq, 0) AS matched_grants_ctq,
+  COALESCE(ms.matched_grants_startqtr_ctq, 0) AS matched_grants_startqtr_ctq,
+  COALESCE(ms.matched_grants_amount_usd_startqtr_ctq, 0.0) AS matched_grants_amount_usd_startqtr_ctq
+
 FROM agg a
 LEFT JOIN gr_any ga
   ON ga.country_code = a.country_code AND ga.quarter = a.quarter
 LEFT JOIN gr_gov gg
   ON gg.country_code = a.country_code AND gg.quarter = a.quarter
-LEFT JOIN matched mg
-  ON mg.country_code = a.country_code AND mg.quarter = a.quarter
+LEFT JOIN matched_patq mp
+  ON mp.country_code = a.country_code AND mp.quarter = a.quarter
+LEFT JOIN matched_startq ms
+  ON ms.country_code = a.country_code AND ms.quarter = a.quarter
