@@ -3,11 +3,10 @@ config {
   schema: "rd_int",
   name: "pat2__patent_family_country_4way",
   tags: ["pat2", "int"],
-  description: "Core micro table (family×country×quarter) with Surico-style 4-way split flags and base fractional weights. This is the canonical micro source for patent aggregates.",
+  description: "Core micro table (family×country×quarter) with Surico-style 4-way split flags and base fractional weights. Canonical micro source for patent aggregates.",
   bigquery: {
     partitionBy: "quarter",
-    clusterBy: ["country_code", "family_id"],
-    requirePartitionFilter: true
+    clusterBy: ["country_code", "family_id"]
   }
 }
 
