@@ -3,9 +3,9 @@ config {
   schema: "rd_stage",
   name: "pat2__patent_family_base",
   tags: ["pat2", "stage"],
-  description: "Patent documents (Dimensions) trimmed to essentials; includes doc-level earliest app date + inventors/assignees + FoR4 codes. Filtered to sample window via workflow vars.",
+  description: "Patent documents (Dimensions) trimmed to essentials; includes doc-level earliest app date + inventors/assignees + FoR4 codes. Partitioned by MONTH to avoid BigQuery 4000-partition limit.",
   bigquery: {
-    partitionBy: "doc_earliest_app_dt",
+    partitionBy: "doc_earliest_app_month",
     clusterBy: ["family_id"]
   }
 }
@@ -53,10 +53,16 @@ with_dt AS (
       ELSE COALESCE(priority_dt, filing_dt)
     END AS doc_earliest_app_dt
   FROM raw
+),
+
+final AS (
+  SELECT
+    *,
+    DATE_TRUNC(doc_earliest_app_dt, MONTH) AS doc_earliest_app_month
+  FROM with_dt
+  WHERE doc_earliest_app_dt IS NOT NULL
+    AND doc_earliest_app_dt BETWEEN DATE('${dataform.projectConfig.vars.sample_start}')
+                               AND DATE('${dataform.projectConfig.vars.sample_end}')
 )
 
-SELECT *
-FROM with_dt
-WHERE doc_earliest_app_dt IS NOT NULL
-  AND doc_earliest_app_dt BETWEEN DATE('${dataform.projectConfig.vars.sample_start}')
-                             AND DATE('${dataform.projectConfig.vars.sample_end}')
+SELECT * FROM final
