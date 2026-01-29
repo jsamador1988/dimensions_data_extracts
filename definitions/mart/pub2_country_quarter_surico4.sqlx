@@ -2,46 +2,53 @@ config {
   type: "table",
   name: "pub2_country_quarter_surico4",
   schema: "rd_mart",
-  tags: ["mart", "phase4", "pub2"],
-  description: "Country×quarter publications: totals + Surico-4 split using Option-2 ownership and gov_funded_flag."
+  tags: ["mart"],
+  description: "Country×quarter publication totals decomposed into Surico4 (single-bucket assignment at paper×country×quarter)."
 }
 
-WITH agg AS (
+WITH gq AS (
+  SELECT country_code, quarter
+  FROM ${ref("quarter_grid")}
+),
+
+base AS (
   SELECT
     country_code,
     quarter,
-
-    SUM(w_aff) AS total_eng,
-
-    -- Surico: public-public (owned by government)
-    SUM(w_public_prod) AS owned_eng,
-
-    -- funded (gov) regardless of ownership, useful diagnostic
-    SUM(IF(gov_funded_flag, w_aff, 0)) AS funded_any_eng,
-
-    -- public-private: gov funded but privately owned
-    SUM(IF(gov_funded_flag, w_private_prod, 0)) AS funded_private_owned_eng,
-
-    -- private-private: privately owned and not gov funded
-    SUM(IF(NOT gov_funded_flag, w_private_prod, 0)) AS private_private_eng,
-
-    -- should be near zero
-    SUM(w_unclassified) AS unclassified_eng
+    w_aff AS w_total,
+    w_public_prod AS w_owned,
+    CASE WHEN gov_funded_flag THEN w_aff ELSE 0 END AS w_funded_any,
+    CASE WHEN gov_funded_flag THEN w_private_prod ELSE 0 END AS w_funded_private_owned,
+    CASE WHEN NOT gov_funded_flag THEN w_private_prod ELSE 0 END AS w_private_private,
+    w_unclassified AS w_unclassified
   FROM ${ref("pub2_country_flags")}
+),
+
+agg AS (
+  SELECT
+    country_code,
+    quarter,
+    SUM(w_total) AS total_eng,
+    SUM(w_owned) AS owned_eng,
+    SUM(w_funded_any) AS funded_any_eng,
+    SUM(w_funded_private_owned) AS funded_private_owned_eng,
+    SUM(w_private_private) AS private_private_eng,
+    SUM(w_unclassified) AS unclassified_eng
+  FROM base
   GROUP BY country_code, quarter
 )
 
 SELECT
-  g.country_code,
-  g.quarter,
+  gq.country_code,
+  gq.quarter,
   COALESCE(a.total_eng, 0) AS total_eng,
   COALESCE(a.owned_eng, 0) AS owned_eng,
   COALESCE(a.funded_any_eng, 0) AS funded_any_eng,
   COALESCE(a.funded_private_owned_eng, 0) AS funded_private_owned_eng,
   COALESCE(a.private_private_eng, 0) AS private_private_eng,
   COALESCE(a.unclassified_eng, 0) AS unclassified_eng
-FROM ${ref("quarter_grid")} g
+FROM gq
 LEFT JOIN agg a
-  ON a.country_code = g.country_code
- AND a.quarter = g.quarter
+  ON a.country_code = gq.country_code
+ AND a.quarter = gq.quarter
 ORDER BY country_code, quarter

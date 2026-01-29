@@ -1,53 +1,53 @@
 config {
   type: "table",
-  name: "pub2_country_quarter_field22_surico4",
+  name: "pub2_country_quarter_disc6_totals_surico4",
   schema: "rd_mart",
   tags: ["mart"],
-  description: "Country×quarter×field22 publication totals decomposed into Surico4. Field weights from rd_stage.pub_field_weights."
+  description: "Country×quarter×disc6 publication totals decomposed into Surico4. Disc weights from rd_stage.pub_disc_weights."
 }
 
-WITH field_dim AS (
+WITH disc_dim AS (
   SELECT DISTINCT
-    field22_code,
-    field22_name
+    disc6_code,
+    disc6_name
   FROM ${ref("rd_stage", "pub_fields_distinct")}
-  WHERE field22_code IS NOT NULL
+  WHERE disc6_code IS NOT NULL
 ),
 
 grid AS (
   SELECT
     qg.country_code,
     qg.quarter,
-    fd.field22_code,
-    fd.field22_name
+    dd.disc6_code,
+    dd.disc6_name
   FROM ${ref("quarter_grid")} qg
-  CROSS JOIN field_dim fd
+  CROSS JOIN disc_dim dd
 ),
 
 base AS (
   SELECT
     cf.country_code,
     cf.quarter,
-    fw.field22_code,
-    fw.w_field,
+    dw.disc6_code,
+    dw.w_disc,
 
-    (cf.w_aff * fw.w_field) AS w_total,
-    (cf.w_public_prod * fw.w_field) AS w_owned,
-    (CASE WHEN cf.gov_funded_flag THEN (cf.w_aff * fw.w_field) ELSE 0 END) AS w_funded_any,
-    (CASE WHEN cf.gov_funded_flag THEN (cf.w_private_prod * fw.w_field) ELSE 0 END) AS w_funded_private_owned,
-    (CASE WHEN NOT cf.gov_funded_flag THEN (cf.w_private_prod * fw.w_field) ELSE 0 END) AS w_private_private,
-    (cf.w_unclassified * fw.w_field) AS w_unclassified
+    (cf.w_aff * dw.w_disc) AS w_total,
+    (cf.w_public_prod * dw.w_disc) AS w_owned,
+    (CASE WHEN cf.gov_funded_flag THEN (cf.w_aff * dw.w_disc) ELSE 0 END) AS w_funded_any,
+    (CASE WHEN cf.gov_funded_flag THEN (cf.w_private_prod * dw.w_disc) ELSE 0 END) AS w_funded_private_owned,
+    (CASE WHEN NOT cf.gov_funded_flag THEN (cf.w_private_prod * dw.w_disc) ELSE 0 END) AS w_private_private,
+    (cf.w_unclassified * dw.w_disc) AS w_unclassified
   FROM ${ref("pub2_country_flags")} cf
-  JOIN ${ref("pub_field_weights")} fw
-    ON fw.pub_id = cf.pub_id
-   AND fw.quarter = cf.quarter
+  JOIN ${ref("rd_stage", "pub_disc_weights")} dw
+    ON dw.pub_id = cf.pub_id
+   AND dw.quarter = cf.quarter
 ),
 
 agg AS (
   SELECT
     country_code,
     quarter,
-    field22_code,
+    disc6_code,
     SUM(w_total) AS total_eng,
     SUM(w_owned) AS owned_eng,
     SUM(w_funded_any) AS funded_any_eng,
@@ -55,14 +55,14 @@ agg AS (
     SUM(w_private_private) AS private_private_eng,
     SUM(w_unclassified) AS unclassified_eng
   FROM base
-  GROUP BY country_code, quarter, field22_code
+  GROUP BY country_code, quarter, disc6_code
 )
 
 SELECT
   g.country_code,
   g.quarter,
-  g.field22_code,
-  g.field22_name,
+  g.disc6_code,
+  g.disc6_name,
   COALESCE(a.total_eng, 0) AS total_eng,
   COALESCE(a.owned_eng, 0) AS owned_eng,
   COALESCE(a.funded_any_eng, 0) AS funded_any_eng,
@@ -73,5 +73,5 @@ FROM grid g
 LEFT JOIN agg a
   ON a.country_code = g.country_code
  AND a.quarter = g.quarter
- AND a.field22_code = g.field22_code
-ORDER BY country_code, quarter, field22_code
+ AND a.disc6_code = g.disc6_code
+ORDER BY country_code, quarter, disc6_code
