@@ -1,0 +1,112 @@
+config {
+  type: "table",
+  name: "pub_breakthrough_pub_field",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Publication×field22 breakthrough flags based on top 1% of normalized 5y citations within field22×pub_year (requires >=200 obs in field-year)."
+}
+
+WITH params AS (
+  SELECT
+    200  AS min_obs_field_year,
+    990  AS pctl_offset_1000   -- 99th percentile in APPROX_QUANTILES(...,1000)
+),
+
+core AS (
+  SELECT
+    pub_id,
+    DATE_TRUNC(pub_dt_best, QUARTER) AS quarter,
+    EXTRACT(YEAR FROM pub_dt_best) AS pub_year
+  FROM ${ref("pub_core")}
+  WHERE pub_id IS NOT NULL
+    AND pub_dt_best IS NOT NULL
+),
+
+fw AS (
+  SELECT
+    pub_id,
+    quarter,
+    field22_code,
+    w_field
+  FROM ${ref("pub_field_weights")}
+  WHERE pub_id IS NOT NULL
+    AND quarter IS NOT NULL
+    AND field22_code IS NOT NULL
+    AND w_field IS NOT NULL
+),
+
+cit AS (
+  SELECT
+    pub_id,
+    citations_5y
+  FROM ${ref("pub_citations_5y")}
+),
+
+norm AS (
+  SELECT
+    field22_code,
+    pub_year,
+    exp_citations_5y
+  FROM ${ref("pub_field_year_norm")}
+),
+
+paper_field AS (
+  SELECT
+    fw.pub_id,
+    fw.quarter,
+    c.pub_year,
+    fw.field22_code,
+    fw.w_field,
+    cit.citations_5y,
+    norm.exp_citations_5y,
+    SAFE_DIVIDE(cit.citations_5y, NULLIF(norm.exp_citations_5y, 0)) AS nc_5y
+  FROM fw
+  JOIN core c
+    ON c.pub_id = fw.pub_id
+   AND c.quarter = fw.quarter
+  LEFT JOIN cit
+    ON cit.pub_id = fw.pub_id
+  LEFT JOIN norm
+    ON norm.field22_code = fw.field22_code
+   AND norm.pub_year = c.pub_year
+),
+
+field_year_cutoffs AS (
+  SELECT
+    field22_code,
+    pub_year,
+    COUNT(*) AS n_obs_nc5y,
+    APPROX_QUANTILES(nc_5y, 1000)[OFFSET((SELECT pctl_offset_1000 FROM params))] AS p99_nc_5y
+  FROM paper_field
+  WHERE nc_5y IS NOT NULL
+  GROUP BY field22_code, pub_year
+)
+
+SELECT
+  pf.pub_id,
+  pf.quarter,
+  pf.field22_code,
+  pf.w_field,
+  pf.pub_year,
+  pf.nc_5y,
+  fy.n_obs_nc5y,
+  fy.p99_nc_5y AS cutoff_p99_nc_5y,
+  CASE
+    WHEN fy.n_obs_nc5y >= (SELECT min_obs_field_year FROM params)
+     AND pf.nc_5y IS NOT NULL
+     AND fy.p99_nc_5y IS NOT NULL
+    THEN 1
+    ELSE 0
+  END AS eligible_for_breakthrough,
+  CASE
+    WHEN fy.n_obs_nc5y >= (SELECT min_obs_field_year FROM params)
+     AND pf.nc_5y IS NOT NULL
+     AND fy.p99_nc_5y IS NOT NULL
+     AND pf.nc_5y >= fy.p99_nc_5y
+    THEN 1
+    ELSE 0
+  END AS is_breakthrough
+FROM paper_field pf
+LEFT JOIN field_year_cutoffs fy
+  ON fy.field22_code = pf.field22_code
+ AND fy.pub_year = pf.pub_year

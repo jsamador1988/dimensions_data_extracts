@@ -1,0 +1,51 @@
+config {
+  type: "table",
+  name: "pub_disc_weights",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Publication×disc6 weights w_disc obtained by summing field22 weights within each disc6."
+}
+
+WITH map AS (
+  SELECT DISTINCT
+    field22_code,
+    disc6_code,
+    disc6_name
+  FROM ${ref("rd_stage", "pub_fields_distinct")}
+  WHERE field22_code IS NOT NULL
+    AND disc6_code IS NOT NULL
+),
+
+fw AS (
+  SELECT
+    pub_id,
+    quarter,
+    field22_code,
+    w_field
+  FROM ${ref("pub_field_weights")}
+  WHERE pub_id IS NOT NULL
+    AND quarter IS NOT NULL
+    AND field22_code IS NOT NULL
+    AND w_field IS NOT NULL
+),
+
+joined AS (
+  SELECT
+    fw.pub_id,
+    fw.quarter,
+    m.disc6_code,
+    m.disc6_name,
+    fw.w_field
+  FROM fw
+  JOIN map m
+    ON m.field22_code = fw.field22_code
+)
+
+SELECT
+  pub_id,
+  quarter,
+  disc6_code,
+  ANY_VALUE(disc6_name) AS disc6_name,
+  SUM(w_field) AS w_disc
+FROM joined
+GROUP BY pub_id, quarter, disc6_code

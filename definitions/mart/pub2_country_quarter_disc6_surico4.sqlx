@@ -1,0 +1,156 @@
+config {
+  type: "table",
+  name: "pub2_country_quarter_disc6_surico4",
+  schema: "rd_mart",
+  tags: ["mart"],
+  description: "Country×quarter×disc6 totals + top5 + breakthroughs with Surico4 decomposition. Disc6 weights come from summing field22 weights within disc6."
+}
+
+WITH disc_dim AS (
+  SELECT DISTINCT
+    disc6_code,
+    disc6_name
+  FROM ${ref("rd_stage", "pub_fields_distinct")}
+  WHERE disc6_code IS NOT NULL
+),
+
+field_to_disc AS (
+  SELECT DISTINCT
+    field22_code,
+    disc6_code
+  FROM ${ref("rd_stage", "pub_fields_distinct")}
+  WHERE field22_code IS NOT NULL
+    AND disc6_code IS NOT NULL
+),
+
+grid AS (
+  SELECT
+    qg.country_code,
+    qg.quarter,
+    dd.disc6_code,
+    dd.disc6_name
+  FROM ${ref("quarter_grid")} qg
+  CROSS JOIN disc_dim dd
+),
+
+-- Totals by disc6 using precomputed pub_disc_weights
+disc_total_base AS (
+  SELECT
+    cf.country_code,
+    cf.quarter,
+    dw.disc6_code,
+
+    (cf.w_aff * dw.w_disc) AS w_total,
+    (cf.w_public_prod * dw.w_disc) AS w_owned,
+    (CASE WHEN cf.gov_funded_flag THEN (cf.w_aff * dw.w_disc) ELSE 0 END) AS w_funded_any,
+    (CASE WHEN cf.gov_funded_flag THEN (cf.w_private_prod * dw.w_disc) ELSE 0 END) AS w_funded_private_owned,
+    (CASE WHEN NOT cf.gov_funded_flag THEN (cf.w_private_prod * dw.w_disc) ELSE 0 END) AS w_private_private,
+    (cf.w_unclassified * dw.w_disc) AS w_unclassified
+  FROM ${ref("pub2_country_flags")} cf
+  JOIN ${ref("rd_stage", "pub_disc_weights")} dw
+    ON dw.pub_id = cf.pub_id
+   AND dw.quarter = cf.quarter
+),
+
+disc_total_agg AS (
+  SELECT
+    country_code,
+    quarter,
+    disc6_code,
+    SUM(w_total) AS total_eng,
+    SUM(w_owned) AS owned_eng,
+    SUM(w_funded_any) AS funded_any_eng,
+    SUM(w_funded_private_owned) AS funded_private_owned_eng,
+    SUM(w_private_private) AS private_private_eng,
+    SUM(w_unclassified) AS unclassified_eng
+  FROM disc_total_base
+  GROUP BY country_code, quarter, disc6_code
+),
+
+-- Top5 by disc6: map pub-field top5 mass into disc6 via field→disc
+disc_top5_base AS (
+  SELECT
+    cf.country_code,
+    cf.quarter,
+    f2d.disc6_code,
+
+    (cf.w_aff * tf.w_field * tf.is_top5) AS w_top5
+  FROM ${ref("pub2_country_flags")} cf
+  JOIN ${ref("rd_stage", "pub_top5_pub_field")} tf
+    ON tf.pub_id = cf.pub_id
+   AND tf.quarter = cf.quarter
+  JOIN field_to_disc f2d
+    ON f2d.field22_code = tf.field22_code
+),
+
+disc_top5_agg AS (
+  SELECT
+    country_code,
+    quarter,
+    disc6_code,
+    SUM(w_top5) AS top5_total_eng
+  FROM disc_top5_base
+  GROUP BY country_code, quarter, disc6_code
+),
+
+-- Breakthroughs by disc6: map pub-field breakthrough mass into disc6
+disc_break_base AS (
+  SELECT
+    cf.country_code,
+    cf.quarter,
+    f2d.disc6_code,
+
+    (cf.w_aff * bf.w_field * bf.eligible_for_breakthrough) AS w_elig,
+    (cf.w_aff * bf.w_field * bf.is_breakthrough) AS w_break
+  FROM ${ref("pub2_country_flags")} cf
+  JOIN ${ref("rd_stage", "pub_breakthrough_pub_field")} bf
+    ON bf.pub_id = cf.pub_id
+   AND bf.quarter = cf.quarter
+  JOIN field_to_disc f2d
+    ON f2d.field22_code = bf.field22_code
+),
+
+disc_break_agg AS (
+  SELECT
+    country_code,
+    quarter,
+    disc6_code,
+    SUM(w_elig) AS break_eligible_total_eng,
+    SUM(w_break) AS break_total_eng
+  FROM disc_break_base
+  GROUP BY country_code, quarter, disc6_code
+)
+
+SELECT
+  g.country_code,
+  g.quarter,
+  g.disc6_code,
+  g.disc6_name,
+
+  COALESCE(dt.total_eng, 0) AS total_eng,
+  COALESCE(dt.owned_eng, 0) AS owned_eng,
+  COALESCE(dt.funded_any_eng, 0) AS funded_any_eng,
+  COALESCE(dt.funded_private_owned_eng, 0) AS funded_private_owned_eng,
+  COALESCE(dt.private_private_eng, 0) AS private_private_eng,
+  COALESCE(dt.unclassified_eng, 0) AS unclassified_eng,
+
+  COALESCE(d5.top5_total_eng, 0) AS top5_total_eng,
+
+  COALESCE(db.break_eligible_total_eng, 0) AS break_eligible_total_eng,
+  COALESCE(db.break_total_eng, 0) AS break_total_eng,
+  SAFE_DIVIDE(COALESCE(db.break_total_eng, 0), NULLIF(COALESCE(db.break_eligible_total_eng, 0), 0)) AS break_share_among_eligible
+
+FROM grid g
+LEFT JOIN disc_total_agg dt
+  ON dt.country_code = g.country_code
+ AND dt.quarter = g.quarter
+ AND dt.disc6_code = g.disc6_code
+LEFT JOIN disc_top5_agg d5
+  ON d5.country_code = g.country_code
+ AND d5.quarter = g.quarter
+ AND d5.disc6_code = g.disc6_code
+LEFT JOIN disc_break_agg db
+  ON db.country_code = g.country_code
+ AND db.quarter = g.quarter
+ AND db.disc6_code = g.disc6_code
+ORDER BY country_code, quarter, disc6_code

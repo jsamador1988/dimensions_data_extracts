@@ -1,0 +1,68 @@
+config {
+  type: "table",
+  name: "pub2_country_quarter_breakthrough_surico4",
+  schema: "rd_mart",
+  tags: ["mart"],
+  description: "Country×quarter breakthroughs (top 1% normalized 5y citations within field×year). Includes eligible mass for denominator. Surico4 decomposition."
+}
+
+WITH gq AS (
+  SELECT country_code, quarter
+  FROM ${ref("quarter_grid")}
+),
+
+base AS (
+  SELECT
+    cf.country_code,
+    cf.quarter,
+
+    (cf.w_aff * bf.w_field * bf.eligible_for_breakthrough) AS w_elig,
+
+    (cf.w_aff * bf.w_field * bf.is_breakthrough) AS w_break,
+
+    (cf.w_public_prod * bf.w_field * bf.is_breakthrough) AS w_break_owned,
+
+    (CASE WHEN cf.gov_funded_flag THEN (cf.w_aff * bf.w_field * bf.is_breakthrough) ELSE 0 END) AS w_break_funded_any,
+
+    (CASE WHEN cf.gov_funded_flag THEN (cf.w_private_prod * bf.w_field * bf.is_breakthrough) ELSE 0 END) AS w_break_funded_private_owned,
+
+    (CASE WHEN NOT cf.gov_funded_flag THEN (cf.w_private_prod * bf.w_field * bf.is_breakthrough) ELSE 0 END) AS w_break_private_private,
+
+    (cf.w_unclassified * bf.w_field * bf.is_breakthrough) AS w_break_unclassified
+  FROM ${ref("pub2_country_flags")} cf
+  JOIN ${ref("rd_stage", "pub_breakthrough_pub_field")} bf
+    ON bf.pub_id = cf.pub_id
+   AND bf.quarter = cf.quarter
+),
+
+agg AS (
+  SELECT
+    country_code,
+    quarter,
+    SUM(w_elig) AS break_eligible_total_eng,
+    SUM(w_break) AS break_total_eng,
+    SUM(w_break_owned) AS break_owned_eng,
+    SUM(w_break_funded_any) AS break_funded_any_eng,
+    SUM(w_break_funded_private_owned) AS break_funded_private_owned_eng,
+    SUM(w_break_private_private) AS break_private_private_eng,
+    SUM(w_break_unclassified) AS break_unclassified_eng
+  FROM base
+  GROUP BY country_code, quarter
+)
+
+SELECT
+  gq.country_code,
+  gq.quarter,
+  COALESCE(a.break_eligible_total_eng, 0) AS break_eligible_total_eng,
+  COALESCE(a.break_total_eng, 0) AS break_total_eng,
+  SAFE_DIVIDE(COALESCE(a.break_total_eng, 0), NULLIF(COALESCE(a.break_eligible_total_eng, 0), 0)) AS break_share_among_eligible,
+  COALESCE(a.break_owned_eng, 0) AS break_owned_eng,
+  COALESCE(a.break_funded_any_eng, 0) AS break_funded_any_eng,
+  COALESCE(a.break_funded_private_owned_eng, 0) AS break_funded_private_owned_eng,
+  COALESCE(a.break_private_private_eng, 0) AS break_private_private_eng,
+  COALESCE(a.break_unclassified_eng, 0) AS break_unclassified_eng
+FROM gq
+LEFT JOIN agg a
+  ON a.country_code = gq.country_code
+ AND a.quarter = gq.quarter
+ORDER BY country_code, quarter

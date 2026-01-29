@@ -1,0 +1,53 @@
+config {
+  type: "table",
+  name: "pub_top5_pub_field",
+  schema: "rd_stage",
+  tags: ["stage"],
+  description: "Publication×field22 top5 flag: 1 if the publication's journal is top-5% within that field22 (using rd_stage.journal_top5_by_field)."
+}
+
+WITH core AS (
+  SELECT
+    pub_id,
+    DATE_TRUNC(pub_dt_best, QUARTER) AS quarter,
+    journal_id
+  FROM ${ref("pub_core")}
+  WHERE pub_id IS NOT NULL
+    AND pub_dt_best IS NOT NULL
+    AND journal_id IS NOT NULL
+),
+
+fw AS (
+  SELECT
+    pub_id,
+    quarter,
+    field22_code,
+    w_field
+  FROM ${ref("pub_field_weights")}
+  WHERE pub_id IS NOT NULL
+    AND quarter IS NOT NULL
+    AND field22_code IS NOT NULL
+    AND w_field IS NOT NULL
+),
+
+jt AS (
+  SELECT
+    journal_id,
+    field22_code,
+    is_top5
+  FROM ${ref("rd_stage", "journal_top5_by_field")}
+)
+
+SELECT
+  fw.pub_id,
+  fw.quarter,
+  fw.field22_code,
+  fw.w_field,
+  COALESCE(jt.is_top5, 0) AS is_top5
+FROM fw
+JOIN core c
+  ON c.pub_id = fw.pub_id
+ AND c.quarter = fw.quarter
+LEFT JOIN jt
+  ON jt.journal_id = c.journal_id
+ AND jt.field22_code = fw.field22_code
