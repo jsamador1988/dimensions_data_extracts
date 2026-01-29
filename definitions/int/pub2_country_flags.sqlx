@@ -1,19 +1,22 @@
 config {
   type: "table",
+  name: "pub2_country_flags",
   schema: "rd_int",
-  tags: ["pub2", "int", "publications"],
-  description: "Adds gov_funded_flag/any_funded_flag to pub2 country weights (still using funder_orgs)."
+  tags: ["int", "phase4", "pub2"],
+  description: "pub2 country weights + publication funding flags (gov_funded_flag, any_funded_flag) from Dimensions funder_orgs."
 }
 
-WITH weights AS (
+WITH w AS (
   SELECT * FROM ${ref("pub2_country_weights")}
 ),
 
-funder_flags AS (
+pub_funding AS (
   SELECT
     p.id AS pub_id,
-    LOGICAL_OR('Government' IN UNNEST(IFNULL(o.types, ARRAY<STRING>[]))) AS gov_funded_flag,
-    COUNT(DISTINCT funder_org_id) > 0 AS any_funded_flag
+    -- any funder org on the publication
+    COUNT(DISTINCT funder_org_id) > 0 AS any_funded_flag,
+    -- government funder if funder org has 'Government' in organization types
+    LOGICAL_OR('Government' IN UNNEST(IFNULL(o.types, ARRAY<STRING>[]))) AS gov_funded_flag
   FROM `dimensions-ai.data_analytics.publications` p
   LEFT JOIN UNNEST(IFNULL(p.funder_orgs, ARRAY<STRING>[])) AS funder_org_id
   LEFT JOIN `dimensions-ai.data_analytics.organizations` o
@@ -23,7 +26,8 @@ funder_flags AS (
 
 SELECT
   w.*,
-  IFNULL(ff.gov_funded_flag, FALSE) AS gov_funded_flag,
-  IFNULL(ff.any_funded_flag, FALSE) AS any_funded_flag
-FROM weights w
-LEFT JOIN funder_flags ff USING (pub_id)
+  IFNULL(f.any_funded_flag, FALSE) AS any_funded_flag,
+  IFNULL(f.gov_funded_flag, FALSE) AS gov_funded_flag
+FROM w
+LEFT JOIN pub_funding f
+  USING (pub_id)

@@ -1,8 +1,9 @@
 config {
   type: "table",
+  name: "pub2_country_quarter_surico4",
   schema: "rd_mart",
-  tags: ["pub2", "mart", "publications"],
-  description: "Country×quarter Surico-4 decomposition for publications using Option-2 ownership buckets."
+  tags: ["mart", "phase4", "pub2"],
+  description: "Country×quarter publications: totals + Surico-4 split using Option-2 ownership and gov_funded_flag."
 }
 
 WITH agg AS (
@@ -10,15 +11,21 @@ WITH agg AS (
     country_code,
     quarter,
 
-    SUM(w_total) AS total_eng,
-    SUM(w_owned) AS owned_eng,
+    SUM(w_aff) AS total_eng,
 
-    -- gov funding regardless of ownership
-    SUM(IF(gov_funded_flag, w_total, 0)) AS funded_any_eng,
+    -- Surico: public-public (owned by government)
+    SUM(w_public_prod) AS owned_eng,
 
-    -- Surico-4 components
-    SUM(IF(gov_funded_flag, w_private, 0)) AS funded_private_owned_eng,
-    SUM(IF(NOT gov_funded_flag, w_private, 0)) AS private_private_eng,
+    -- funded (gov) regardless of ownership, useful diagnostic
+    SUM(IF(gov_funded_flag, w_aff, 0)) AS funded_any_eng,
+
+    -- public-private: gov funded but privately owned
+    SUM(IF(gov_funded_flag, w_private_prod, 0)) AS funded_private_owned_eng,
+
+    -- private-private: privately owned and not gov funded
+    SUM(IF(NOT gov_funded_flag, w_private_prod, 0)) AS private_private_eng,
+
+    -- should be near zero
     SUM(w_unclassified) AS unclassified_eng
   FROM ${ref("pub2_country_flags")}
   GROUP BY country_code, quarter
@@ -27,7 +34,6 @@ WITH agg AS (
 SELECT
   g.country_code,
   g.quarter,
-
   COALESCE(a.total_eng, 0) AS total_eng,
   COALESCE(a.owned_eng, 0) AS owned_eng,
   COALESCE(a.funded_any_eng, 0) AS funded_any_eng,
