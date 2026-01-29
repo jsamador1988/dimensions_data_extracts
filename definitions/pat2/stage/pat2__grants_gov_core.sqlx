@@ -1,0 +1,62 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "pat2__grants_gov_core",
+  tags: ["pat2", "stage"],
+  description: "Surico-style government-funded grants (gov orgs via org_gov_surico), with funder country, start date, FoR4 set, funding_usd."
+}
+
+WITH target_countries AS (
+  SELECT DISTINCT country_code
+  FROM ${ref("pat2__analysis_country_universe")}
+),
+
+grants AS (
+  SELECT
+    g.id AS grant_id,
+    g.funder_org AS funder_org_id,
+    COALESCE(
+      SAFE.PARSE_DATE('%Y-%m-%d', g.start_date),
+      DATE(SAFE_CAST(g.start_year AS INT64), 1, 1)
+    ) AS start_dt,
+    g.funding_usd,
+
+    ARRAY(
+      SELECT DISTINCT LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0')
+      FROM UNNEST(IFNULL(g.category_for.second_level.codes, [])) AS code
+      WHERE code IS NOT NULL
+        AND REGEXP_EXTRACT(code, r'\d+') IS NOT NULL
+    ) AS grant_for4,
+
+    g.researcher_ids,
+    g.investigators,
+    g.organisation_details
+  FROM `dimensions-ai.data_analytics.grants` g
+  WHERE (g.start_date IS NOT NULL OR g.start_year IS NOT NULL)
+),
+
+funder AS (
+  SELECT
+    org_id,
+    country_code,
+    is_gov_surico
+  FROM ${ref("pat2__org_gov_surico")}
+)
+
+SELECT
+  f.country_code,
+  g.grant_id,
+  g.start_dt,
+  g.funding_usd,
+  g.grant_for4,
+  g.researcher_ids,
+  g.investigators,
+  g.organisation_details
+FROM grants g
+JOIN funder f
+  ON f.org_id = g.funder_org_id
+JOIN target_countries tc
+  ON tc.country_code = f.country_code
+WHERE f.is_gov_surico
+  AND g.start_dt IS NOT NULL
+  AND g.start_dt <= DATE('${dataform.projectConfig.vars.sample_end}')

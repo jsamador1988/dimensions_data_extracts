@@ -1,0 +1,115 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat2__pat_country_quarter_4way",
+  tags: ["pat2", "int"],
+  description: "Country×quarter patent aggregates with Surico-style 4-way split, for three base weighting schemes (inventor-only; inventor×assignee; inventor×assignee×domestic filing)."
+}
+
+WITH m AS (
+  SELECT *
+  FROM ${ref("pat2__patent_family_country_4way")}
+),
+
+agg AS (
+  SELECT
+    country_code,
+    quarter,
+
+    -- Totals (three weighting schemes)
+    SUM(w_inv) AS pat_inv_total_ctq,
+    SUM(w_inv_assg) AS pat_inv_assg_total_ctq,
+    SUM(w_inv_assg_file) AS pat_inv_assg_file_total_ctq,
+
+    -- 4-way split: inventor-only
+    SUM(w_inv * pat_public_public_flag)  AS pat_inv_public_public_ctq,
+    SUM(w_inv * pat_public_private_flag) AS pat_inv_public_private_ctq,
+    SUM(w_inv * pat_private_private_flag) AS pat_inv_private_private_ctq,
+    SUM(w_inv * pat_unclassified_flag)   AS pat_inv_unclassified_ctq,
+
+    -- 4-way split: inventor×assignee
+    SUM(w_inv_assg * pat_public_public_flag)  AS pat_inv_assg_public_public_ctq,
+    SUM(w_inv_assg * pat_public_private_flag) AS pat_inv_assg_public_private_ctq,
+    SUM(w_inv_assg * pat_private_private_flag) AS pat_inv_assg_private_private_ctq,
+    SUM(w_inv_assg * pat_unclassified_flag)   AS pat_inv_assg_unclassified_ctq,
+
+    -- 4-way split: inventor×assignee×domestic filing
+    SUM(w_inv_assg_file * pat_public_public_flag)  AS pat_inv_assg_file_public_public_ctq,
+    SUM(w_inv_assg_file * pat_public_private_flag) AS pat_inv_assg_file_public_private_ctq,
+    SUM(w_inv_assg_file * pat_private_private_flag) AS pat_inv_assg_file_private_private_ctq,
+    SUM(w_inv_assg_file * pat_unclassified_flag)   AS pat_inv_assg_file_unclassified_ctq,
+
+    -- Diagnostics: share of inventor-weighted patents with any domestic assignee
+    AVG(CAST(dom_assg_flag AS FLOAT64)) AS share_families_with_dom_assignee_simple
+
+  FROM m
+  GROUP BY country_code, quarter
+),
+
+-- Total grant series (by funder-country and grant start quarter)
+gr_any AS (
+  SELECT
+    country_code,
+    DATE_TRUNC(start_dt, QUARTER) AS quarter,
+    COUNT(DISTINCT grant_id) AS grants_any_count_ctq
+  FROM ${ref("pat2__grants_any_core")}
+  WHERE start_dt IS NOT NULL
+  GROUP BY 1, 2
+),
+
+gr_gov AS (
+  SELECT
+    country_code,
+    DATE_TRUNC(start_dt, QUARTER) AS quarter,
+    COUNT(DISTINCT grant_id) AS grants_gov_count_ctq,
+    SUM(IFNULL(funding_usd, 0.0)) AS grants_gov_funding_usd_ctq
+  FROM ${ref("pat2__grants_gov_core")}
+  WHERE start_dt IS NOT NULL
+  GROUP BY 1, 2
+),
+
+-- Grants matched to patents (count distinct grant_id per patent quarter)
+pg_union AS (
+  SELECT DISTINCT family_id, country_code, grant_id
+  FROM ${ref("pat2__pat_tier2_rid_matches")}
+  UNION DISTINCT
+  SELECT DISTINCT family_id, country_code, grant_id
+  FROM ${ref("pat2__pat_tier2_inst_matches")}
+),
+
+pat_q AS (
+  SELECT DISTINCT
+    family_id,
+    country_code,
+    quarter
+  FROM ${ref("pat2__patent_family_country_4way")}
+),
+
+matched AS (
+  SELECT
+    pq.country_code,
+    pq.quarter,
+    COUNT(DISTINCT pu.grant_id) AS pat_matched_grants_ctq,
+    SUM(DISTINCT IFNULL(g.funding_usd, 0.0)) AS pat_matched_grants_usd_ctq
+  FROM pg_union pu
+  JOIN pat_q pq
+    ON pq.family_id = pu.family_id AND pq.country_code = pu.country_code
+  LEFT JOIN ${ref("pat2__grants_gov_core")} g
+    ON g.country_code = pu.country_code AND g.grant_id = pu.grant_id
+  GROUP BY 1, 2
+)
+
+SELECT
+  a.*,
+  COALESCE(ga.grants_any_count_ctq, 0) AS grants_any_count_ctq,
+  COALESCE(gg.grants_gov_count_ctq, 0) AS grants_gov_count_ctq,
+  COALESCE(gg.grants_gov_funding_usd_ctq, 0.0) AS grants_gov_funding_usd_ctq,
+  COALESCE(mg.pat_matched_grants_ctq, 0) AS pat_matched_grants_ctq,
+  COALESCE(mg.pat_matched_grants_usd_ctq, 0.0) AS pat_matched_grants_usd_ctq
+FROM agg a
+LEFT JOIN gr_any ga
+  ON ga.country_code = a.country_code AND ga.quarter = a.quarter
+LEFT JOIN gr_gov gg
+  ON gg.country_code = a.country_code AND gg.quarter = a.quarter
+LEFT JOIN matched mg
+  ON mg.country_code = a.country_code AND mg.quarter = a.quarter

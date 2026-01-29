@@ -1,0 +1,67 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "pat2__patent_family_field22_weights",
+  tags: ["pat2", "stage"],
+  description: "Family×field22 fractional weights (equal weight over distinct mapped field22_code values derived from FoR4 codes). Includes 'UNCLASSIFIED' when no usable FoR codes.",
+  bigquery: { clusterBy: ["family_id", "field22_code"] }
+}
+
+WITH fmap AS (
+  SELECT for_division, field22_code
+  FROM ${ref("pat2__for_to_field22")}
+),
+
+fam_fields AS (
+  SELECT
+    pf.family_id,
+    fmap.field22_code
+  FROM ${ref("pat2__patent_family_for4")} pf
+  CROSS JOIN UNNEST(IFNULL(pf.pat_for4, [])) AS for4
+  LEFT JOIN fmap
+    ON SAFE_CAST(SUBSTR(for4, 1, 2) AS INT64) = fmap.for_division
+  WHERE for4 IS NOT NULL
+),
+
+distinct_fields AS (
+  SELECT
+    family_id,
+    ARRAY_AGG(DISTINCT field22_code IGNORE NULLS) AS field_codes
+  FROM fam_fields
+  GROUP BY family_id
+),
+
+expanded AS (
+  SELECT
+    d.family_id,
+    field22_code
+  FROM distinct_fields d
+  CROSS JOIN UNNEST(d.field_codes) AS field22_code
+  WHERE ARRAY_LENGTH(d.field_codes) > 0
+),
+
+with_counts AS (
+  SELECT
+    e.family_id,
+    e.field22_code,
+    COUNT(*) OVER (PARTITION BY e.family_id) AS n_fields
+  FROM expanded e
+)
+
+SELECT
+  family_id,
+  field22_code,
+  SAFE_DIVIDE(1.0, n_fields) AS w_field22
+FROM with_counts
+
+UNION ALL
+
+-- Families with no usable FoR codes get a single UNCLASSIFIED bucket to preserve totals.
+SELECT
+  a.family_id,
+  'UNCLASSIFIED' AS field22_code,
+  1.0 AS w_field22
+FROM ${ref("pat2__patent_family_anchor")} a
+LEFT JOIN distinct_fields d
+  ON d.family_id = a.family_id
+WHERE d.family_id IS NULL OR ARRAY_LENGTH(d.field_codes) = 0

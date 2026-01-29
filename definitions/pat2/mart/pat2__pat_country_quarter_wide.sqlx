@@ -1,0 +1,60 @@
+config {
+  type: "table",
+  schema: "rd_mart",
+  name: "pat2__pat_country_quarter_wide",
+  tags: ["pat2", "mart"],
+  description: "Balanced country×quarter patent panel (totals + 4-way split + grant totals/matched)."
+}
+
+WITH grid AS (
+  SELECT country_code, quarter
+  FROM ${ref("pat2__analysis_country_quarter_grid")}
+),
+
+agg AS (
+  SELECT *
+  FROM ${ref("pat2__pat_country_quarter_4way")}
+)
+
+SELECT
+  g.country_code,
+  g.quarter,
+
+  -- Patents (inventor-only)
+  COALESCE(a.pat_inv_total_ctq, 0.0) AS pat_inv_total_ctq,
+  COALESCE(a.pat_inv_public_public_ctq, 0.0) AS pat_inv_public_public_ctq,
+  COALESCE(a.pat_inv_public_private_ctq, 0.0) AS pat_inv_public_private_ctq,
+  COALESCE(a.pat_inv_private_private_ctq, 0.0) AS pat_inv_private_private_ctq,
+  COALESCE(a.pat_inv_unclassified_ctq, 0.0) AS pat_inv_unclassified_ctq,
+
+  -- Patents (inventor×assignee)
+  COALESCE(a.pat_inv_assg_total_ctq, 0.0) AS pat_inv_assg_total_ctq,
+  COALESCE(a.pat_inv_assg_public_public_ctq, 0.0) AS pat_inv_assg_public_public_ctq,
+  COALESCE(a.pat_inv_assg_public_private_ctq, 0.0) AS pat_inv_assg_public_private_ctq,
+  COALESCE(a.pat_inv_assg_private_private_ctq, 0.0) AS pat_inv_assg_private_private_ctq,
+  COALESCE(a.pat_inv_assg_unclassified_ctq, 0.0) AS pat_inv_assg_unclassified_ctq,
+
+  -- Patents (inventor×assignee×domestic filing)
+  COALESCE(a.pat_inv_assg_file_total_ctq, 0.0) AS pat_inv_assg_file_total_ctq,
+  COALESCE(a.pat_inv_assg_file_public_public_ctq, 0.0) AS pat_inv_assg_file_public_public_ctq,
+  COALESCE(a.pat_inv_assg_file_public_private_ctq, 0.0) AS pat_inv_assg_file_public_private_ctq,
+  COALESCE(a.pat_inv_assg_file_private_private_ctq, 0.0) AS pat_inv_assg_file_private_private_ctq,
+  COALESCE(a.pat_inv_assg_file_unclassified_ctq, 0.0) AS pat_inv_assg_file_unclassified_ctq,
+
+  -- Grants (domestic, by start quarter)
+  COALESCE(a.grants_any_count_ctq, 0) AS grants_any_count_ctq,
+  COALESCE(a.grants_gov_count_ctq, 0) AS grants_gov_count_ctq,
+  COALESCE(a.grants_gov_funding_usd_ctq, 0.0) AS grants_gov_funding_usd_ctq,
+
+  -- Grants matched to patents (by patent quarter)
+  COALESCE(a.pat_matched_grants_ctq, 0) AS pat_matched_grants_ctq,
+  COALESCE(a.pat_matched_grants_usd_ctq, 0.0) AS pat_matched_grants_usd_ctq,
+
+  -- Light diagnostics
+  COALESCE(a.share_families_with_dom_assignee_simple, 0.0) AS share_families_with_dom_assignee_simple
+
+FROM grid g
+LEFT JOIN agg a
+  ON a.country_code = g.country_code
+ AND a.quarter = g.quarter
+ORDER BY g.country_code, g.quarter

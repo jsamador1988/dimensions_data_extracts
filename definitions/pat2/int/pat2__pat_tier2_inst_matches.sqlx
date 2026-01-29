@@ -1,0 +1,85 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat2__pat_tier2_inst_matches",
+  tags: ["pat2", "int"],
+  description: "Tier-2 patent–grant matches via shared org_id (assignee or inventor affiliation), with FoR overlap + Jaccard threshold and temporal ordering."
+}
+
+WITH
+p AS (
+  SELECT
+    f.family_id,
+    f.country_code,
+    f.family_app_dt,
+    pf.pat_for4
+  FROM ${ref("pat2__patent_family_country_features")} f
+  JOIN ${ref("pat2__patent_family_for4")} pf
+    USING (family_id)
+  WHERE f.family_app_dt IS NOT NULL
+),
+
+g AS (
+  SELECT
+    country_code,
+    grant_id,
+    start_dt,
+    grant_for4
+  FROM ${ref("pat2__grants_gov_core")}
+  WHERE start_dt IS NOT NULL
+),
+
+pg_raw AS (
+  SELECT DISTINCT
+    p.family_id,
+    p.country_code,
+    g.grant_id,
+    p.family_app_dt,
+    g.start_dt,
+    p.pat_for4,
+    g.grant_for4
+  FROM p
+  JOIN ${ref("pat2__patent_family_orgs")} po
+    ON po.family_id = p.family_id
+  JOIN ${ref("pat2__grant_orgs_flat")} go
+    ON go.country_code = p.country_code
+   AND go.org_id = po.org_id
+  JOIN g
+    ON g.country_code = go.country_code
+   AND g.grant_id = go.grant_id
+  WHERE p.family_app_dt >= g.start_dt
+),
+
+scored AS (
+  SELECT
+    family_id,
+    country_code,
+    grant_id,
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(IFNULL(pat_for4, [])) x
+      WHERE x IN UNNEST(IFNULL(grant_for4, []))
+    )) AS overlap_count,
+    SAFE_DIVIDE(
+      ARRAY_LENGTH(ARRAY(
+        SELECT DISTINCT x
+        FROM UNNEST(IFNULL(pat_for4, [])) x
+        WHERE x IN UNNEST(IFNULL(grant_for4, []))
+      )),
+      ARRAY_LENGTH(ARRAY(
+        SELECT DISTINCT x
+        FROM UNNEST(ARRAY_CONCAT(IFNULL(pat_for4, []), IFNULL(grant_for4, []))) x
+      ))
+    ) AS jaccard_for4
+  FROM pg_raw
+)
+
+SELECT
+  family_id,
+  country_code,
+  grant_id,
+  overlap_count,
+  jaccard_for4
+FROM scored
+WHERE overlap_count >= ${dataform.projectConfig.vars.min_for4_overlap}
+  AND jaccard_for4 >= ${dataform.projectConfig.vars.min_jaccard}

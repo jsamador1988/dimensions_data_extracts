@@ -1,0 +1,30 @@
+config {
+  type: "table",
+  schema: "rd_ref",
+  name: "pat2__for_to_field22",
+  tags: ["pat2", "ref"],
+  description: "ANZSRC 2020 FoR division (2-digit) -> (field22_code, field22_name). field22_code is safe for wide column names."
+}
+
+SELECT 30 AS for_division, 'AGRICULTURE' AS field22_code, 'Agricultural, Veterinary and Food Sciences' AS field22_name UNION ALL
+SELECT 31, 'BIOLOGY',      'Biological Sciences' UNION ALL
+SELECT 32, 'BIOMEDICAL',   'Biomedical and Clinical Sciences' UNION ALL
+SELECT 33, 'BUILT_ENV',    'Built Environment and Design' UNION ALL
+SELECT 34, 'CHEMICAL',     'Chemical Sciences' UNION ALL
+SELECT 35, 'COMMERCE',     'Commerce, Management, Tourism and Services' UNION ALL
+SELECT 36, 'CREATIVE',     'Creative Arts and Writing' UNION ALL
+SELECT 37, 'EARTH',        'Earth Sciences' UNION ALL
+SELECT 38, 'ECON',         'Economics' UNION ALL
+SELECT 39, 'EDUCATION',    'Education' UNION ALL
+SELECT 40, 'ENGINEERING',  'Engineering' UNION ALL
+SELECT 41, 'ENVIRONMENT',  'Environmental Sciences' UNION ALL
+SELECT 42, 'HEALTH',       'Health Sciences' UNION ALL
+SELECT 43, 'HISTORY',      'History, Heritage and Archaeology' UNION ALL
+SELECT 44, 'HUMAN_SOCIETY','Human Society' UNION ALL
+SELECT 46, 'INFO_COMP',    'Information and Computing Sciences' UNION ALL
+SELECT 47, 'LANGUAGE',     'Language, Communication and Culture' UNION ALL
+SELECT 48, 'LAW',          'Law and Legal Studies' UNION ALL
+SELECT 49, 'MATH',         'Mathematical Sciences' UNION ALL
+SELECT 50, 'PHILOSOPHY',   'Philosophy and Religious Studies' UNION ALL
+SELECT 51, 'PHYSICAL',     'Physical Sciences' UNION ALL
+SELECT 52, 'PSYCHOLOGY',   'Psychology'

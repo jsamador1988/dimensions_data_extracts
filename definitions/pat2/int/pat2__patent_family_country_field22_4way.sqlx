@@ -1,0 +1,33 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat2__patent_family_country_field22_4way",
+  tags: ["pat2", "int"],
+  description: "Micro table expanded to field22: (family×country×quarter×field22) with weights and 4-way split flags.",
+  bigquery: {
+    partitionBy: "quarter",
+    clusterBy: ["country_code", "field22_code", "family_id"],
+    requirePartitionFilter: true
+  }
+}
+
+SELECT
+  m.family_id,
+  m.country_code,
+  m.quarter,
+  fw.field22_code,
+
+  -- Base weights multiplied by field allocation
+  m.w_inv * fw.w_field22 AS w_inv_field,
+  m.w_inv_assg * fw.w_field22 AS w_inv_assg_field,
+  m.w_inv_assg_file * fw.w_field22 AS w_inv_assg_file_field,
+
+  -- 4-way flags (carry through)
+  m.pat_public_public_flag,
+  m.pat_public_private_flag,
+  m.pat_private_private_flag,
+  m.pat_unclassified_flag
+
+FROM ${ref("pat2__patent_family_country_4way")} m
+JOIN ${ref("pat2__patent_family_field22_weights")} fw
+  ON fw.family_id = m.family_id

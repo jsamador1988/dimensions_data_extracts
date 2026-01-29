@@ -1,0 +1,62 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "pat2__patent_family_base",
+  tags: ["pat2", "stage"],
+  description: "Patent documents (Dimensions) trimmed to essentials; includes doc-level earliest app date + inventors/assignees + FoR4 codes. Filtered to sample window via workflow vars.",
+  bigquery: {
+    partitionBy: "doc_earliest_app_dt",
+    clusterBy: ["family_id"]
+  }
+}
+
+WITH raw AS (
+  SELECT
+    p.family_id,
+    p.id AS patent_id,
+    p.jurisdiction,
+
+    COALESCE(
+      SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date),
+      CASE WHEN p.priority_year IS NOT NULL THEN DATE(SAFE_CAST(p.priority_year AS INT64), 1, 1) END
+    ) AS priority_dt,
+
+    COALESCE(
+      SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date),
+      CASE WHEN p.filing_year IS NOT NULL THEN DATE(SAFE_CAST(p.filing_year AS INT64), 1, 1) END
+    ) AS filing_dt,
+
+    p.inventors,
+    IFNULL(p.assignee_orgs, []) AS assignee_orgs,
+
+    ARRAY(
+      SELECT DISTINCT LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0')
+      FROM UNNEST(IFNULL(p.category_for.second_level.codes, [])) AS code
+      WHERE code IS NOT NULL
+        AND REGEXP_EXTRACT(code, r'\d+') IS NOT NULL
+    ) AS for4_codes
+
+  FROM `dimensions-ai.data_analytics.patents` p
+  WHERE p.family_id IS NOT NULL
+),
+
+with_dt AS (
+  SELECT
+    family_id,
+    patent_id,
+    jurisdiction,
+    inventors,
+    assignee_orgs,
+    for4_codes,
+    CASE
+      WHEN priority_dt IS NOT NULL AND filing_dt IS NOT NULL THEN LEAST(priority_dt, filing_dt)
+      ELSE COALESCE(priority_dt, filing_dt)
+    END AS doc_earliest_app_dt
+  FROM raw
+)
+
+SELECT *
+FROM with_dt
+WHERE doc_earliest_app_dt IS NOT NULL
+  AND doc_earliest_app_dt BETWEEN DATE('${dataform.projectConfig.vars.sample_start}')
+                             AND DATE('${dataform.projectConfig.vars.sample_end}')

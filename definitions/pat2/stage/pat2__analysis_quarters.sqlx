@@ -1,0 +1,24 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "pat2__analysis_quarters",
+  tags: ["pat2", "stage", "analysis"],
+  description: "Patent v2 quarter dimension (balanced), driven by workflow vars sample_start/sample_end."
+}
+
+WITH params AS (
+  SELECT
+    DATE('${dataform.projectConfig.vars.sample_start}') AS start_date,
+    DATE('${dataform.projectConfig.vars.sample_end}')   AS end_date
+)
+
+SELECT
+  q AS quarter
+FROM params,
+UNNEST(
+  GENERATE_DATE_ARRAY(
+    DATE_TRUNC(start_date, QUARTER),
+    DATE_TRUNC(end_date,   QUARTER),
+    INTERVAL 1 QUARTER
+  )
+) AS q

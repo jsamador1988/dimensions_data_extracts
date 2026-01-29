@@ -1,0 +1,18 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "pat2__patent_family_for4",
+  tags: ["pat2", "stage"],
+  description: "Family-level FoR4 code set (array of distinct 4-digit strings).",
+  bigquery: { clusterBy: ["family_id"] }
+}
+
+SELECT
+  family_id,
+  ARRAY(
+    SELECT DISTINCT for4
+    FROM UNNEST(IFNULL(ARRAY_CONCAT_AGG(for4_codes), [])) AS for4
+    WHERE for4 IS NOT NULL
+  ) AS pat_for4
+FROM ${ref("pat2__patent_family_base")}
+GROUP BY family_id

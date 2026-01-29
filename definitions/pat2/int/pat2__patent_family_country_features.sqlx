@@ -1,0 +1,29 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat2__patent_family_country_features",
+  tags: ["pat2", "int"],
+  description: "Family×inventor-country features: anchor date/quarter, inventor weight (w_inv), assignee weight (w_assg), gov assignee share, domestic filing indicator.",
+  bigquery: {
+    partitionBy: "family_app_qtr",
+    clusterBy: ["country_code", "family_id"],
+    requirePartitionFilter: true
+  }
+}
+
+SELECT
+  inv.family_id,
+  inv.country_code,
+  anc.family_app_dt,
+  anc.family_app_qtr,
+  inv.w_inv,
+  COALESCE(assg.w_assg, 0.0) AS w_assg,
+  COALESCE(assg.w_assg_gov_surico, 0.0) AS w_assg_gov_surico,
+  COALESCE(df.dom_filing, 0) AS dom_filing
+FROM ${ref("pat2__patent_family_inventor_weights")} inv
+JOIN ${ref("pat2__patent_family_anchor")} anc
+  ON anc.family_id = inv.family_id
+LEFT JOIN ${ref("pat2__patent_family_assignee_weights")} assg
+  ON assg.family_id = inv.family_id AND assg.country_code = inv.country_code
+LEFT JOIN ${ref("pat2__patent_family_domestic_filing")} df
+  ON df.family_id = inv.family_id AND df.country_code = inv.country_code
