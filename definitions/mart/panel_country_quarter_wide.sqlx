@@ -2,8 +2,8 @@ config {
   type: "table",
   schema: "rd_mart",
   name: "panel_country_quarter_wide",
-  tags: ["rd_mart"],
-  description: "Balanced OECD quarterly panel (1970Q1–2026Q1). Option B: set all publication series to NULL after last observed pub quarter (prevents artificial zeros in tail). Patents unchanged from v13 Surico-consistent definitions.",
+  tags: ["release", "oecd", "balanced", "surico"],
+  description: "Balanced OECD quarterly panel (country×quarter). Reproducible build: joins the balanced analysis grid to publication + patent wide marts. Option B: all publication series are set to NULL after the last quarter with any observed publications (prevents artificial right-tail zeros).",
   bigquery: {
     partitionBy: "quarter",
     clusterBy: ["country_code"],
@@ -12,99 +12,202 @@ config {
 }
 
 -- ============================================================
--- OPTION B (v14): Tail-censor publications as NULL (not zero)
---   - Keep balanced panel grid intact
---   - For quarters after last observed pub_total_ctq>0 anywhere:
---       set ALL pub_* series to NULL
---   - Clamp tiny negative pub_unknown_produced_ctq to 0 and
---     offset private by same epsilon to preserve identities.
---   - Patents unchanged (use only columns that exist in v13).
+-- Reproducible panel build
+--   - Balanced grid: ${ref("rd_stage","analysis_country_quarter_grid")}
+--   - Publications: ${ref("rd_mart","pub_country_quarter_wide")}
+--   - Patents+grants: ${ref("rd_mart","pat_country_quarter_wide")}
+--
+-- Missingness convention:
+--   - All flow/count variables are COALESCE(...) to 0 on the grid.
+--   - Option B tail-censoring: for quarters after last observed pub quarter,
+--     ALL pub_* variables are set to NULL (not 0).
 -- ============================================================
 
 WITH
-base AS (
-  SELECT *
-  FROM `dimensionsdataextracts.rd_snap.panel_country_quarter_wide_v13_phase6_no_placeholders`
+grid AS (
+  SELECT country_code, quarter
+  FROM ${ref("rd_stage", "analysis_country_quarter_grid")}
 ),
+
+pub AS (
+  -- Drop pub __build_id to avoid duplicate metadata in the merged panel.
+  SELECT * EXCEPT(__build_id)
+  FROM ${ref("rd_mart", "pub_country_quarter_wide")}
+),
+
+pat AS (
+  SELECT *
+  FROM ${ref("rd_mart", "pat_country_quarter_wide")}
+),
+
+base AS (
+  SELECT
+    g.country_code,
+    g.quarter,
+
+    -- =========================
+    -- PATENTS + GRANTS (coalesced to 0 on the balanced grid)
+    -- =========================
+    COALESCE(p.pat_inv_total_ctq, 0.0) AS pat_inv_total_ctq,
+    COALESCE(p.pat_inv_assg_total_ctq, 0.0) AS pat_inv_assg_total_ctq,
+    COALESCE(p.pat_inv_assg_file_total_ctq, 0.0) AS pat_inv_assg_file_total_ctq,
+
+    COALESCE(p.pat_public_owned_ctq, 0.0) AS pat_public_owned_ctq,
+    COALESCE(p.pat_funded_private_owned_ctq, 0.0) AS pat_funded_private_owned_ctq,
+    COALESCE(p.pat_private_private_ctq, 0.0) AS pat_private_private_ctq,
+
+    COALESCE(p.pat_pubfund_tier2_rid_ctq, 0.0) AS pat_pubfund_tier2_rid_ctq,
+    COALESCE(p.pat_pubfund_tier2_inst_ctq, 0.0) AS pat_pubfund_tier2_inst_ctq,
+    COALESCE(p.pat_pubfund_tier2_any_ctq, 0.0) AS pat_pubfund_tier2_any_ctq,
+
+    COALESCE(p.matched_grants_tier2_ctq, 0) AS matched_grants_tier2_ctq,
+    COALESCE(p.matched_grants_amount_usd_tier2_startqtr_ctq, 0.0) AS matched_grants_amount_usd_tier2_startqtr_ctq,
+    COALESCE(p.total_grants_any_funders_ctq, 0) AS total_grants_any_funders_ctq,
+    COALESCE(p.total_grants_government_ctq, 0) AS total_grants_government_ctq,
+
+    -- =========================
+    -- PUBLICATIONS (coalesced to 0 on the balanced grid)
+    -- =========================
+    COALESCE(u.pub_total_ctq, 0.0) AS pub_total_ctq,
+    COALESCE(u.pub_total_recomputed_ctq, 0.0) AS pub_total_recomputed_ctq,
+    COALESCE(u.pub_public_produced_ctq, 0.0) AS pub_public_produced_ctq,
+    COALESCE(u.pub_private_produced_ctq, 0.0) AS pub_private_produced_ctq,
+    COALESCE(u.pub_company_produced_ctq, 0.0) AS pub_company_produced_ctq,
+    COALESCE(u.pub_unknown_produced_ctq, 0.0) AS pub_unknown_produced_ctq,
+    COALESCE(u.pub_total_classified_ctq, 0.0) AS pub_total_classified_ctq,
+    COALESCE(u.pub_total_unclassified_ctq, 0.0) AS pub_total_unclassified_ctq,
+    COALESCE(u.pub_unclassified_share_ctq, 0.0) AS pub_unclassified_share_ctq,
+    COALESCE(u.pub_top5_ctq, 0.0) AS pub_top5_ctq,
+    COALESCE(u.pub_break_ctq, 0.0) AS pub_break_ctq,
+    COALESCE(u.pub_break_eligible_weight_ctq, 0.0) AS pub_break_eligible_weight_ctq,
+
+    COALESCE(u.pub_disc_DISC1_ctq, 0.0) AS pub_disc_DISC1_ctq,
+    COALESCE(u.pub_disc_DISC1_top5_ctq, 0.0) AS pub_disc_DISC1_top5_ctq,
+    COALESCE(u.pub_disc_DISC2_ctq, 0.0) AS pub_disc_DISC2_ctq,
+    COALESCE(u.pub_disc_DISC2_top5_ctq, 0.0) AS pub_disc_DISC2_top5_ctq,
+    COALESCE(u.pub_disc_DISC3_ctq, 0.0) AS pub_disc_DISC3_ctq,
+    COALESCE(u.pub_disc_DISC3_top5_ctq, 0.0) AS pub_disc_DISC3_top5_ctq,
+    COALESCE(u.pub_disc_DISC4_ctq, 0.0) AS pub_disc_DISC4_ctq,
+    COALESCE(u.pub_disc_DISC4_top5_ctq, 0.0) AS pub_disc_DISC4_top5_ctq,
+    COALESCE(u.pub_disc_DISC5_ctq, 0.0) AS pub_disc_DISC5_ctq,
+    COALESCE(u.pub_disc_DISC5_top5_ctq, 0.0) AS pub_disc_DISC5_top5_ctq,
+    COALESCE(u.pub_disc_DISC6_ctq, 0.0) AS pub_disc_DISC6_ctq,
+    COALESCE(u.pub_disc_DISC6_top5_ctq, 0.0) AS pub_disc_DISC6_top5_ctq,
+
+    COALESCE(u.pub_field_AGRI_ctq, 0.0) AS pub_field_AGRI_ctq,
+    COALESCE(u.pub_field_AGRI_top5_ctq, 0.0) AS pub_field_AGRI_top5_ctq,
+    COALESCE(u.pub_field_BIO_ctq, 0.0) AS pub_field_BIO_ctq,
+    COALESCE(u.pub_field_BIO_top5_ctq, 0.0) AS pub_field_BIO_top5_ctq,
+    COALESCE(u.pub_field_BIOMED_ctq, 0.0) AS pub_field_BIOMED_ctq,
+    COALESCE(u.pub_field_BIOMED_top5_ctq, 0.0) AS pub_field_BIOMED_top5_ctq,
+    COALESCE(u.pub_field_BUILT_ctq, 0.0) AS pub_field_BUILT_ctq,
+    COALESCE(u.pub_field_BUILT_top5_ctq, 0.0) AS pub_field_BUILT_top5_ctq,
+    COALESCE(u.pub_field_CHEM_ctq, 0.0) AS pub_field_CHEM_ctq,
+    COALESCE(u.pub_field_CHEM_top5_ctq, 0.0) AS pub_field_CHEM_top5_ctq,
+    COALESCE(u.pub_field_COMMERCE_ctq, 0.0) AS pub_field_COMMERCE_ctq,
+    COALESCE(u.pub_field_COMMERCE_top5_ctq, 0.0) AS pub_field_COMMERCE_top5_ctq,
+    COALESCE(u.pub_field_CREATIVE_ctq, 0.0) AS pub_field_CREATIVE_ctq,
+    COALESCE(u.pub_field_CREATIVE_top5_ctq, 0.0) AS pub_field_CREATIVE_top5_ctq,
+    COALESCE(u.pub_field_EARTH_ctq, 0.0) AS pub_field_EARTH_ctq,
+    COALESCE(u.pub_field_EARTH_top5_ctq, 0.0) AS pub_field_EARTH_top5_ctq,
+    COALESCE(u.pub_field_ECON_ctq, 0.0) AS pub_field_ECON_ctq,
+    COALESCE(u.pub_field_ECON_top5_ctq, 0.0) AS pub_field_ECON_top5_ctq,
+    COALESCE(u.pub_field_EDUC_ctq, 0.0) AS pub_field_EDUC_ctq,
+    COALESCE(u.pub_field_EDUC_top5_ctq, 0.0) AS pub_field_EDUC_top5_ctq,
+    COALESCE(u.pub_field_ENG_ctq, 0.0) AS pub_field_ENG_ctq,
+    COALESCE(u.pub_field_ENG_top5_ctq, 0.0) AS pub_field_ENG_top5_ctq,
+    COALESCE(u.pub_field_ENV_ctq, 0.0) AS pub_field_ENV_ctq,
+    COALESCE(u.pub_field_ENV_top5_ctq, 0.0) AS pub_field_ENV_top5_ctq,
+    COALESCE(u.pub_field_HEALTH_ctq, 0.0) AS pub_field_HEALTH_ctq,
+    COALESCE(u.pub_field_HEALTH_top5_ctq, 0.0) AS pub_field_HEALTH_top5_ctq,
+    COALESCE(u.pub_field_HISTORY_ctq, 0.0) AS pub_field_HISTORY_ctq,
+    COALESCE(u.pub_field_HISTORY_top5_ctq, 0.0) AS pub_field_HISTORY_top5_ctq,
+    COALESCE(u.pub_field_HUMAN_ctq, 0.0) AS pub_field_HUMAN_ctq,
+    COALESCE(u.pub_field_HUMAN_top5_ctq, 0.0) AS pub_field_HUMAN_top5_ctq,
+    COALESCE(u.pub_field_INFOCOMP_ctq, 0.0) AS pub_field_INFOCOMP_ctq,
+    COALESCE(u.pub_field_INFOCOMP_top5_ctq, 0.0) AS pub_field_INFOCOMP_top5_ctq,
+    COALESCE(u.pub_field_LANG_ctq, 0.0) AS pub_field_LANG_ctq,
+    COALESCE(u.pub_field_LANG_top5_ctq, 0.0) AS pub_field_LANG_top5_ctq,
+    COALESCE(u.pub_field_LAW_ctq, 0.0) AS pub_field_LAW_ctq,
+    COALESCE(u.pub_field_LAW_top5_ctq, 0.0) AS pub_field_LAW_top5_ctq,
+    COALESCE(u.pub_field_MATH_ctq, 0.0) AS pub_field_MATH_ctq,
+    COALESCE(u.pub_field_MATH_top5_ctq, 0.0) AS pub_field_MATH_top5_ctq,
+    COALESCE(u.pub_field_PHIL_ctq, 0.0) AS pub_field_PHIL_ctq,
+    COALESCE(u.pub_field_PHIL_top5_ctq, 0.0) AS pub_field_PHIL_top5_ctq,
+    COALESCE(u.pub_field_PHYSICAL_ctq, 0.0) AS pub_field_PHYSICAL_ctq,
+    COALESCE(u.pub_field_PHYSICAL_top5_ctq, 0.0) AS pub_field_PHYSICAL_top5_ctq,
+    COALESCE(u.pub_field_PSYCH_ctq, 0.0) AS pub_field_PSYCH_ctq,
+    COALESCE(u.pub_field_PSYCH_top5_ctq, 0.0) AS pub_field_PSYCH_top5_ctq
+
+  FROM grid g
+  LEFT JOIN pub u USING (country_code, quarter)
+  LEFT JOIN pat p USING (country_code, quarter)
+),
+
 pub_last AS (
+  -- last quarter with ANY publication mass anywhere in the panel
   SELECT MAX(quarter) AS last_pub_quarter
   FROM base
   WHERE pub_total_ctq > 0
 )
 
 SELECT
+  'panel_country_quarter_wide_repro_v1' AS __build_id,
+
   b.* REPLACE (
-
-    -- >>> Set your v14 build id here (single place)
-    'panel_country_quarter_wide_v14' AS __build_id,
-
     -- =========================
-    -- PUBLICATIONS: Option B tail handling
+    -- PUBLICATIONS (Option B tail-censoring: NULL after last observed pub quarter)
     -- =========================
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_total_ctq ELSE NULL END AS pub_total_ctq,
 
+    -- Keep recomputed total consistent with pub_total and tail-safe
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_total_ctq ELSE NULL END AS pub_total_recomputed_ctq,
 
+    -- Surico produced split: tail-safe
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_public_produced_ctq ELSE NULL END AS pub_public_produced_ctq,
 
-    -- Clamp tiny negative unknown to 0, and shift epsilon into private so:
-    -- pub_total = pub_public + pub_private + pub_unknown holds exactly.
+    -- Private produced: absorb tiny negative float noise from the unknown residual (keeps identities exact)
     CASE
-      WHEN b.quarter <= pl.last_pub_quarter
-      THEN (b.pub_private_produced_ctq + (b.pub_unknown_produced_ctq - GREATEST(0.0, b.pub_unknown_produced_ctq)))
+      WHEN b.quarter <= pl.last_pub_quarter THEN
+        (b.pub_private_produced_ctq + (b.pub_unknown_produced_ctq - GREATEST(0.0, b.pub_unknown_produced_ctq)))
       ELSE NULL
     END AS pub_private_produced_ctq,
 
+    -- Company-produced: independent series, tail-safe (subset of private-produced by construction)
+    CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_company_produced_ctq ELSE NULL END AS pub_company_produced_ctq,
+
+    -- Unknown produced: clamp to [0,∞) inside support; NULL in tail
     CASE
-      WHEN b.quarter <= pl.last_pub_quarter
-      THEN GREATEST(0.0, b.pub_unknown_produced_ctq)
+      WHEN b.quarter <= pl.last_pub_quarter THEN GREATEST(0.0, b.pub_unknown_produced_ctq)
       ELSE NULL
     END AS pub_unknown_produced_ctq,
 
-    -- Re-derive diagnostics so they remain internally consistent under Option B
+    -- Produced classified/unclassified diagnostics (classified = public + private; unclassified = residual/unknown)
     CASE
-      WHEN b.quarter <= pl.last_pub_quarter
-      THEN (
-        b.pub_public_produced_ctq
-        + (b.pub_private_produced_ctq + (b.pub_unknown_produced_ctq - GREATEST(0.0, b.pub_unknown_produced_ctq)))
-      )
+      WHEN b.quarter <= pl.last_pub_quarter THEN
+        (b.pub_public_produced_ctq + (b.pub_private_produced_ctq + (b.pub_unknown_produced_ctq - GREATEST(0.0, b.pub_unknown_produced_ctq))))
       ELSE NULL
     END AS pub_total_classified_ctq,
-
     CASE
-      WHEN b.quarter <= pl.last_pub_quarter
-      THEN (
-        b.pub_total_ctq
-        - (
-          b.pub_public_produced_ctq
-          + (b.pub_private_produced_ctq + (b.pub_unknown_produced_ctq - GREATEST(0.0, b.pub_unknown_produced_ctq)))
-        )
-      )
+      WHEN b.quarter <= pl.last_pub_quarter THEN
+        (b.pub_total_ctq - (b.pub_public_produced_ctq + (b.pub_private_produced_ctq + (b.pub_unknown_produced_ctq - GREATEST(0.0, b.pub_unknown_produced_ctq)))))
       ELSE NULL
     END AS pub_total_unclassified_ctq,
-
     CASE
-      WHEN b.quarter <= pl.last_pub_quarter
-      THEN SAFE_DIVIDE(
-        (
-          b.pub_total_ctq
-          - (
-            b.pub_public_produced_ctq
-            + (b.pub_private_produced_ctq + (b.pub_unknown_produced_ctq - GREATEST(0.0, b.pub_unknown_produced_ctq)))
-          )
-        ),
+      WHEN b.quarter <= pl.last_pub_quarter THEN SAFE_DIVIDE(
+        (b.pub_total_ctq - (b.pub_public_produced_ctq + (b.pub_private_produced_ctq + (b.pub_unknown_produced_ctq - GREATEST(0.0, b.pub_unknown_produced_ctq))))),
         b.pub_total_ctq
       )
       ELSE NULL
     END AS pub_unclassified_share_ctq,
 
-    -- Quality series: NULL in tail
+    -- Quality + breakthrough series: tail-safe
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_top5_ctq ELSE NULL END AS pub_top5_ctq,
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_break_ctq ELSE NULL END AS pub_break_ctq,
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_break_eligible_weight_ctq ELSE NULL END AS pub_break_eligible_weight_ctq,
 
     -- =========================
-    -- DISCIPLINES (DISC1..DISC6) + top5: NULL in tail
+    -- DISCIPLINES (DISC1..DISC6) + top5
     -- =========================
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_disc_DISC1_ctq ELSE NULL END AS pub_disc_DISC1_ctq,
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_disc_DISC1_top5_ctq ELSE NULL END AS pub_disc_DISC1_top5_ctq,
@@ -120,7 +223,7 @@ SELECT
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_disc_DISC6_top5_ctq ELSE NULL END AS pub_disc_DISC6_top5_ctq,
 
     -- =========================
-    -- FIELDS (Field22) + top5: NULL in tail
+    -- FIELDS (22) + top5
     -- =========================
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_field_AGRI_ctq ELSE NULL END AS pub_field_AGRI_ctq,
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_field_AGRI_top5_ctq ELSE NULL END AS pub_field_AGRI_top5_ctq,
@@ -166,7 +269,6 @@ SELECT
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_field_PHYSICAL_top5_ctq ELSE NULL END AS pub_field_PHYSICAL_top5_ctq,
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_field_PSYCH_ctq ELSE NULL END AS pub_field_PSYCH_ctq,
     CASE WHEN b.quarter <= pl.last_pub_quarter THEN b.pub_field_PSYCH_top5_ctq ELSE NULL END AS pub_field_PSYCH_top5_ctq
-
   )
 FROM base b
 CROSS JOIN pub_last pl
