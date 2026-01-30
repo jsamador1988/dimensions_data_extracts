@@ -2,128 +2,106 @@ config {
   type: "table",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Publication×field flags: top-5% journal within field and breakthrough (top 0.1% NC within field-year), plus normalized citations."
+  description: "Publication×field22 flags: top-5% journal (by field) and breakthrough (top 1% nc_5y within field-year)."
 }
-
--- Requires these upstream actions:
---   ${ref("pub_core")}            : pub_id, pub_dt_best, journal_id (or journal.id), quarter (optional), pub_year (optional)
---   ${ref("pub_field_weights")}   : pub_id, field22_code, w_field
---   ${ref("pub_citations_5y")}    : pub_id, citations_5y
---   ${ref("pub_field_year_norm")} : field22_code, pub_year, exp_citations_5y
---   ${ref("journal_top5_by_field")}: journal_id, field22_code, is_top5
 
 WITH cfg AS (
   SELECT
     DATE('${dataform.projectConfig.vars.sample_end}') AS sample_end_dt,
-    CAST('${dataform.projectConfig.vars.breakthrough_window_years}' AS INT64) AS wb_years
+    CAST('${dataform.projectConfig.vars.breakthrough_window_years}' AS INT64) AS window_years,
+    0.01 AS breakthrough_pct
 ),
 
 core AS (
   SELECT
     pub_id,
+    quarter,
     pub_dt_best,
     EXTRACT(YEAR FROM pub_dt_best) AS pub_year,
-    -- If your pub_core stores journal as a STRUCT, change the next line to: journal.id AS journal_id
     journal_id
-  FROM ${ref("pub_core")}
-  WHERE pub_dt_best IS NOT NULL
+  FROM ${ref("rd_stage", "pub_core")}
+  WHERE pub_id IS NOT NULL
+    AND quarter IS NOT NULL
+    AND pub_dt_best IS NOT NULL
 ),
 
 fw AS (
   SELECT
     pub_id,
+    quarter,
     field22_code,
     w_field
-  FROM ${ref("pub_field_weights")}
+  FROM ${ref("rd_stage", "pub_field_weights")}
 ),
 
 cit AS (
-  SELECT
-    pub_id,
-    citations_5y
-  FROM ${ref("pub_citations_5y")}
+  SELECT pub_id, citations_5y
+  FROM ${ref("rd_stage", "pub_citations_5y")}
 ),
 
 norm AS (
-  SELECT
-    field22_code,
-    pub_year,
-    exp_citations_5y
-  FROM ${ref("pub_field_year_norm")}
+  SELECT field22_code, pub_year, exp_citations_5y
+  FROM ${ref("rd_stage", "pub_field_year_norm")}
 ),
 
-topj AS (
-  SELECT
-    journal_id,
-    field22_code,
-    is_top5
-  FROM ${ref("journal_top5_by_field")}
+top5 AS (
+  SELECT journal_id, field22_code, is_top5
+  FROM ${ref("rd_stage", "journal_top5_by_field")}
 ),
 
 paper_field AS (
   SELECT
     c.pub_id,
-    c.pub_dt_best,
+    c.quarter,
     c.pub_year,
     c.journal_id,
     fw.field22_code,
     fw.w_field,
-    IFNULL(cit.citations_5y, 0) AS citations_5y,
+    cit.citations_5y,
     norm.exp_citations_5y,
-    SAFE_DIVIDE(IFNULL(cit.citations_5y, 0), NULLIF(norm.exp_citations_5y, 0)) AS nc_5y,
-    IFNULL(topj.is_top5, 0) AS is_top5_field
+    SAFE_DIVIDE(cit.citations_5y, NULLIF(norm.exp_citations_5y, 0)) AS nc_5y,
+    COALESCE(t.is_top5, 0) AS is_top5_field
   FROM core c
   JOIN fw
     ON fw.pub_id = c.pub_id
+   AND fw.quarter = c.quarter
   LEFT JOIN cit
     ON cit.pub_id = c.pub_id
   LEFT JOIN norm
     ON norm.field22_code = fw.field22_code
    AND norm.pub_year = c.pub_year
-  LEFT JOIN topj
-    ON topj.journal_id = c.journal_id
-   AND topj.field22_code = fw.field22_code
+  LEFT JOIN top5 t
+    ON t.journal_id = c.journal_id
+   AND t.field22_code = fw.field22_code
 ),
 
-eligible_for_break AS (
+paper_field_window AS (
   SELECT
-    pf.*,
-    CASE
-      WHEN pf.pub_dt_best <= DATE_SUB((SELECT sample_end_dt FROM cfg), INTERVAL (SELECT wb_years FROM cfg) YEAR)
-      THEN 1 ELSE 0
-    END AS break_eligible
+    pf.*
   FROM paper_field pf
+  CROSS JOIN cfg
+  WHERE pf.pub_dt_best >= DATE_SUB(cfg.sample_end_dt, INTERVAL cfg.window_years YEAR)
+    AND pf.pub_dt_best <= cfg.sample_end_dt
+    AND pf.field22_code IS NOT NULL
+    AND pf.nc_5y IS NOT NULL
 ),
 
--- Breakthrough threshold: top 0.1% within (field22_code, pub_year) based on nc_5y
-break_thresholds AS (
+ranked AS (
   SELECT
-    field22_code,
-    pub_year,
-    -- 0.999 quantile (top 0.1%). APPROX_QUANTILES returns array; OFFSET(999) is 99.9th percentile when using 1000 buckets.
-    APPROX_QUANTILES(nc_5y, 1000)[OFFSET(999)] AS thr_nc_999
-  FROM eligible_for_break
-  WHERE break_eligible = 1
-    AND nc_5y IS NOT NULL
-  GROUP BY field22_code, pub_year
+    pfw.*,
+    PERCENT_RANK() OVER (
+      PARTITION BY field22_code, pub_year
+      ORDER BY nc_5y DESC
+    ) AS pr_nc
+  FROM paper_field_window pfw
 )
 
 SELECT
-  e.pub_id,
-  e.field22_code,
-  e.w_field,
-  e.is_top5_field,
-  e.break_eligible,
-  e.citations_5y,
-  e.exp_citations_5y,
-  e.nc_5y,
-  CASE
-    WHEN e.break_eligible = 1
-     AND e.nc_5y IS NOT NULL
-     AND e.nc_5y >= bt.thr_nc_999
-    THEN 1 ELSE 0
-  END AS is_breakthrough_field
-FROM eligible_for_break e
-LEFT JOIN break_thresholds bt
-  ON bt.field22_code = e.field22_code
- AND bt.pub_year = e.pub_year
+  pub_id,
+  quarter,
+  pub_year,
+  field22_code,
+  w_field,
+  is_top5_field,
+  CAST(pr_nc <= (SELECT breakthrough_pct FROM cfg) AS INT64) AS is_breakthrough_field
+FROM ranked

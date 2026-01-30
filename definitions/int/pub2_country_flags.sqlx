@@ -1,33 +1,153 @@
 config {
   type: "table",
-  name: "pub2_country_flags",
   schema: "rd_int",
-  tags: ["int", "phase4", "pub2"],
-  description: "pub2 country weights + publication funding flags (gov_funded_flag, any_funded_flag) from Dimensions funder_orgs."
+  name: "pub2_country_flags",
+  tags: ["int"],
+  description: "Publication×country×quarter weights + Surico4 bucket flags (Option 2: single bucket per paper-country-quarter)."
 }
 
 WITH w AS (
-  SELECT * FROM ${ref("pub2_country_weights")}
+  SELECT
+    pub_id,
+    quarter,
+    country_code,
+    w_aff,
+    w_public_prod,
+    w_private_prod
+  FROM ${ref("rd_stage", "pub2_country_weights")}
+  WHERE pub_id IS NOT NULL
+    AND quarter IS NOT NULL
+    AND country_code IS NOT NULL
 ),
 
-pub_funding AS (
+-- DE government-funder whitelist (mirrors the patents logic)
+whitelist_de AS (
+  SELECT 'grid.424150.6' AS id  -- DFG
+  UNION ALL SELECT 'grid.453068.c'  -- AiF
+  UNION ALL SELECT 'grid.453150.6'  -- DBU
+),
+
+pub_ids AS (
+  SELECT DISTINCT pub_id FROM w
+),
+
+pubs AS (
   SELECT
     p.id AS pub_id,
-    -- any funder org on the publication
-    COUNT(DISTINCT funder_org_id) > 0 AS any_funded_flag,
-    -- government funder if funder org has 'Government' in organization types
-    LOGICAL_OR('Government' IN UNNEST(IFNULL(o.types, ARRAY<STRING>[]))) AS gov_funded_flag
+    p.funder_orgs
   FROM `dimensions-ai.data_analytics.publications` p
-  LEFT JOIN UNNEST(IFNULL(p.funder_orgs, ARRAY<STRING>[])) AS funder_org_id
-  LEFT JOIN `dimensions-ai.data_analytics.organizations` o
-    ON o.id = funder_org_id
-  GROUP BY pub_id
+  JOIN pub_ids u
+    ON u.pub_id = p.id
+),
+
+funder_flat AS (
+  SELECT
+    pub_id,
+    funder_org AS org_id
+  FROM pubs
+  CROSS JOIN UNNEST(IFNULL(funder_orgs, ARRAY<STRING>[])) AS funder_org
+  WHERE funder_org IS NOT NULL
+),
+
+funder_orgs AS (
+  SELECT
+    f.pub_id,
+    o.id AS org_id,
+    o.legal_country_code AS country_code,
+    o.types AS org_types
+  FROM funder_flat f
+  JOIN `dimensions-ai.data_analytics.organizations` o
+    ON o.id = f.org_id
+  WHERE o.legal_country_code IS NOT NULL
+),
+
+pub_country_funder_flags AS (
+  SELECT
+    pub_id,
+    country_code,
+    MAX(
+      CAST(
+        ('Government' IN UNNEST(IFNULL(org_types, ARRAY<STRING>[]))
+         OR 'Funder' IN UNNEST(IFNULL(org_types, ARRAY<STRING>[]))) AS INT64
+      )
+    ) AS funded_any_flag,
+    MAX(
+      CAST(
+        (
+          'Government' IN UNNEST(IFNULL(org_types, ARRAY<STRING>[]))
+          OR (country_code = 'DE' AND org_id IN (SELECT id FROM whitelist_de))
+        ) AS INT64
+      )
+    ) AS gov_funded_flag
+  FROM funder_orgs
+  GROUP BY pub_id, country_code
+),
+
+joined AS (
+  SELECT
+    w.pub_id,
+    w.quarter,
+    w.country_code,
+    COALESCE(w.w_aff, 0.0) AS w_aff,
+    COALESCE(w.w_public_prod, 0.0) AS w_public_prod,
+    COALESCE(w.w_private_prod, 0.0) AS w_private_prod,
+    COALESCE(f.funded_any_flag, 0) AS funded_any_flag,
+    COALESCE(f.gov_funded_flag, 0) AS gov_funded_flag
+  FROM w
+  LEFT JOIN pub_country_funder_flags f
+    ON f.pub_id = w.pub_id
+   AND f.country_code = w.country_code
 )
 
 SELECT
-  w.*,
-  IFNULL(f.any_funded_flag, FALSE) AS any_funded_flag,
-  IFNULL(f.gov_funded_flag, FALSE) AS gov_funded_flag
-FROM w
-LEFT JOIN pub_funding f
-  USING (pub_id)
+  pub_id,
+  quarter,
+  country_code,
+
+  -- raw weights (from country weights stage)
+  w_aff,
+  w_public_prod,
+  w_private_prod,
+
+  -- “production exists” flags
+  CAST(w_public_prod > 0 AS INT64) AS public_prod_flag,
+  CAST(w_private_prod > 0 AS INT64) AS private_prod_flag,
+
+  -- funding flags
+  funded_any_flag,
+  gov_funded_flag,
+
+  -- -----------------------------
+  -- Surico4 bucket flags (Option 2)
+  -- owned if ANY public production exists in that country-quarter
+  -- funded_private_owned if NOT owned AND gov-funded (and has private production weight)
+  -- private_private otherwise (within produced universe)
+  -- -----------------------------
+  CAST(w_public_prod > 0 AS INT64) AS owned_flag,
+
+  CAST(
+    (w_public_prod = 0)
+    AND (gov_funded_flag = 1)
+    AND (w_private_prod > 0)
+    AS INT64
+  ) AS funded_private_owned_flag,
+
+  CAST(
+    (w_public_prod = 0)
+    AND (gov_funded_flag = 0)
+    AND (w_aff > 0)
+    AS INT64
+  ) AS private_private_flag,
+
+  CAST(0 AS INT64) AS unclassified_flag,
+
+  -- eng-weight contributions (sum to w_aff)
+  w_aff AS total_eng,
+  IF(w_public_prod > 0, w_aff, 0.0) AS owned_eng,
+  IF((w_public_prod = 0) AND (gov_funded_flag = 1) AND (w_private_prod > 0), w_aff, 0.0) AS funded_private_owned_eng,
+  IF((w_public_prod = 0) AND (gov_funded_flag = 0) AND (w_aff > 0), w_aff, 0.0) AS private_private_eng,
+  0.0 AS unclassified_eng,
+
+  -- optional “any gov-funded” series (regardless of ownership bucket)
+  IF(gov_funded_flag = 1, w_aff, 0.0) AS funded_any_eng
+FROM joined

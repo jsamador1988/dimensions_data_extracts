@@ -1,108 +1,61 @@
 config {
   type: "table",
   schema: "rd_mart",
-  tags: ["mart", "pub2"],
-  description: "Country×quarter×field22 Surico-4 publication counts restricted to top-5% journals within each field22. Uses single-bucket Surico assignment at paper×country×quarter; weights = w_aff × w_field."
+  tags: ["mart"],
+  description: "Country×quarter×field22 Surico4 series for top-5% journals (field-specific)."
 }
 
-WITH country_flags AS (
+WITH pf AS (
   SELECT
     pub_id,
     quarter,
-    country_code,
-    w_aff,
-    public_prod_flag,
-    private_prod_flag,
-    private_prod_gov_funded_flag
-  FROM ${ref("rd_int", "pub2_country_flags")}
-  WHERE pub_id IS NOT NULL
-    AND quarter IS NOT NULL
-    AND country_code IS NOT NULL
-    AND w_aff IS NOT NULL
-    AND w_aff > 0
-),
-
-field_flags AS (
-  SELECT
-    pub_id,
     field22_code,
     w_field
   FROM ${ref("rd_stage", "pub_field_flags")}
   WHERE is_top5_field = 1
-    AND field22_code IS NOT NULL
-    AND w_field IS NOT NULL
-    AND w_field > 0
 ),
 
-bucketed AS (
+cf AS (
   SELECT
-    cf.country_code,
-    cf.quarter,
-    ff.field22_code,
-
-    -- Single-bucket assignment (Option 2):
-    -- Priority: public-owned > funded-private-owned > private-private > unclassified
-    (cf.w_aff * ff.w_field) AS w_total,
-
-    CASE
-      WHEN cf.public_prod_flag = 1
-      THEN (cf.w_aff * ff.w_field)
-      ELSE 0
-    END AS w_owned,
-
-    CASE
-      WHEN cf.public_prod_flag = 0
-       AND cf.private_prod_gov_funded_flag = 1
-      THEN (cf.w_aff * ff.w_field)
-      ELSE 0
-    END AS w_funded_private_owned,
-
-    CASE
-      WHEN cf.public_prod_flag = 0
-       AND cf.private_prod_gov_funded_flag = 0
-       AND cf.private_prod_flag = 1
-      THEN (cf.w_aff * ff.w_field)
-      ELSE 0
-    END AS w_private_private,
-
-    CASE
-      WHEN cf.public_prod_flag = 0
-       AND cf.private_prod_flag = 0
-      THEN (cf.w_aff * ff.w_field)
-      ELSE 0
-    END AS w_unclassified
-
-  FROM country_flags cf
-  JOIN field_flags ff
-    USING (pub_id)
-),
-
-agg AS (
-  SELECT
-    country_code,
+    pub_id,
     quarter,
-    field22_code,
-    SUM(w_total)               AS total_eng,
-    SUM(w_owned)               AS owned_eng,
-    SUM(w_funded_private_owned) AS funded_private_owned_eng,
-    SUM(w_private_private)     AS private_private_eng,
-    SUM(w_unclassified)        AS unclassified_eng
-  FROM bucketed
-  GROUP BY country_code, quarter, field22_code
+    country_code,
+    total_eng,
+    owned_eng,
+    funded_private_owned_eng,
+    private_private_eng,
+    unclassified_eng,
+    funded_any_eng
+  FROM ${ref("rd_int", "pub2_country_flags")}
+),
+
+fields AS (
+  SELECT field22_code, field22_name, disc6_code, disc6_name
+  FROM ${ref("rd_stage", "pub_fields_distinct")}
 )
 
 SELECT
-  a.country_code,
-  a.quarter,
-  a.field22_code,
-  d.field22_name,
-  d.disc6_code,
-  d.disc6_name,
-  a.total_eng,
-  a.owned_eng,
-  a.funded_private_owned_eng,
-  a.private_private_eng,
-  a.unclassified_eng
-FROM agg a
-LEFT JOIN ${ref("rd_stage", "pub_fields_distinct")} d
-  ON d.field22_code = a.field22_code
+  cf.country_code,
+  cf.quarter,
+  pf.field22_code,
+  f.field22_name,
+  f.disc6_code,
+  f.disc6_name,
+
+  SUM(cf.total_eng * pf.w_field) AS total_eng,
+  SUM(cf.owned_eng * pf.w_field) AS owned_eng,
+  SUM(cf.funded_private_owned_eng * pf.w_field) AS funded_private_owned_eng,
+  SUM(cf.private_private_eng * pf.w_field) AS private_private_eng,
+  SUM(cf.unclassified_eng * pf.w_field) AS unclassified_eng,
+  SUM(cf.funded_any_eng * pf.w_field) AS funded_any_eng
+FROM pf
+JOIN cf
+  ON cf.pub_id = pf.pub_id
+ AND cf.quarter = pf.quarter
+LEFT JOIN fields f
+  ON f.field22_code = pf.field22_code
+GROUP BY
+  cf.country_code, cf.quarter,
+  pf.field22_code, f.field22_name, f.disc6_code, f.disc6_name
+ORDER BY
+  country_code, quarter, field22_code
