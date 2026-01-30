@@ -49,10 +49,12 @@ top5 AS (
   FROM ${ref("rd_stage", "journal_top5_by_field")}
 ),
 
+-- Paper × field panel with normalized citations + flags
 paper_field AS (
   SELECT
     c.pub_id,
     c.quarter,
+    c.pub_dt_best,
     c.pub_year,
     c.journal_id,
     fw.field22_code,
@@ -75,6 +77,7 @@ paper_field AS (
    AND t.field22_code = fw.field22_code
 ),
 
+-- Rolling window for breakthroughs (avoid full-history ranking drift)
 paper_field_window AS (
   SELECT
     pf.*
