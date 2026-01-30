@@ -1,52 +1,78 @@
 config {
   type: "table",
-  name: "pub2_country_quarter_field22_breakthrough_surico4",
   schema: "rd_mart",
-  tags: ["mart"],
-  description: "Country×quarter×field22 breakthroughs (top 1% normalized 5y citations within field×year). Includes eligible mass. Surico4 decomposition."
+  tags: ["mart", "pub2"],
+  description: "Country×quarter×field22 Surico-4 publication counts restricted to breakthrough papers (field-year based). Uses single-bucket Surico assignment at paper×country×quarter; weights = w_aff × w_field."
 }
 
-WITH field_dim AS (
-  SELECT DISTINCT
-    field22_code,
-    field22_name
-  FROM ${ref("rd_stage", "pub_fields_distinct")}
-  WHERE field22_code IS NOT NULL
-),
-
-grid AS (
+WITH country_flags AS (
   SELECT
-    qg.country_code,
-    qg.quarter,
-    fd.field22_code,
-    fd.field22_name
-  FROM ${ref("quarter_grid")} qg
-  CROSS JOIN field_dim fd
+    pub_id,
+    quarter,
+    country_code,
+    w_aff,
+    public_prod_flag,
+    private_prod_flag,
+    private_prod_gov_funded_flag
+  FROM ${ref("rd_int", "pub2_country_flags")}
+  WHERE pub_id IS NOT NULL
+    AND quarter IS NOT NULL
+    AND country_code IS NOT NULL
+    AND w_aff IS NOT NULL
+    AND w_aff > 0
 ),
 
-base AS (
+field_flags AS (
+  SELECT
+    pub_id,
+    field22_code,
+    w_field
+  FROM ${ref("rd_stage", "pub_field_flags")}
+  WHERE is_breakthrough_field = 1
+    AND field22_code IS NOT NULL
+    AND w_field IS NOT NULL
+    AND w_field > 0
+),
+
+bucketed AS (
   SELECT
     cf.country_code,
     cf.quarter,
-    bf.field22_code,
+    ff.field22_code,
 
-    (cf.w_aff * bf.w_field * bf.eligible_for_breakthrough) AS w_elig,
+    (cf.w_aff * ff.w_field) AS w_total,
 
-    (cf.w_aff * bf.w_field * bf.is_breakthrough) AS w_break,
+    CASE
+      WHEN cf.public_prod_flag = 1
+      THEN (cf.w_aff * ff.w_field)
+      ELSE 0
+    END AS w_owned,
 
-    (cf.w_public_prod * bf.w_field * bf.is_breakthrough) AS w_break_owned,
+    CASE
+      WHEN cf.public_prod_flag = 0
+       AND cf.private_prod_gov_funded_flag = 1
+      THEN (cf.w_aff * ff.w_field)
+      ELSE 0
+    END AS w_funded_private_owned,
 
-    (CASE WHEN cf.gov_funded_flag THEN (cf.w_aff * bf.w_field * bf.is_breakthrough) ELSE 0 END) AS w_break_funded_any,
+    CASE
+      WHEN cf.public_prod_flag = 0
+       AND cf.private_prod_gov_funded_flag = 0
+       AND cf.private_prod_flag = 1
+      THEN (cf.w_aff * ff.w_field)
+      ELSE 0
+    END AS w_private_private,
 
-    (CASE WHEN cf.gov_funded_flag THEN (cf.w_private_prod * bf.w_field * bf.is_breakthrough) ELSE 0 END) AS w_break_funded_private_owned,
+    CASE
+      WHEN cf.public_prod_flag = 0
+       AND cf.private_prod_flag = 0
+      THEN (cf.w_aff * ff.w_field)
+      ELSE 0
+    END AS w_unclassified
 
-    (CASE WHEN NOT cf.gov_funded_flag THEN (cf.w_private_prod * bf.w_field * bf.is_breakthrough) ELSE 0 END) AS w_break_private_private,
-
-    (cf.w_unclassified * bf.w_field * bf.is_breakthrough) AS w_break_unclassified
-  FROM ${ref("pub2_country_flags")} cf
-  JOIN ${ref("rd_stage", "pub_breakthrough_pub_field")} bf
-    ON bf.pub_id = cf.pub_id
-   AND bf.quarter = cf.quarter
+  FROM country_flags cf
+  JOIN field_flags ff
+    USING (pub_id)
 ),
 
 agg AS (
@@ -54,33 +80,27 @@ agg AS (
     country_code,
     quarter,
     field22_code,
-    SUM(w_elig) AS break_eligible_total_eng,
-    SUM(w_break) AS break_total_eng,
-    SUM(w_break_owned) AS break_owned_eng,
-    SUM(w_break_funded_any) AS break_funded_any_eng,
-    SUM(w_break_funded_private_owned) AS break_funded_private_owned_eng,
-    SUM(w_break_private_private) AS break_private_private_eng,
-    SUM(w_break_unclassified) AS break_unclassified_eng
-  FROM base
+    SUM(w_total)               AS total_eng,
+    SUM(w_owned)               AS owned_eng,
+    SUM(w_funded_private_owned) AS funded_private_owned_eng,
+    SUM(w_private_private)     AS private_private_eng,
+    SUM(w_unclassified)        AS unclassified_eng
+  FROM bucketed
   GROUP BY country_code, quarter, field22_code
 )
 
 SELECT
-  g.country_code,
-  g.quarter,
-  g.field22_code,
-  g.field22_name,
-  COALESCE(a.break_eligible_total_eng, 0) AS break_eligible_total_eng,
-  COALESCE(a.break_total_eng, 0) AS break_total_eng,
-  SAFE_DIVIDE(COALESCE(a.break_total_eng, 0), NULLIF(COALESCE(a.break_eligible_total_eng, 0), 0)) AS break_share_among_eligible,
-  COALESCE(a.break_owned_eng, 0) AS break_owned_eng,
-  COALESCE(a.break_funded_any_eng, 0) AS break_funded_any_eng,
-  COALESCE(a.break_funded_private_owned_eng, 0) AS break_funded_private_owned_eng,
-  COALESCE(a.break_private_private_eng, 0) AS break_private_private_eng,
-  COALESCE(a.break_unclassified_eng, 0) AS break_unclassified_eng
-FROM grid g
-LEFT JOIN agg a
-  ON a.country_code = g.country_code
- AND a.quarter = g.quarter
- And a.field22_code = g.field22_code
-ORDER BY country_code, quarter, field22_code
+  a.country_code,
+  a.quarter,
+  a.field22_code,
+  d.field22_name,
+  d.disc6_code,
+  d.disc6_name,
+  a.total_eng,
+  a.owned_eng,
+  a.funded_private_owned_eng,
+  a.private_private_eng,
+  a.unclassified_eng
+FROM agg a
+LEFT JOIN ${ref("rd_stage", "pub_fields_distinct")} d
+  ON d.field22_code = a.field22_code

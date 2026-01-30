@@ -1,51 +1,33 @@
 config {
   type: "table",
+  name: "pub_field_year_norm",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Field-year expected citations (5y): E[citations_5y | field22_code, pub_year], weighted by paper field weights."
+  description: "Expected (mean) 5y citations by field22×year, weighted by pub_field_weights.",
+  bigquery: {
+    partitionBy: "pub_year",
+    clusterBy: ["field22_code"]
+  }
 }
 
-WITH core AS (
-  SELECT
-    pub_id,
-    EXTRACT(YEAR FROM pub_dt_best) AS pub_year
-  FROM ${ref("rd_stage", "pub_core")}
-  WHERE pub_dt_best IS NOT NULL
-),
-
-cit AS (
-  SELECT
-    pub_id,
-    citations_5y
-  FROM ${ref("rd_stage", "pub_citations_5y")}
-),
-
-fw AS (
-  SELECT
-    pub_id,
-    field22_code,
-    w_field
+WITH fw AS (
+  SELECT pub_id, quarter, field22_code, w_field
   FROM ${ref("rd_stage", "pub_field_weights")}
 ),
 
-panel AS (
-  SELECT
-    fw.field22_code,
-    core.pub_year,
-    fw.w_field,
-    IFNULL(cit.citations_5y, 0) AS citations_5y
-  FROM fw
-  JOIN core
-    ON core.pub_id = fw.pub_id
-  LEFT JOIN cit
-    ON cit.pub_id = fw.pub_id
-  WHERE core.pub_year IS NOT NULL
+cit AS (
+  SELECT pub_id, pub_year, citations_5y
+  FROM ${ref("rd_stage", "pub_citations_5y")}
 )
 
 SELECT
-  field22_code,
-  pub_year,
-  SAFE_DIVIDE(SUM(w_field * citations_5y), SUM(w_field)) AS exp_citations_5y
-FROM panel
-GROUP BY field22_code, pub_year
-HAVING SUM(w_field) > 0
+  fw.field22_code,
+  cit.pub_year,
+  SAFE_DIVIDE(SUM(fw.w_field * cit.citations_5y), SUM(fw.w_field)) AS exp_citations_5y,
+  COUNT(DISTINCT fw.pub_id) AS n_pubs
+FROM fw
+JOIN cit
+  ON cit.pub_id = fw.pub_id
+WHERE fw.field22_code IS NOT NULL
+  AND cit.pub_year IS NOT NULL
+GROUP BY fw.field22_code, cit.pub_year
