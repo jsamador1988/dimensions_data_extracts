@@ -1,0 +1,15 @@
+config {
+  type: "assertion",
+  schema: "rd_mart",
+  name: "pub2__assert_overall_surico4_sums",
+  tags: ["diag", "pub2"],
+  description: "Assert Surico-4 buckets sum to total at country×quarter overall for publications."
+}
+
+SELECT
+  country_code,
+  quarter,
+  total_eng,
+  (owned_eng + funded_private_owned_eng + private_private_eng + unclassified_eng) AS sum_split
+FROM ${ref("rd_mart", "pub2_country_quarter_overall_surico4")}
+WHERE ABS(total_eng - (owned_eng + funded_private_owned_eng + private_private_eng + unclassified_eng)) > 1e-6

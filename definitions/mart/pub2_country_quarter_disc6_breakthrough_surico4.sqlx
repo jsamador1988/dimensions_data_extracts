@@ -1,9 +1,9 @@
 config {
   type: "table",
   schema: "rd_mart",
-  name: "pub2_country_quarter_disc6_surico4",
+  name: "pub2_country_quarter_disc6_breakthrough_surico4",
   tags: ["mart", "pub2"],
-  description: "Country×quarter×disc6 publication fractional counts split into Surico-4 buckets. Built by mapping field22→disc6 and summing field22-level Surico-4 series."
+  description: "Country×quarter×disc6 BREAKTHROUGH (field-weighted) publication fractional counts split into Surico-4 buckets. Built by mapping field22→disc6 and summing field22-level breakthrough Surico-4 series."
 }
 
 WITH field22 AS (
@@ -16,7 +16,7 @@ WITH field22 AS (
     funded_private_owned_eng,
     private_private_eng,
     unclassified_eng
-  FROM ${ref("rd_mart", "pub2_country_quarter_field22_surico4")}
+  FROM ${ref("rd_mart", "pub2_country_quarter_field22_breakthrough_surico4")}
 ),
 map AS (
   SELECT DISTINCT

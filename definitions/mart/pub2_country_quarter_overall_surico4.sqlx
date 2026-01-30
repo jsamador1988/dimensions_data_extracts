@@ -1,0 +1,18 @@
+config {
+  type: "table",
+  schema: "rd_mart",
+  name: "pub2_country_quarter_overall_surico4",
+  tags: ["mart", "pub2"],
+  description: "Country×quarter overall publication fractional counts split into Surico-4 buckets. Derived by summing the field22-level Surico-4 series (field weights sum to 1 per pub)."
+}
+
+SELECT
+  country_code,
+  quarter,
+  SUM(total_eng) AS total_eng,
+  SUM(owned_eng) AS owned_eng,
+  SUM(funded_private_owned_eng) AS funded_private_owned_eng,
+  SUM(private_private_eng) AS private_private_eng,
+  SUM(unclassified_eng) AS unclassified_eng
+FROM ${ref("rd_mart", "pub2_country_quarter_field22_surico4")}
+GROUP BY country_code, quarter
