@@ -1,19 +1,14 @@
 config {
   type: "table",
   schema: "rd_stage",
+  name: "patent_family_assignee_flags_surico",
   tags: ["stage"],
-  description: "Family×country assignee flags: has any domestic assignee; has any domestic Surico-government assignee (Gov + DE whitelist)."
+  description: "Family×country assignee flags: has any domestic assignee; has any domestic Surico-government assignee. Uses rd_ref.org_gov_surico."
 }
 
-WITH whitelist_de AS (
-  SELECT 'grid.424150.6' AS org_id UNION ALL
-  SELECT 'grid.453068.c' UNION ALL
-  SELECT 'grid.453150.6'
-),
-
-target_countries AS (
+WITH target_countries AS (
   SELECT DISTINCT country_code
-  FROM ${ref("rd_stage", "analysis_country_quarter_grid")}
+  FROM ${ref("rd_stage", "analysis_country_universe")}
 ),
 
 fam_assg AS (
@@ -28,17 +23,10 @@ fam_assg AS (
 
 orgs AS (
   SELECT
-    o.id AS org_id,
-    CASE WHEN o.legal_country_code='UK' THEN 'GB' ELSE o.legal_country_code END AS country_code,
-    o.types,
-    CASE
-      WHEN 'Government' IN UNNEST(IFNULL(o.types, [])) THEN TRUE
-      WHEN (CASE WHEN o.legal_country_code='UK' THEN 'GB' ELSE o.legal_country_code END)='DE'
-           AND o.id IN (SELECT org_id FROM whitelist_de) THEN TRUE
-      ELSE FALSE
-    END AS is_gov_surico
-  FROM `dimensions-ai.data_analytics.organizations` o
-  WHERE o.legal_country_code IS NOT NULL
+    org_id,
+    country_code,
+    is_gov_surico
+  FROM ${ref("rd_ref", "org_gov_surico")}
 ),
 
 joined AS (
@@ -51,6 +39,9 @@ joined AS (
     ON o.org_id = fa.org_id
   JOIN target_countries tc
     ON tc.country_code = o.country_code
+  WHERE o.country_code IS NOT NULL
+    AND REGEXP_CONTAINS(o.country_code, r'^[A-Z]{2}$')
+    AND o.country_code NOT IN ('EP', 'WO')
 )
 
 SELECT

@@ -3,7 +3,12 @@ config {
   schema: "rd_mart",
   name: "pat2__pat_country_quarter_wide",
   tags: ["pat2", "mart"],
-  description: "Balanced country×quarter patent panel (totals + 4-way split + tier2 funding diagnostics + grants totals + matched-grant series)."
+  description: "Balanced country×quarter patent panel (totals + 4-way split + government-grant linkage diagnostics: direct + tier2 + any + grants totals + matched-grant series).",
+  bigquery: {
+    partitionBy: "quarter",
+    clusterBy: ["country_code"],
+    requirePartitionFilter: true
+  }
 }
 
 WITH grid AS (
@@ -41,28 +46,26 @@ SELECT
   COALESCE(a.pat_inv_assg_file_private_private_ctq, 0.0) AS pat_inv_assg_file_private_private_ctq,
   COALESCE(a.pat_inv_assg_file_unclassified_ctq, 0.0) AS pat_inv_assg_file_unclassified_ctq,
 
-  -- Tier2 funding diagnostics (inventor-weighted)
+  -- Government-grant linkage diagnostics (inventor-weighted)
+  COALESCE(a.pat_pubfund_direct_ctq, 0.0) AS pat_pubfund_direct_ctq,
   COALESCE(a.pat_pubfund_tier2_rid_ctq, 0.0) AS pat_pubfund_tier2_rid_ctq,
   COALESCE(a.pat_pubfund_tier2_inst_ctq, 0.0) AS pat_pubfund_tier2_inst_ctq,
   COALESCE(a.pat_pubfund_tier2_any_ctq, 0.0) AS pat_pubfund_tier2_any_ctq,
+  COALESCE(a.pat_pubfund_any_ctq, 0.0) AS pat_pubfund_any_ctq,
 
-  -- Grants (domestic, by start quarter)
+  -- Total grants series (grant start quarter)
   COALESCE(a.grants_any_count_ctq, 0) AS grants_any_count_ctq,
   COALESCE(a.grants_gov_count_ctq, 0) AS grants_gov_count_ctq,
   COALESCE(a.grants_gov_funding_usd_ctq, 0.0) AS grants_gov_funding_usd_ctq,
 
-  -- Matched grants (counted in patent quarter)
+  -- Matched-grant series
   COALESCE(a.matched_grants_ctq, 0) AS matched_grants_ctq,
-
-  -- Matched grant count + USD (counted once in grant START quarter; Surico convention)
   COALESCE(a.matched_grants_startqtr_ctq, 0) AS matched_grants_startqtr_ctq,
   COALESCE(a.matched_grants_amount_usd_startqtr_ctq, 0.0) AS matched_grants_amount_usd_startqtr_ctq,
 
-  -- Light diagnostics
+  -- Diagnostics
   COALESCE(a.share_families_with_dom_assignee_simple, 0.0) AS share_families_with_dom_assignee_simple
 
 FROM grid g
 LEFT JOIN a
-  ON a.country_code = g.country_code
- AND a.quarter = g.quarter
-ORDER BY g.country_code, g.quarter
+  ON a.country_code = g.country_code AND a.quarter = g.quarter

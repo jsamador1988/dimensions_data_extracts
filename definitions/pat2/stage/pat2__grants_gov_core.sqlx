@@ -3,7 +3,7 @@ config {
   schema: "rd_stage",
   name: "pat2__grants_gov_core",
   tags: ["pat2", "stage"],
-  description: "Surico-style government-funded grants (gov orgs via org_gov_surico), with funder country, start date, FoR4 set, funding_usd."
+  description: "Surico-style government-funded grants (gov orgs via rd_ref.org_gov_surico), with funder country, start date, FoR4 set, funding_usd."
 }
 
 WITH target_countries AS (
@@ -40,7 +40,7 @@ funder AS (
     org_id,
     country_code,
     is_gov_surico
-  FROM ${ref("pat2__org_gov_surico")}
+  FROM ${ref("rd_ref", "org_gov_surico")}
 )
 
 SELECT

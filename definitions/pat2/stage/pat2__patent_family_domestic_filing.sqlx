@@ -17,7 +17,7 @@ WITH jur AS (
 
 epo AS (
   SELECT country_code, epo_start_date, epo_end_date
-  FROM ${ref("pat2__epo_membership")}
+  FROM ${ref("epo_membership")}
 ),
 
 inv_countries AS (

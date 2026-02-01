@@ -3,18 +3,27 @@ config {
   schema: "rd_int",
   name: "pat2__patent_family_country_funding_flags",
   tags: ["pat2", "int"],
-  description: "Family×country flags for government funding (Tier-2 matches)."
+  description: "Family×country flags for government funding via grants: direct links (Dimensions associated_grant_ids) and Tier-2 (RID / institution Jaccard) matches."
 }
 
-WITH rid AS (
+WITH direct AS (
+  SELECT DISTINCT family_id, country_code, 1 AS direct_grant_flag
+  FROM ${ref("pat2__pat_direct_grant_matches")}
+),
+
+rid AS (
   SELECT DISTINCT family_id, country_code, 1 AS tier2_rid_flag
   FROM ${ref("pat2__pat_tier2_rid_matches")}
 ),
+
 inst AS (
   SELECT DISTINCT family_id, country_code, 1 AS tier2_inst_flag
   FROM ${ref("pat2__pat_tier2_inst_matches")}
 ),
+
 u AS (
+  SELECT family_id, country_code FROM direct
+  UNION DISTINCT
   SELECT family_id, country_code FROM rid
   UNION DISTINCT
   SELECT family_id, country_code FROM inst
@@ -23,10 +32,29 @@ u AS (
 SELECT
   u.family_id,
   u.country_code,
+
+  COALESCE(d.direct_grant_flag, 0) AS direct_grant_flag,
   COALESCE(r.tier2_rid_flag, 0) AS tier2_rid_flag,
   COALESCE(i.tier2_inst_flag, 0) AS tier2_inst_flag,
-  CASE WHEN COALESCE(r.tier2_rid_flag, 0) = 1 OR COALESCE(i.tier2_inst_flag, 0) = 1 THEN 1 ELSE 0 END AS tier2_any_flag
+
+  -- Tier-2 only (RID or institution Jaccard matches)
+  CASE
+    WHEN COALESCE(r.tier2_rid_flag, 0) = 1 OR COALESCE(i.tier2_inst_flag, 0) = 1 THEN 1
+    ELSE 0
+  END AS tier2_any_flag,
+
+  -- Any government-grant linkage (direct OR Tier-2)
+  CASE
+    WHEN COALESCE(d.direct_grant_flag, 0) = 1
+      OR COALESCE(r.tier2_rid_flag, 0) = 1
+      OR COALESCE(i.tier2_inst_flag, 0) = 1
+    THEN 1
+    ELSE 0
+  END AS gov_grant_any_flag
+
 FROM u
+LEFT JOIN direct d
+  ON d.family_id = u.family_id AND d.country_code = u.country_code
 LEFT JOIN rid r
   ON r.family_id = u.family_id AND r.country_code = u.country_code
 LEFT JOIN inst i

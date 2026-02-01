@@ -1,8 +1,9 @@
 config {
   type: "table",
   schema: "rd_int",
+  name: "patent_family_country_weights",
   tags: ["int"],
-  description: "Patent family×country fractional weights: inventor country (w_inv), assignee legal country (w_assg), and government-assignee share (w_assg_gov). Includes family-level missingness diagnostics repeated on each row."
+  description: "Patent family×country fractional weights: inventor country (w_inv), assignee legal country (w_assg), and government-assignee share (w_assg_gov_surico). Includes family-level missingness diagnostics repeated on each row."
 }
 
 WITH pbase AS (
@@ -31,13 +32,14 @@ inv_totals AS (
 inv_by_country AS (
   SELECT
     p.family_id,
-    UPPER(inv.address.country) AS country_code,
+    CASE WHEN UPPER(inv.address.country) = 'UK' THEN 'GB' ELSE UPPER(inv.address.country) END AS country_code,
     COUNT(*) AS n_inv_country
   FROM pbase p
   JOIN UNNEST(p.inventors) AS inv
   WHERE inv.address.country IS NOT NULL
     AND inv.address.country != ''
     AND LENGTH(UPPER(inv.address.country)) = 2
+    AND UPPER(inv.address.country) NOT IN ('EP', 'WO')
   GROUP BY p.family_id, country_code
 ),
 
@@ -54,23 +56,23 @@ assg_flat AS (
   WHERE org_id IS NOT NULL
 ),
 
+org_dim AS (
+  SELECT
+    org_id,
+    country_code,
+    is_gov_surico
+  FROM ${ref("rd_ref", "org_gov_surico")}
+),
+
 assg_enriched AS (
   SELECT
     a.family_id,
     a.org_id,
-    o.legal_country_code AS country_code,
-    o.types AS org_types,
-    CASE
-      WHEN 'Government' IN UNNEST(IFNULL(o.types, CAST([] AS ARRAY<STRING>))) THEN 1
-      WHEN o.legal_country_code = 'DE'
-           AND wd.org_id IS NOT NULL THEN 1
-      ELSE 0
-    END AS is_gov
+    od.country_code,
+    IFNULL(CAST(od.is_gov_surico AS INT64), 0) AS is_gov
   FROM assg_flat a
-  LEFT JOIN `dimensions-ai.data_analytics.organizations` o
-    ON o.id = a.org_id
-  LEFT JOIN ${ref("whitelist_de")} wd
-    ON wd.org_id = a.org_id
+  LEFT JOIN org_dim od
+    ON od.org_id = a.org_id
 ),
 
 assg_totals AS (
@@ -92,6 +94,7 @@ assg_by_country AS (
   WHERE country_code IS NOT NULL
     AND country_code != ''
     AND LENGTH(country_code) = 2
+    AND country_code NOT IN ('EP', 'WO')
   GROUP BY family_id, country_code
 ),
 
@@ -142,28 +145,20 @@ SELECT
   family_id,
   country_code,
 
-  -- Fractional inventor weight (normalized over OBSERVED inventor countries)
+  -- inventor weight (fraction of inventor addresses in this country)
   SAFE_DIVIDE(n_inv_country, NULLIF(n_inv_obs, 0)) AS w_inv,
 
-  -- Fractional assignee weight (normalized over OBSERVED assignee legal countries)
+  -- assignee weight (fraction of assignee orgs in this country)
   SAFE_DIVIDE(n_assg_country, NULLIF(n_assg_obs, 0)) AS w_assg,
 
-  -- Government-owned assignee share (STRICT government, normalized over OBSERVED assignee legal countries)
-  SAFE_DIVIDE(n_assg_gov_country, NULLIF(n_assg_obs, 0)) AS w_assg_gov,
+  -- share of assignees in this country that are Surico-government
+  SAFE_DIVIDE(n_assg_gov_country, NULLIF(n_assg_country, 0)) AS w_assg_gov_surico,
 
-  -- Family-level missingness diagnostics (repeated per row)
-  CASE
-    WHEN n_inv_total_raw > 0 THEN 1 - SAFE_DIVIDE(n_inv_obs, n_inv_total_raw)
-    ELSE NULL
-  END AS share_missing_inv_country,
-
-  CASE
-    WHEN n_assg_total_raw > 0 THEN 1 - SAFE_DIVIDE(n_assg_obs, n_assg_total_raw)
-    ELSE NULL
-  END AS share_missing_assg_country,
-
+  -- diagnostics repeated
   n_inv_total_raw,
   n_inv_obs,
   n_assg_total_raw,
   n_assg_obs
+
 FROM combined
+WHERE (n_inv_obs > 0 OR n_assg_obs > 0)

@@ -3,7 +3,7 @@ config {
   schema: "rd_int",
   name: "pat2__pat_country_quarter_4way",
   tags: ["pat2", "int"],
-  description: "Country×quarter patent aggregates with Surico-style 4-way split, for three base weighting schemes. Includes Tier2 funding method totals and matched-grant USD counted in grant START quarter (Surico convention)."
+  description: "Country×quarter patent aggregates with Surico-style 4-way split, for three base weighting schemes. Includes (i) funding method totals using direct patent→grant links and Tier-2 (RID/inst Jaccard) matches and (ii) matched-grant counts/USD counted in grant START quarter (Surico convention)."
 }
 
 WITH micro AS (
@@ -41,10 +41,12 @@ agg AS (
     SUM(w_inv_assg_file * pat_private_private_flag) AS pat_inv_assg_file_private_private_ctq,
     SUM(w_inv_assg_file * pat_unclassified_flag)    AS pat_inv_assg_file_unclassified_ctq,
 
-    -- Tier2 “gov funded” diagnostics (inventor-weighted, regardless of ownership bucket)
-    SUM(w_inv * tier2_rid_flag) AS pat_pubfund_tier2_rid_ctq,
-    SUM(w_inv * tier2_inst_flag) AS pat_pubfund_tier2_inst_ctq,
-    SUM(w_inv * tier2_any_flag) AS pat_pubfund_tier2_any_ctq,
+    -- Government-grant linkage diagnostics (inventor-weighted, regardless of ownership bucket)
+    SUM(w_inv * direct_grant_flag)   AS pat_pubfund_direct_ctq,
+    SUM(w_inv * tier2_rid_flag)      AS pat_pubfund_tier2_rid_ctq,
+    SUM(w_inv * tier2_inst_flag)     AS pat_pubfund_tier2_inst_ctq,
+    SUM(w_inv * tier2_any_flag)      AS pat_pubfund_tier2_any_ctq,
+    SUM(w_inv * gov_grant_any_flag)  AS pat_pubfund_any_ctq,
 
     -- Light diagnostic: share of rows with any domestic assignee (simple mean of indicator)
     AVG(CAST(dom_assg_flag AS FLOAT64)) AS share_families_with_dom_assignee_simple
@@ -77,6 +79,9 @@ gr_gov AS (
 
 -- Patent–grant matches (distinct by family×country×grant)
 pg_union AS (
+  SELECT DISTINCT family_id, country_code, grant_id
+  FROM ${ref("pat2__pat_direct_grant_matches")}
+  UNION DISTINCT
   SELECT DISTINCT family_id, country_code, grant_id
   FROM ${ref("pat2__pat_tier2_rid_matches")}
   UNION DISTINCT

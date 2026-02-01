@@ -2,8 +2,8 @@ config {
   type: "table",
   schema: "rd_ref",
   name: "org_gov_surico",
-  description: "Organization government flag consistent with Surico: Government type OR country whitelist. Universities are NOT government unless explicitly whitelisted.",
-  tags: ["ref", "phase3"]
+  tags: ["ref"],
+  description: "Organization-level government flag consistent with Surico: TRUE if Dimensions org types include 'Government' OR the org appears in rd_ref.gov_org_whitelist for its country (with optional start/end validity). Universities are NOT government unless explicitly whitelisted."
 }
 
 WITH orgs AS (
@@ -13,37 +13,48 @@ WITH orgs AS (
     CASE WHEN o.legal_country_code = 'UK' THEN 'GB' ELSE o.legal_country_code END AS country_code,
     o.types
   FROM `dimensions-ai.data_analytics.organizations` o
+  WHERE o.id IS NOT NULL
 ),
 
 wl AS (
   SELECT
     country_code,
     org_id,
-    org_name AS whitelist_name,
-    note,
+    org_name AS wl_org_name,
     start_date,
     end_date
-  FROM `dimensionsdataextracts.rd_ref.gov_org_whitelist`
+  FROM ${ref("rd_ref", "gov_org_whitelist")}
+),
+
+joined AS (
+  SELECT
+    o.org_id,
+    o.org_name,
+    o.country_code,
+    o.types,
+
+    -- whitelist match (optionally time-bounded, evaluated over the project sample window)
+    CASE
+      WHEN wl.org_id IS NULL THEN FALSE
+      WHEN (wl.start_date IS NOT NULL AND wl.start_date > DATE('${dataform.projectConfig.vars.sample_end}')) THEN FALSE
+      WHEN (wl.end_date   IS NOT NULL AND wl.end_date   < DATE('${dataform.projectConfig.vars.sample_start}')) THEN FALSE
+      ELSE TRUE
+    END AS is_whitelisted
+  FROM orgs o
+  LEFT JOIN wl
+    ON wl.org_id = o.org_id
+   AND wl.country_code = o.country_code
 )
 
 SELECT
-  o.org_id,
-  o.org_name,
-  o.country_code,
-
-  -- Surico-consistent government flag:
-  -- Government in types OR explicitly whitelisted (by domestic country)
-  (
-    'Government' IN UNNEST(IFNULL(o.types, []))
-    OR EXISTS (
-      SELECT 1
-      FROM wl
-      WHERE wl.country_code = o.country_code
-        AND wl.org_id = o.org_id
-        AND (wl.start_date IS NULL OR wl.start_date <= CURRENT_DATE())
-        AND (wl.end_date IS NULL OR wl.end_date >= CURRENT_DATE())
-    )
-  ) AS is_gov_surico
-
-FROM orgs o
-WHERE o.org_id IS NOT NULL
+  org_id,
+  org_name,
+  country_code,
+  types,
+  CASE
+    WHEN 'Government' IN UNNEST(IFNULL(types, [])) THEN TRUE
+    WHEN is_whitelisted THEN TRUE
+    ELSE FALSE
+  END AS is_gov_surico
+FROM joined
+WHERE country_code IS NOT NULL

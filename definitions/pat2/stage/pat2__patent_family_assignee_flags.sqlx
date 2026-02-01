@@ -3,7 +3,7 @@ config {
   schema: "rd_stage",
   name: "pat2__patent_family_assignee_flags",
   tags: ["pat2", "stage"],
-  description: "Family×country assignee flags: has any assignee in that country; has any Surico-government assignee in that country.",
+  description: "Family×country assignee flags: has any assignee in that country; has any Surico-government assignee in that country. Uses rd_ref.org_gov_surico.",
   bigquery: { clusterBy: ["family_id", "country_code"] }
 }
 
@@ -21,7 +21,7 @@ orgs AS (
     org_id,
     country_code,
     is_gov_surico
-  FROM ${ref("pat2__org_gov_surico")}
+  FROM ${ref("rd_ref", "org_gov_surico")}
 ),
 
 joined AS (

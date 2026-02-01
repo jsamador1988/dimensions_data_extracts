@@ -1,46 +1,10 @@
 config {
-  type: "table",
+  type: "view",
   schema: "rd_ref",
   name: "pat2__org_gov_surico",
-  tags: ["pat2", "ref"],
-  description: "Organization government flag consistent with Surico: Government in org.types OR explicitly whitelisted. Universities are NOT government unless whitelisted."
+  tags: ["pat2", "ref", "deprecated"],
+  description: "DEPRECATED: pat2 alias. Use rd_ref.org_gov_surico."
 }
 
-WITH orgs AS (
-  SELECT
-    o.id AS org_id,
-    o.name AS org_name,
-    CASE WHEN o.legal_country_code = 'UK' THEN 'GB' ELSE o.legal_country_code END AS country_code,
-    o.types
-  FROM `dimensions-ai.data_analytics.organizations` o
-  WHERE o.id IS NOT NULL
-    AND o.legal_country_code IS NOT NULL
-),
-
-wl AS (
-  SELECT
-    country_code,
-    org_id,
-    org_name AS whitelist_name,
-    note,
-    start_date,
-    end_date
-  FROM ${ref("pat2__gov_org_whitelist")}
-)
-
-SELECT
-  o.org_id,
-  o.org_name,
-  o.country_code,
-  (
-    'Government' IN UNNEST(IFNULL(o.types, []))
-    OR EXISTS (
-      SELECT 1
-      FROM wl
-      WHERE wl.country_code = o.country_code
-        AND wl.org_id = o.org_id
-        AND (wl.start_date IS NULL OR wl.start_date <= CURRENT_DATE())
-        AND (wl.end_date IS NULL OR wl.end_date >= CURRENT_DATE())
-    )
-  ) AS is_gov_surico
-FROM orgs o
+SELECT *
+FROM ${ref("rd_ref", "org_gov_surico")}

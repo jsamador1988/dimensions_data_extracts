@@ -1,29 +1,14 @@
 config {
   type: "table",
   schema: "rd_ref",
-  tags: ["ref"],
-  description: "ANZSRC 2020 FoR division (2-digit) -> field22 label used in Geography-of-Science style summaries."
+  name: "for_to_field22",
+  tags: ["ref", "deprecated"],
+  description: "DEPRECATED: legacy field list. Use rd_ref.field22_to_disc6 for the canonical Field-22 + Discipline-6 mapping (and rd_ref.for4_to_field22 for FoR4→Field22 mapping)."
 }
 
-SELECT 30 AS for_division, 'Agricultural, Veterinary and Food Sciences' AS field22_name UNION ALL
-SELECT 31, 'Biological Sciences' UNION ALL
-SELECT 32, 'Biomedical and Clinical Sciences' UNION ALL
-SELECT 33, 'Built Environment and Design' UNION ALL
-SELECT 34, 'Chemical Sciences' UNION ALL
-SELECT 35, 'Commerce, Management, Tourism and Services' UNION ALL
-SELECT 36, 'Creative Arts and Writing' UNION ALL
-SELECT 37, 'Earth Sciences' UNION ALL
-SELECT 38, 'Economics' UNION ALL
-SELECT 39, 'Education' UNION ALL
-SELECT 40, 'Engineering' UNION ALL
-SELECT 41, 'Environmental Sciences' UNION ALL
-SELECT 42, 'Health Sciences' UNION ALL
-SELECT 43, 'History, Heritage and Archaeology' UNION ALL
-SELECT 44, 'Human Society' UNION ALL
-SELECT 46, 'Information and Computing Sciences' UNION ALL
-SELECT 47, 'Language, Communication and Culture' UNION ALL
-SELECT 48, 'Law and Legal Studies' UNION ALL
-SELECT 49, 'Mathematical Sciences' UNION ALL
-SELECT 50, 'Philosophy and Religious Studies' UNION ALL
-SELECT 51, 'Physical Sciences' UNION ALL
-SELECT 52, 'Psychology'
+SELECT
+  field22_code,
+  ANY_VALUE(field22_name) AS field22_name
+FROM ${ref("rd_ref", "field22_to_disc6")}
+GROUP BY field22_code
+ORDER BY field22_code
