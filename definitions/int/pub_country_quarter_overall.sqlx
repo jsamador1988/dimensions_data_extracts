@@ -19,16 +19,29 @@ WITH cw AS (
 
 -- Collapse paper×field flags to paper-level shares (field-weighted)
 pf AS (
+  -- Collapse paper×field flags to paper-level shares (field-weighted).
+  -- We compute eligibility directly from pub_breakthrough_pub_field so this table
+  -- does not depend on a particular schema of pub_field_flags.
   SELECT
-    pub_id,
-    SUM(w_field * is_top5_field) AS top5_share,
-    SUM(w_field * is_breakthrough_field) AS break_share,
-    MAX(break_eligible) AS break_eligible
-  FROM ${ref("pub_field_flags")}
-  GROUP BY pub_id
+    fw.pub_id,
+    fw.quarter,
+    SUM(fw.w_field * CAST(COALESCE(t.is_top5, 0) AS FLOAT64)) AS top5_share,
+    SUM(fw.w_field * CAST(COALESCE(b.is_breakthrough, 0) AS FLOAT64)) AS break_share,
+    MAX(COALESCE(b.eligible_for_breakthrough, 0)) AS break_eligible
+  FROM ${ref("pub_field_weights")} fw
+  LEFT JOIN ${ref("rd_stage", "pub_top5_pub_field")} t
+    ON t.pub_id = fw.pub_id
+   AND t.quarter = fw.quarter
+   AND t.field22_code = fw.field22_code
+  LEFT JOIN ${ref("rd_stage", "pub_breakthrough_pub_field")} b
+    ON b.pub_id = fw.pub_id
+   AND b.quarter = fw.quarter
+   AND b.field22_code = fw.field22_code
+  GROUP BY fw.pub_id, fw.quarter
 ),
 
 joined AS (
+
   SELECT
     cw.country_code,
     cw.quarter,
@@ -40,7 +53,7 @@ joined AS (
     IFNULL(pf.break_share, 0) AS break_share,
     IFNULL(pf.break_eligible, 0) AS break_eligible
   FROM cw
-  LEFT JOIN pf USING (pub_id)
+  LEFT JOIN pf USING (pub_id, quarter)
 )
 
 SELECT
