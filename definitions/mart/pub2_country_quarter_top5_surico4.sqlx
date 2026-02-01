@@ -3,7 +3,7 @@ config {
   name: "pub2_country_quarter_top5_surico4",
   schema: "rd_mart",
   tags: ["mart"],
-  description: "Country×quarter top5 output (top-5% journals) decomposed into Surico4: owned, funded_any, funded_private_owned, private_private."
+  description: "Country×quarter top-5% journal publication mass (FoR field-weighted) decomposed into Surico4. Uses rd_stage.pub_top5_pub_field."
 }
 
 WITH gq AS (
@@ -16,18 +16,16 @@ base AS (
     cf.country_code,
     cf.quarter,
 
-    (cf.w_aff * tf.w_field * tf.is_top5) AS w_top5,
+    (CAST(cf.w_aff AS FLOAT64) * tf.w_field * CAST(tf.is_top5 AS FLOAT64)) AS w_total,
+    (CAST(cf.w_public_prod AS FLOAT64) * tf.w_field * CAST(tf.is_top5 AS FLOAT64)) AS w_owned,
 
-    (cf.w_public_prod * tf.w_field * tf.is_top5) AS w_top5_owned,
+    IF(cf.gov_funded_flag = 1, CAST(cf.w_private_prod AS FLOAT64) * tf.w_field * CAST(tf.is_top5 AS FLOAT64), 0.0) AS w_funded_private_owned,
+    IF(cf.gov_funded_flag = 0, CAST(cf.w_private_prod AS FLOAT64) * tf.w_field * CAST(tf.is_top5 AS FLOAT64), 0.0) AS w_private_private,
 
-    (CASE WHEN cf.gov_funded_flag = 1 THEN (cf.w_aff * tf.w_field * tf.is_top5) ELSE 0.0 END) AS w_top5_funded_any,
+    (GREATEST(0.0, CAST(cf.w_aff AS FLOAT64) - CAST(cf.w_public_prod AS FLOAT64) - CAST(cf.w_private_prod AS FLOAT64))
+      * tf.w_field * CAST(tf.is_top5 AS FLOAT64)) AS w_unclassified
 
-    (CASE WHEN cf.gov_funded_flag = 1 THEN (cf.w_private_prod * tf.w_field * tf.is_top5) ELSE 0.0 END) AS w_top5_funded_private_owned,
-
-    (CASE WHEN cf.gov_funded_flag = 0 THEN (cf.w_private_prod * tf.w_field * tf.is_top5) ELSE 0.0 END) AS w_top5_private_private,
-
-    (cf.w_unclassified * tf.w_field * tf.is_top5) AS w_top5_unclassified
-  FROM ${ref("pub2_country_flags")} cf
+  FROM ${ref("rd_int", "pub2_country_flags")} cf
   JOIN ${ref("rd_stage", "pub_top5_pub_field")} tf
     ON tf.pub_id = cf.pub_id
    AND tf.quarter = cf.quarter
@@ -37,12 +35,11 @@ agg AS (
   SELECT
     country_code,
     quarter,
-    SUM(w_top5) AS top5_total_eng,
-    SUM(w_top5_owned) AS top5_owned_eng,
-    SUM(w_top5_funded_any) AS top5_funded_any_eng,
-    SUM(w_top5_funded_private_owned) AS top5_funded_private_owned_eng,
-    SUM(w_top5_private_private) AS top5_private_private_eng,
-    SUM(w_top5_unclassified) AS top5_unclassified_eng
+    SUM(w_total) AS total_eng,
+    SUM(w_owned) AS owned_eng,
+    SUM(w_funded_private_owned) AS funded_private_owned_eng,
+    SUM(w_private_private) AS private_private_eng,
+    SUM(w_unclassified) AS unclassified_eng
   FROM base
   GROUP BY country_code, quarter
 )
@@ -50,12 +47,11 @@ agg AS (
 SELECT
   gq.country_code,
   gq.quarter,
-  COALESCE(a.top5_total_eng, 0) AS top5_total_eng,
-  COALESCE(a.top5_owned_eng, 0) AS top5_owned_eng,
-  COALESCE(a.top5_funded_any_eng, 0) AS top5_funded_any_eng,
-  COALESCE(a.top5_funded_private_owned_eng, 0) AS top5_funded_private_owned_eng,
-  COALESCE(a.top5_private_private_eng, 0) AS top5_private_private_eng,
-  COALESCE(a.top5_unclassified_eng, 0) AS top5_unclassified_eng
+  COALESCE(a.total_eng, 0.0) AS total_eng,
+  COALESCE(a.owned_eng, 0.0) AS owned_eng,
+  COALESCE(a.funded_private_owned_eng, 0.0) AS funded_private_owned_eng,
+  COALESCE(a.private_private_eng, 0.0) AS private_private_eng,
+  COALESCE(a.unclassified_eng, 0.0) AS unclassified_eng
 FROM gq
 LEFT JOIN agg a
   ON a.country_code = gq.country_code

@@ -208,7 +208,7 @@ top5_overall AS (
     funded_private_owned_eng AS pub_top5_public_private_ctq,
     private_private_eng AS pub_top5_private_private_ctq,
     unclassified_eng AS pub_top5_unclassified_ctq
-  FROM ${ref("rd_mart", "pub2_country_quarter_overall_top5_surico4")}
+  FROM ${ref("rd_mart", "pub2_country_quarter_top5_surico4")}
 ),
 
 field_top5_long AS (

@@ -29,15 +29,17 @@ base AS (
     cf.country_code,
     cf.quarter,
     dw.disc6_code,
-    dw.w_disc,
 
-    (cf.w_aff * dw.w_disc) AS w_total,
-    (cf.w_public_prod * dw.w_disc) AS w_owned,
-    (CASE WHEN cf.gov_funded_flag = 1 THEN (cf.w_aff * dw.w_disc) ELSE 0.0 END) AS w_funded_any,
-    (CASE WHEN cf.gov_funded_flag = 1 THEN (cf.w_private_prod * dw.w_disc) ELSE 0.0 END) AS w_funded_private_owned,
-    (CASE WHEN cf.gov_funded_flag = 0 THEN (cf.w_private_prod * dw.w_disc) ELSE 0.0 END) AS w_private_private,
-    (cf.w_unclassified * dw.w_disc) AS w_unclassified
-  FROM ${ref("pub2_country_flags")} cf
+    (CAST(cf.w_aff AS FLOAT64) * dw.w_disc) AS w_total,
+    (CAST(cf.w_public_prod AS FLOAT64) * dw.w_disc) AS w_owned,
+
+    IF(cf.gov_funded_flag = 1, CAST(cf.w_private_prod AS FLOAT64) * dw.w_disc, 0.0) AS w_funded_private_owned,
+    IF(cf.gov_funded_flag = 0, CAST(cf.w_private_prod AS FLOAT64) * dw.w_disc, 0.0) AS w_private_private,
+
+    (GREATEST(0.0, CAST(cf.w_aff AS FLOAT64) - CAST(cf.w_public_prod AS FLOAT64) - CAST(cf.w_private_prod AS FLOAT64))
+      * dw.w_disc) AS w_unclassified
+
+  FROM ${ref("rd_int", "pub2_country_flags")} cf
   JOIN ${ref("rd_stage", "pub_disc_weights")} dw
     ON dw.pub_id = cf.pub_id
    AND dw.quarter = cf.quarter
@@ -50,7 +52,6 @@ agg AS (
     disc6_code,
     SUM(w_total) AS total_eng,
     SUM(w_owned) AS owned_eng,
-    SUM(w_funded_any) AS funded_any_eng,
     SUM(w_funded_private_owned) AS funded_private_owned_eng,
     SUM(w_private_private) AS private_private_eng,
     SUM(w_unclassified) AS unclassified_eng
@@ -63,12 +64,11 @@ SELECT
   g.quarter,
   g.disc6_code,
   g.disc6_name,
-  COALESCE(a.total_eng, 0) AS total_eng,
-  COALESCE(a.owned_eng, 0) AS owned_eng,
-  COALESCE(a.funded_any_eng, 0) AS funded_any_eng,
-  COALESCE(a.funded_private_owned_eng, 0) AS funded_private_owned_eng,
-  COALESCE(a.private_private_eng, 0) AS private_private_eng,
-  COALESCE(a.unclassified_eng, 0) AS unclassified_eng
+  COALESCE(a.total_eng, 0.0) AS total_eng,
+  COALESCE(a.owned_eng, 0.0) AS owned_eng,
+  COALESCE(a.funded_private_owned_eng, 0.0) AS funded_private_owned_eng,
+  COALESCE(a.private_private_eng, 0.0) AS private_private_eng,
+  COALESCE(a.unclassified_eng, 0.0) AS unclassified_eng
 FROM grid g
 LEFT JOIN agg a
   ON a.country_code = g.country_code
