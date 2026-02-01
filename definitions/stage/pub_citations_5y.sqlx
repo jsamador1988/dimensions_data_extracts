@@ -5,7 +5,7 @@ config {
   tags: ["stage"],
   description: "Per-publication 5-year citation counts using citation year in the citations array.",
   bigquery: {
-    partitionBy: "pub_year",
+    partitionBy: "RANGE_BUCKET(pub_year, GENERATE_ARRAY(1900, 2100, 1))",
     clusterBy: ["pub_id"]
   }
 }

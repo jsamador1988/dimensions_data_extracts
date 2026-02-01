@@ -5,7 +5,7 @@ config {
   tags: ["stage"],
   description: "Expected (mean) 5y citations by field22×year, weighted by pub_field_weights.",
   bigquery: {
-    partitionBy: "pub_year",
+    partitionBy: "RANGE_BUCKET(pub_year, GENERATE_ARRAY(1900, 2100, 1))",
     clusterBy: ["field22_code"]
   }
 }
