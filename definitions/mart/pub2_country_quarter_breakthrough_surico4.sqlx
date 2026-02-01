@@ -22,11 +22,11 @@ base AS (
 
     (cf.w_public_prod * bf.w_field * bf.is_breakthrough) AS w_break_owned,
 
-    (CASE WHEN cf.gov_funded_flag THEN (cf.w_aff * bf.w_field * bf.is_breakthrough) ELSE 0 END) AS w_break_funded_any,
+    (CASE WHEN cf.gov_funded_flag = 1 THEN (cf.w_aff * bf.w_field * bf.is_breakthrough) ELSE 0.0 END) AS w_break_funded_any,
 
-    (CASE WHEN cf.gov_funded_flag THEN (cf.w_private_prod * bf.w_field * bf.is_breakthrough) ELSE 0 END) AS w_break_funded_private_owned,
+    (CASE WHEN cf.gov_funded_flag = 1 THEN (cf.w_private_prod * bf.w_field * bf.is_breakthrough) ELSE 0.0 END) AS w_break_funded_private_owned,
 
-    (CASE WHEN NOT cf.gov_funded_flag THEN (cf.w_private_prod * bf.w_field * bf.is_breakthrough) ELSE 0 END) AS w_break_private_private,
+    (CASE WHEN cf.gov_funded_flag = 0 THEN (cf.w_private_prod * bf.w_field * bf.is_breakthrough) ELSE 0.0 END) AS w_break_private_private,
 
     (cf.w_unclassified * bf.w_field * bf.is_breakthrough) AS w_break_unclassified
   FROM ${ref("pub2_country_flags")} cf

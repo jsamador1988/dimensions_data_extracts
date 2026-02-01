@@ -33,9 +33,9 @@ base AS (
 
     (cf.w_aff * fw.w_field) AS w_total,
     (cf.w_public_prod * fw.w_field) AS w_owned,
-    (CASE WHEN cf.gov_funded_flag THEN (cf.w_aff * fw.w_field) ELSE 0 END) AS w_funded_any,
-    (CASE WHEN cf.gov_funded_flag THEN (cf.w_private_prod * fw.w_field) ELSE 0 END) AS w_funded_private_owned,
-    (CASE WHEN NOT cf.gov_funded_flag THEN (cf.w_private_prod * fw.w_field) ELSE 0 END) AS w_private_private,
+    (CASE WHEN cf.gov_funded_flag = 1 THEN (cf.w_aff * fw.w_field) ELSE 0.0 END) AS w_funded_any,
+    (CASE WHEN cf.gov_funded_flag = 1 THEN (cf.w_private_prod * fw.w_field) ELSE 0.0 END) AS w_funded_private_owned,
+    (CASE WHEN cf.gov_funded_flag = 0 THEN (cf.w_private_prod * fw.w_field) ELSE 0.0 END) AS w_private_private,
     (cf.w_unclassified * fw.w_field) AS w_unclassified
   FROM ${ref("pub2_country_flags")} cf
   JOIN ${ref("pub_field_weights")} fw

@@ -33,9 +33,9 @@ base AS (
 
     (cf.w_aff * dw.w_disc) AS w_total,
     (cf.w_public_prod * dw.w_disc) AS w_owned,
-    (CASE WHEN cf.gov_funded_flag THEN (cf.w_aff * dw.w_disc) ELSE 0 END) AS w_funded_any,
-    (CASE WHEN cf.gov_funded_flag THEN (cf.w_private_prod * dw.w_disc) ELSE 0 END) AS w_funded_private_owned,
-    (CASE WHEN NOT cf.gov_funded_flag THEN (cf.w_private_prod * dw.w_disc) ELSE 0 END) AS w_private_private,
+    (CASE WHEN cf.gov_funded_flag = 1 THEN (cf.w_aff * dw.w_disc) ELSE 0.0 END) AS w_funded_any,
+    (CASE WHEN cf.gov_funded_flag = 1 THEN (cf.w_private_prod * dw.w_disc) ELSE 0.0 END) AS w_funded_private_owned,
+    (CASE WHEN cf.gov_funded_flag = 0 THEN (cf.w_private_prod * dw.w_disc) ELSE 0.0 END) AS w_private_private,
     (cf.w_unclassified * dw.w_disc) AS w_unclassified
   FROM ${ref("pub2_country_flags")} cf
   JOIN ${ref("rd_stage", "pub_disc_weights")} dw

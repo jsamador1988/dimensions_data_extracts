@@ -20,11 +20,11 @@ base AS (
 
     (cf.w_public_prod * tf.w_field * tf.is_top5) AS w_top5_owned,
 
-    (CASE WHEN cf.gov_funded_flag THEN (cf.w_aff * tf.w_field * tf.is_top5) ELSE 0 END) AS w_top5_funded_any,
+    (CASE WHEN cf.gov_funded_flag = 1 THEN (cf.w_aff * tf.w_field * tf.is_top5) ELSE 0.0 END) AS w_top5_funded_any,
 
-    (CASE WHEN cf.gov_funded_flag THEN (cf.w_private_prod * tf.w_field * tf.is_top5) ELSE 0 END) AS w_top5_funded_private_owned,
+    (CASE WHEN cf.gov_funded_flag = 1 THEN (cf.w_private_prod * tf.w_field * tf.is_top5) ELSE 0.0 END) AS w_top5_funded_private_owned,
 
-    (CASE WHEN NOT cf.gov_funded_flag THEN (cf.w_private_prod * tf.w_field * tf.is_top5) ELSE 0 END) AS w_top5_private_private,
+    (CASE WHEN cf.gov_funded_flag = 0 THEN (cf.w_private_prod * tf.w_field * tf.is_top5) ELSE 0.0 END) AS w_top5_private_private,
 
     (cf.w_unclassified * tf.w_field * tf.is_top5) AS w_top5_unclassified
   FROM ${ref("pub2_country_flags")} cf
