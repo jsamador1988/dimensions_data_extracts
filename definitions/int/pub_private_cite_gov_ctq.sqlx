@@ -125,15 +125,6 @@ baseline AS (
   GROUP BY quarter, for4
 ),
 
-base_totals AS (
-  SELECT
-    country_code,
-    quarter,
-    SUM(w_aff) AS pub_private_total_ctq
-  FROM base
-  GROUP BY country_code, quarter
-),
-
 country_quarter_raw AS (
   SELECT
     country_code,

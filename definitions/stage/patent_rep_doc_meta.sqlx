@@ -47,8 +47,10 @@ SELECT
   ARRAY(
     SELECT DISTINCT
       CASE
-        WHEN SAFE_CAST(${dataform.projectConfig.vars.ipcr_prefix_len} AS INT64) IS NULL OR SAFE_CAST(${dataform.projectConfig.vars.ipcr_prefix_len} AS INT64) <= 0 THEN code
-        ELSE SUBSTR(code, 1, SAFE_CAST(${dataform.projectConfig.vars.ipcr_prefix_len} AS INT64))
+        WHEN SAFE_CAST(${(dataform.projectConfig.vars.ipcr_prefix_len || 0)} AS INT64) IS NULL
+          OR SAFE_CAST(${(dataform.projectConfig.vars.ipcr_prefix_len || 0)} AS INT64) <= 0
+        THEN code
+        ELSE SUBSTR(code, 1, SAFE_CAST(${(dataform.projectConfig.vars.ipcr_prefix_len || 0)} AS INT64))
       END
     FROM UNNEST(p.ipcr_raw) AS code
     WHERE code IS NOT NULL

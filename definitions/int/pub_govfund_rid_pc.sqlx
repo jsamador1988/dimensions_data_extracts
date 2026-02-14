@@ -88,7 +88,10 @@ pairs AS (
    AND g.country_code = b.country_code
 
   WHERE b.pub_dt_best >= g.start_dt
-    AND b.pub_dt_best < DATE_ADD(g.start_dt, INTERVAL CAST(${dataform.projectConfig.vars.grant_match_window_years} AS INT64) YEAR)
+    AND b.pub_dt_best < DATE_ADD(
+      g.start_dt,
+      INTERVAL CAST(${(dataform.projectConfig.vars.grant_match_window_years || 10)} AS INT64) YEAR
+    )
 )
 
 SELECT
@@ -101,11 +104,11 @@ SELECT
   MAX(SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0))) AS max_jaccard_for2
 FROM pairs
 WHERE (
-  (overlap_for4 >= CAST(${dataform.projectConfig.vars.min_for4_overlap} AS INT64)
-   AND SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) >= CAST(${dataform.projectConfig.vars.min_jaccard} AS FLOAT64))
+  (overlap_for4 >= CAST(${(dataform.projectConfig.vars.min_for4_overlap || 1)} AS INT64)
+   AND SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
   OR
   (overlap_for2 >= 1
-   AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${dataform.projectConfig.vars.min_jaccard} AS FLOAT64))
+   AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
 )
 GROUP BY pub_id, country_code, quarter, w_aff
 HAVING matched_gov_grants > 0

@@ -35,17 +35,21 @@ for4 AS (
 ),
 
 family_grants AS (
+  -- Aggregate grant IDs across all documents in the family.
+  -- (We must aggregate the per-document arrays before UNNESTing under GROUP BY.)
   SELECT
     family_id,
     ARRAY(
       SELECT DISTINCT gid
-      FROM (
-        SELECT gid
-        FROM UNNEST(ARRAY_CONCAT(IFNULL(direct_grant_ids, []), IFNULL(associated_grant_ids, []))) AS gid
-        WHERE gid IS NOT NULL
-      )
+      FROM UNNEST(ARRAY_CONCAT_AGG(doc_grant_ids)) AS gid
+      WHERE gid IS NOT NULL
     ) AS all_grant_ids
-  FROM ${ref("rd_stage", "patent_doc_core")}
+  FROM (
+    SELECT
+      family_id,
+      ARRAY_CONCAT(IFNULL(direct_grant_ids, []), IFNULL(associated_grant_ids, [])) AS doc_grant_ids
+    FROM ${ref("rd_stage", "patent_doc_core")}
+  )
   GROUP BY family_id
 )
 
