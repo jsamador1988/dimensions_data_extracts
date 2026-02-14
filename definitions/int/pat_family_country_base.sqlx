@@ -36,21 +36,23 @@ for4 AS (
 
 family_grants AS (
   -- Aggregate grant IDs across all documents in the family.
-  -- (We must aggregate the per-document arrays before UNNESTing under GROUP BY.)
+  -- Fix: avoid UNNEST(ARRAY_CONCAT_AGG(...)) which BigQuery disallows.
   SELECT
     family_id,
     ARRAY(
       SELECT DISTINCT gid
-      FROM UNNEST(ARRAY_CONCAT_AGG(doc_grant_ids)) AS gid
+      FROM UNNEST(IFNULL(concat_grant_ids, [])) AS gid
       WHERE gid IS NOT NULL
     ) AS all_grant_ids
   FROM (
     SELECT
       family_id,
-      ARRAY_CONCAT(IFNULL(direct_grant_ids, []), IFNULL(associated_grant_ids, [])) AS doc_grant_ids
+      ARRAY_CONCAT_AGG(
+        ARRAY_CONCAT(IFNULL(direct_grant_ids, []), IFNULL(associated_grant_ids, []))
+      ) AS concat_grant_ids
     FROM ${ref("rd_stage", "patent_doc_core")}
+    GROUP BY family_id
   )
-  GROUP BY family_id
 )
 
 SELECT
