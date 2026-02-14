@@ -1,64 +1,67 @@
 config {
   type: "table",
   schema: "rd_stage",
-  tags: ["stage"],
-  description: "Family×country assignee fractional weights w_assg and government-assignee share w_assg_gov (Gov only; not broadened)."
+  name: "patent_family_assignee_weights",
+  tags: ["stage", "patents"],
+  description: "Family×assignee-country fractional weights (by distinct assignee organizations), with Surico government share within each country."
 }
 
-WITH fam_org AS (
+WITH assg_flat AS (
   SELECT DISTINCT
     p.family_id,
-    ao AS org_id
-  FROM `dimensions-ai.data_analytics.patents` p
-  CROSS JOIN UNNEST(IFNULL(p.assignee_orgs, [])) AS ao
+    org_id
+  FROM ${ref("rd_stage", "patent_doc_core")} p
+  CROSS JOIN UNNEST(IFNULL(p.assignee_orgs, CAST([] AS ARRAY<STRING>))) AS org_id
   WHERE p.family_id IS NOT NULL
-    AND ao IS NOT NULL
+    AND org_id IS NOT NULL
 ),
 
-org AS (
+org_dim AS (
+  SELECT org_id, country_code, is_gov_surico
+  FROM ${ref("rd_ref", "org_gov_surico")}
+),
+
+assg_enriched AS (
   SELECT
-    o.id AS org_id,
-    CASE WHEN o.legal_country_code = 'UK' THEN 'GB' ELSE o.legal_country_code END AS country_code,
-    o.types
-  FROM `dimensions-ai.data_analytics.organizations` o
+    a.family_id,
+    od.country_code,
+    od.is_gov_surico,
+    a.org_id
+  FROM assg_flat a
+  JOIN org_dim od
+    ON od.org_id = a.org_id
+  WHERE od.country_code IS NOT NULL
+    AND REGEXP_CONTAINS(od.country_code, r'^[A-Z]{2}$')
+    AND od.country_code NOT IN ('EP','WO')
 ),
 
-joined AS (
-  SELECT
-    f.family_id,
-    o.country_code,
-    f.org_id,
-    CASE WHEN 'Government' IN UNNEST(IFNULL(o.types, [])) THEN 1 ELSE 0 END AS is_gov
-  FROM fam_org f
-  LEFT JOIN org o
-    ON o.org_id = f.org_id
-  WHERE o.country_code IS NOT NULL
-    AND REGEXP_CONTAINS(o.country_code, r'^[A-Z]{2}$')
-),
-
-by_cty AS (
+counts AS (
   SELECT
     family_id,
     country_code,
-    COUNT(DISTINCT org_id) AS n_assg,
-    COUNT(DISTINCT IF(is_gov=1, org_id, NULL)) AS n_assg_gov
-  FROM joined
+    COUNT(DISTINCT org_id) AS n_assg_country,
+    COUNT(DISTINCT IF(is_gov_surico, org_id, NULL)) AS n_gov_assg_country
+  FROM assg_enriched
   GROUP BY family_id, country_code
 ),
 
-tot AS (
+totals AS (
   SELECT
     family_id,
-    SUM(n_assg) AS n_assg_total
-  FROM by_cty
+    SUM(n_assg_country) AS n_assg_total
+  FROM counts
   GROUP BY family_id
 )
 
 SELECT
-  b.family_id,
-  b.country_code,
-  SAFE_DIVIDE(b.n_assg, t.n_assg_total) AS w_assg,
-  SAFE_DIVIDE(b.n_assg_gov, t.n_assg_total) AS w_assg_gov
-FROM by_cty b
-JOIN tot t USING (family_id)
+  c.family_id,
+  c.country_code,
+  SAFE_DIVIDE(c.n_assg_country, t.n_assg_total) AS w_assg,
+  SAFE_DIVIDE(c.n_gov_assg_country, c.n_assg_country) AS w_assg_gov_surico,
+  c.n_assg_country,
+  c.n_gov_assg_country,
+  t.n_assg_total
+FROM counts c
+JOIN totals t
+  USING (family_id)
 WHERE t.n_assg_total > 0

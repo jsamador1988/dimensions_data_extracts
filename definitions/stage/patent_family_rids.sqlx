@@ -1,14 +1,15 @@
 config {
   type: "table",
   schema: "rd_stage",
-  tags: ["stage"],
-  description: "Family-level inventor researcher IDs (RIDs) for Tier-2 RID matching."
+  name: "patent_family_rids",
+  tags: ["stage", "patents"],
+  description: "Family-level inventor researcher IDs (RIDs), for Tier-2 researcher matching."
 }
 
 SELECT DISTINCT
   p.family_id,
   inv.researcher_id
-FROM `dimensions-ai.data_analytics.patents` p
+FROM ${ref("rd_stage", "patent_doc_core")} p
 CROSS JOIN UNNEST(p.inventors) AS inv
 WHERE p.family_id IS NOT NULL
   AND inv.researcher_id IS NOT NULL

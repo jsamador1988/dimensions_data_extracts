@@ -3,7 +3,7 @@ config {
   schema: "rd_stage",
   name: "grants_gov_core",
   tags: ["stage"],
-  description: "Surico-style government-funded grants (gov orgs via rd_ref.org_gov_surico), with funder country, start date, FoR(4) set, funding_usd."
+  description: "Surico-style government-funded grants (gov orgs via rd_ref.org_gov_surico), with funder country, start date, FoR(4) set, and key linkage fields."
 }
 
 WITH target_countries AS (
@@ -15,10 +15,12 @@ grants AS (
   SELECT
     g.id AS grant_id,
     g.funder_org AS funder_org_id,
+
     COALESCE(
       SAFE.PARSE_DATE('%Y-%m-%d', g.start_date),
       DATE(SAFE_CAST(g.start_year AS INT64), 1, 1)
     ) AS start_dt,
+
     g.funding_usd,
 
     ARRAY(
@@ -28,6 +30,13 @@ grants AS (
         AND REGEXP_EXTRACT(code, r'\d+') IS NOT NULL
     ) AS grant_for4,
 
+    ARRAY(
+      SELECT DISTINCT SUBSTR(LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0'), 1, 2)
+      FROM UNNEST(IFNULL(g.category_for.second_level.codes, [])) AS code
+      WHERE code IS NOT NULL
+        AND REGEXP_EXTRACT(code, r'\d+') IS NOT NULL
+    ) AS grant_for2,
+
     g.researcher_ids,
     g.investigators,
     g.organisation_details
@@ -36,10 +45,7 @@ grants AS (
 ),
 
 funder AS (
-  SELECT
-    org_id,
-    country_code,
-    is_gov_surico
+  SELECT org_id, country_code, is_gov_surico
   FROM ${ref("rd_ref", "org_gov_surico")}
 )
 
@@ -49,6 +55,7 @@ SELECT
   g.start_dt,
   g.funding_usd,
   g.grant_for4,
+  g.grant_for2,
   g.researcher_ids,
   g.investigators,
   g.organisation_details

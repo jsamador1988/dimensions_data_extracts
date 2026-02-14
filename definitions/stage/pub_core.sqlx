@@ -1,107 +1,107 @@
 config {
   type: "table",
   schema: "rd_stage",
-  tags: ["stage"],
-  description: "Core publication universe: research articles with month-level earliest date within sample window."
+  name: "pub_core",
+  tags: ["stage", "publications"],
+  description: "Publication core: one row per research-article publication with robust publication date (quarter), FoR4 codes, authors (with affiliations), funders, and outgoing citations."
 }
+
+-- NOTE on dates:
+--  - If vars.pub_allow_year_only_dates = false (default), year-only dates (YYYY) are dropped.
+--  - If true, year-only dates are assigned to Jan 1 (using Dimensions date_normal) and included.
 
 WITH base AS (
   SELECT
     p.id AS pub_id,
-    p.journal.id AS journal_id,
-    p.journal.title AS journal_title,
-
-    p.date        AS date_str,
+    p.date AS date_str,
+    p.date_normal AS date_normal,
     p.date_online AS date_online_str,
-    p.date_print  AS date_print_str,
+    p.date_print AS date_print_str,
+    p.document_type.classification AS doc_class,
+    SAFE_CAST(p.document_type.is_citable AS BOOL) AS is_citable,
+    p.authors,
+    IFNULL(p.funder_orgs, CAST([] AS ARRAY<STRING>)) AS funder_orgs,
+    IFNULL(p.funding_details, CAST([] AS ARRAY<STRUCT<grid_id STRING, grant_id STRING>>)) AS funding_details,
+    IFNULL(p.reference_ids, CAST([] AS ARRAY<STRING>)) AS reference_ids,
 
-    p.document_type.classification AS doc_classification,
-    CAST(p.document_type.is_citable AS STRING) AS is_citable_str,
+    ARRAY(
+      SELECT DISTINCT LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0')
+      FROM UNNEST(IFNULL(p.category_for.second_level.codes, [])) AS code
+      WHERE code IS NOT NULL
+        AND REGEXP_EXTRACT(code, r'\d+') IS NOT NULL
+    ) AS for4_codes
 
-    -- FoR codes live in p.category_for.second_level.codes (4-digit in most cases)
-    p.category_for.second_level.codes AS for4_codes,
-
-    -- funders for later
-    p.funder_orgs AS funder_orgs,
-
-    -- authors for affiliation extraction later
-    p.authors AS authors,
-
-    -- citations array for windowed citations
-    p.citations AS citations
   FROM `dimensions-ai.data_analytics.publications` p
+  WHERE p.id IS NOT NULL
 ),
 
-parsed AS (
+dates AS (
   SELECT
-    pub_id,
-    journal_id,
-    journal_title,
-    for4_codes,
-    funder_orgs,
-    authors,
-    citations,
+    b.*,
 
-    -- Helper: parse YYYY-MM-DD or YYYY-MM only. Reject year-only.
-    CASE
-      WHEN date_str IS NULL THEN NULL
-      WHEN REGEXP_CONTAINS(date_str, r'^\d{4}-\d{2}-\d{2}$') THEN SAFE.PARSE_DATE('%Y-%m-%d', date_str)
-      WHEN REGEXP_CONTAINS(date_str, r'^\d{4}-\d{2}$') THEN SAFE.PARSE_DATE('%Y-%m-%d', CONCAT(date_str, '-01'))
-      ELSE NULL
-    END AS dt_date,
-
-    CASE
-      WHEN date_online_str IS NULL THEN NULL
-      WHEN REGEXP_CONTAINS(date_online_str, r'^\d{4}-\d{2}-\d{2}$') THEN SAFE.PARSE_DATE('%Y-%m-%d', date_online_str)
-      WHEN REGEXP_CONTAINS(date_online_str, r'^\d{4}-\d{2}$') THEN SAFE.PARSE_DATE('%Y-%m-%d', CONCAT(date_online_str, '-01'))
-      ELSE NULL
-    END AS dt_online,
-
-    CASE
-      WHEN date_print_str IS NULL THEN NULL
-      WHEN REGEXP_CONTAINS(date_print_str, r'^\d{4}-\d{2}-\d{2}$') THEN SAFE.PARSE_DATE('%Y-%m-%d', date_print_str)
-      WHEN REGEXP_CONTAINS(date_print_str, r'^\d{4}-\d{2}$') THEN SAFE.PARSE_DATE('%Y-%m-%d', CONCAT(date_print_str, '-01'))
-      ELSE NULL
-    END AS dt_print,
-
-    doc_classification,
-    LOWER(is_citable_str) AS is_citable_lower
-  FROM base
-),
-
-dated AS (
-  SELECT
-    *,
-    -- Earliest non-null of dt_date, dt_online, dt_print
+    -- Parse a Dimensions date string which can be: YYYY-MM-DD, YYYY-MM, or YYYY.
+    -- If only YYYY is present, include only when pub_allow_year_only_dates=true.
     (
-      SELECT d
-      FROM UNNEST([dt_date, dt_online, dt_print]) AS d
+      SELECT MIN(d)
+      FROM UNNEST([
+        -- Version-of-record date
+        CASE
+          WHEN REGEXP_CONTAINS(b.date_str, r'^\d{4}-\d{2}-\d{2}$') THEN SAFE.PARSE_DATE('%Y-%m-%d', b.date_str)
+          WHEN REGEXP_CONTAINS(b.date_str, r'^\d{4}-\d{2}$') THEN DATE(SAFE_CAST(SUBSTR(b.date_str,1,4) AS INT64), SAFE_CAST(SUBSTR(b.date_str,6,2) AS INT64), 1)
+          WHEN REGEXP_CONTAINS(b.date_str, r'^\d{4}$') THEN
+            CASE
+              WHEN LOWER('${dataform.projectConfig.vars.pub_allow_year_only_dates}') IN ('true','t','1','yes','y') THEN b.date_normal
+              ELSE NULL
+            END
+          ELSE NULL
+        END,
+
+        -- Online date
+        CASE
+          WHEN REGEXP_CONTAINS(b.date_online_str, r'^\d{4}-\d{2}-\d{2}$') THEN SAFE.PARSE_DATE('%Y-%m-%d', b.date_online_str)
+          WHEN REGEXP_CONTAINS(b.date_online_str, r'^\d{4}-\d{2}$') THEN DATE(SAFE_CAST(SUBSTR(b.date_online_str,1,4) AS INT64), SAFE_CAST(SUBSTR(b.date_online_str,6,2) AS INT64), 1)
+          WHEN REGEXP_CONTAINS(b.date_online_str, r'^\d{4}$') THEN
+            CASE
+              WHEN LOWER('${dataform.projectConfig.vars.pub_allow_year_only_dates}') IN ('true','t','1','yes','y') THEN DATE(SAFE_CAST(b.date_online_str AS INT64),1,1)
+              ELSE NULL
+            END
+          ELSE NULL
+        END,
+
+        -- Print date
+        CASE
+          WHEN REGEXP_CONTAINS(b.date_print_str, r'^\d{4}-\d{2}-\d{2}$') THEN SAFE.PARSE_DATE('%Y-%m-%d', b.date_print_str)
+          WHEN REGEXP_CONTAINS(b.date_print_str, r'^\d{4}-\d{2}$') THEN DATE(SAFE_CAST(SUBSTR(b.date_print_str,1,4) AS INT64), SAFE_CAST(SUBSTR(b.date_print_str,6,2) AS INT64), 1)
+          WHEN REGEXP_CONTAINS(b.date_print_str, r'^\d{4}$') THEN
+            CASE
+              WHEN LOWER('${dataform.projectConfig.vars.pub_allow_year_only_dates}') IN ('true','t','1','yes','y') THEN DATE(SAFE_CAST(b.date_print_str AS INT64),1,1)
+              ELSE NULL
+            END
+          ELSE NULL
+        END
+      ]) AS d
       WHERE d IS NOT NULL
-      ORDER BY d
-      LIMIT 1
     ) AS pub_dt_best
-  FROM parsed
+
+  FROM base b
 ),
 
 filtered AS (
   SELECT
     pub_id,
-    journal_id,
-    journal_title,
     pub_dt_best,
     DATE_TRUNC(pub_dt_best, QUARTER) AS quarter,
-    EXTRACT(YEAR FROM pub_dt_best) AS pub_year,
-    for4_codes,
-    funder_orgs,
     authors,
-    citations
-  FROM dated
+    funder_orgs,
+    funding_details,
+    reference_ids,
+    for4_codes
+  FROM dates
   WHERE pub_dt_best IS NOT NULL
-    -- research article restriction
-    AND doc_classification = 'RESEARCH_ARTICLE'
-    AND is_citable_lower = 'true'
-    -- keep only dates in window
-    AND pub_dt_best BETWEEN DATE('${dataform.projectConfig.vars.sample_start}') AND DATE('${dataform.projectConfig.vars.sample_end}')
+    AND pub_dt_best >= DATE('${dataform.projectConfig.vars.sample_start}')
+    AND pub_dt_best <= DATE('${dataform.projectConfig.vars.sample_end}')
+    AND doc_class = 'RESEARCH_ARTICLE'
+    AND is_citable
 )
 
 SELECT * FROM filtered
