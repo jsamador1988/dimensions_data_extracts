@@ -1,0 +1,18 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "analysis_quarters",
+  description: "Quarter dimension for the balanced panel, from vars.sample_start to vars.sample_end.",
+  tags: ["stage", "analysis"]
+}
+
+WITH params AS (
+  SELECT
+    DATE_TRUNC(DATE('${dataform.projectConfig.vars.sample_start}'), QUARTER) AS start_qtr,
+    DATE_TRUNC(DATE('${dataform.projectConfig.vars.sample_end}'), QUARTER) AS end_qtr
+)
+
+SELECT
+  DATE_TRUNC(d, QUARTER) AS quarter
+FROM params,
+UNNEST(GENERATE_DATE_ARRAY(start_qtr, end_qtr, INTERVAL 1 QUARTER)) AS d

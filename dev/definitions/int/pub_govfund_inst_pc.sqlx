@@ -1,0 +1,109 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_govfund_inst_pc",
+  tags: ["int", "publications"],
+  description: "Publications matched to domestic Surico-government grants by recipient institution (publication affiliation org_id), with FoR overlap/Jaccard and a configurable post-grant time window. Restricted to private-produced publications (no gov affiliation in that country)."
+}
+
+WITH base AS (
+  SELECT
+    pub_id,
+    country_code,
+    quarter,
+    pub_dt_best,
+    w_aff,
+    w_public_prod,
+    for4_codes,
+    for2_codes
+  FROM ${ref("rd_int", "pub_pub_country_base")}
+  WHERE w_public_prod = 0
+),
+
+pub_orgs AS (
+  SELECT pub_id, country_code, org_id
+  FROM ${ref("rd_stage", "pub_country_orgs")}
+  WHERE org_id IS NOT NULL
+),
+
+grant_orgs AS (
+  SELECT country_code, grant_id, start_dt, org_id
+  FROM ${ref("rd_stage", "grant_orgs_flat")}
+  WHERE org_id IS NOT NULL AND start_dt IS NOT NULL
+),
+
+grants AS (
+  SELECT country_code, grant_id, start_dt, grant_for4, grant_for2
+  FROM ${ref("rd_stage", "grants_gov_core")}
+  WHERE start_dt IS NOT NULL
+),
+
+pairs AS (
+  SELECT
+    b.pub_id,
+    b.country_code,
+    b.quarter,
+    b.w_aff,
+    g.grant_id,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(b.for4_codes, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(g.grant_for4, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_for4,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT z
+      FROM UNNEST(ARRAY_CONCAT(COALESCE(b.for4_codes, CAST([] AS ARRAY<STRING>)), COALESCE(g.grant_for4, CAST([] AS ARRAY<STRING>)))) z
+      WHERE z IS NOT NULL
+    )) AS union_for4,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(b.for2_codes, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(g.grant_for2, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_for2,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT z
+      FROM UNNEST(ARRAY_CONCAT(COALESCE(b.for2_codes, CAST([] AS ARRAY<STRING>)), COALESCE(g.grant_for2, CAST([] AS ARRAY<STRING>)))) z
+      WHERE z IS NOT NULL
+    )) AS union_for2
+
+  FROM base b
+  JOIN pub_orgs po
+    ON po.pub_id = b.pub_id
+   AND po.country_code = b.country_code
+  JOIN grant_orgs go
+    ON go.org_id = po.org_id
+   AND go.country_code = b.country_code
+  JOIN grants g
+    ON g.grant_id = go.grant_id
+   AND g.country_code = b.country_code
+
+  WHERE b.pub_dt_best >= g.start_dt
+    AND b.pub_dt_best < DATE_ADD(g.start_dt, INTERVAL CAST(${dataform.projectConfig.vars.grant_match_window_years} AS INT64) YEAR)
+)
+
+SELECT
+  pub_id,
+  country_code,
+  quarter,
+  w_aff,
+  COUNT(DISTINCT grant_id) AS matched_gov_grants,
+  MAX(SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0))) AS max_jaccard_for4,
+  MAX(SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0))) AS max_jaccard_for2
+FROM pairs
+WHERE (
+  (overlap_for4 >= CAST(${dataform.projectConfig.vars.min_for4_overlap} AS INT64)
+   AND SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) >= CAST(${dataform.projectConfig.vars.min_jaccard} AS FLOAT64))
+  OR
+  (overlap_for2 >= 1
+   AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${dataform.projectConfig.vars.min_jaccard} AS FLOAT64))
+)
+GROUP BY pub_id, country_code, quarter, w_aff
+HAVING matched_gov_grants > 0

@@ -1,0 +1,13 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "analysis_country_quarter_grid",
+  description: "Balanced grid: OECD analysis countries × quarters.",
+  tags: ["analysis", "phase1"]
+}
+
+SELECT
+  c.country_code,
+  q.quarter
+FROM ${ref("rd_stage","analysis_country_universe")} c
+CROSS JOIN ${ref("rd_stage","analysis_quarters")} q

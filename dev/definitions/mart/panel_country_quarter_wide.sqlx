@@ -1,0 +1,59 @@
+config {
+  type: "table",
+  schema: "rd_mart",
+  name: "panel_country_quarter_wide",
+  tags: ["mart"],
+  description: "Balanced country×quarter panel combining patent and publication innovation decompositions (requested series 1a–1f and 2a–2f)."
+}
+
+WITH grid AS (
+  SELECT
+    g.country_code,
+    u.country_name,
+    g.quarter
+  FROM ${ref("rd_stage", "analysis_country_quarter_grid")} g
+  JOIN ${ref("rd_stage", "analysis_country_universe")} u
+    USING (country_code)
+),
+
+pat AS (
+  SELECT * FROM ${ref("rd_int", "pat_country_quarter_measures")}
+),
+
+pub AS (
+  SELECT * FROM ${ref("rd_int", "pub_country_quarter_measures")}
+)
+
+SELECT
+  grid.country_code,
+  grid.country_name,
+  grid.quarter,
+
+  -- Patents (1a–1f)
+  COALESCE(pat.pat_total_ctq, 0.0) AS pat_total_ctq,
+  COALESCE(pat.pat_gov_owned_ctq, 0.0) AS pat_gov_owned_ctq,
+  COALESCE(pat.pat_private_total_ctq, 0.0) AS pat_private_total_ctq,
+  COALESCE(pat.pat_govfund_direct_ctq, 0.0) AS pat_govfund_direct_ctq,
+  COALESCE(pat.pat_govfund_rid_ctq, 0.0) AS pat_govfund_rid_ctq,
+  COALESCE(pat.pat_govfund_inst_ctq, 0.0) AS pat_govfund_inst_ctq,
+  COALESCE(pat.pat_private_with_cites_ctq, 0.0) AS pat_private_with_cites_ctq,
+  COALESCE(pat.pat_private_cite_gov_raw_ctq, 0.0) AS pat_private_cite_gov_raw_ctq,
+  COALESCE(pat.pat_private_cite_gov_norm_ctq, 0.0) AS pat_private_cite_gov_norm_ctq,
+
+  -- Publications (2a–2f)
+  COALESCE(pub.pub_total_ctq, 0.0) AS pub_total_ctq,
+  COALESCE(pub.pub_gov_owned_ctq, 0.0) AS pub_gov_owned_ctq,
+  COALESCE(pub.pub_private_total_ctq, 0.0) AS pub_private_total_ctq,
+  COALESCE(pub.pub_govfund_direct_ctq, 0.0) AS pub_govfund_direct_ctq,
+  COALESCE(pub.pub_govfund_rid_ctq, 0.0) AS pub_govfund_rid_ctq,
+  COALESCE(pub.pub_govfund_inst_ctq, 0.0) AS pub_govfund_inst_ctq,
+  COALESCE(pub.pub_private_with_cites_ctq, 0.0) AS pub_private_with_cites_ctq,
+  COALESCE(pub.pub_private_cite_gov_raw_ctq, 0.0) AS pub_private_cite_gov_raw_ctq,
+  COALESCE(pub.pub_private_cite_gov_norm_ctq, 0.0) AS pub_private_cite_gov_norm_ctq
+
+FROM grid
+LEFT JOIN pat
+  ON pat.country_code = grid.country_code AND pat.quarter = grid.quarter
+LEFT JOIN pub
+  ON pub.country_code = grid.country_code AND pub.quarter = grid.quarter
+ORDER BY country_code, quarter

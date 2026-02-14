@@ -1,0 +1,247 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_private_cite_gov_ctq",
+  tags: ["int", "patents"],
+  description: "Country×quarter measures for private patents citing domestic-government documents (patents or publications). Produces both raw and quarter×IPCR-normalized fractional sums."
+}
+
+-- Government documents for country c are defined as:
+--  - patents with at least one Surico-government assignee in country c
+--  - publications with at least one Surico-government affiliation in country c (from authors.affiliations_address)
+-- Citing universe: pat_family_country_base with dom_gov_assg_flag = 0.
+
+WITH base AS (
+  SELECT
+    family_id,
+    country_code,
+    quarter,
+    w_domestic
+  FROM ${ref("rd_int", "pat_family_country_base")}
+  WHERE dom_gov_assg_flag = 0
+),
+
+meta AS (
+  SELECT
+    family_id,
+    ipcr_norm_codes,
+    cited_patent_ids,
+    cited_pub_ids
+  FROM ${ref("rd_stage", "patent_rep_doc_meta")}
+),
+
+citing AS (
+  SELECT
+    b.family_id,
+    b.country_code,
+    b.quarter,
+    b.w_domestic,
+    -- ensure at least one code for normalization
+    IF(ARRAY_LENGTH(m.ipcr_norm_codes) > 0, m.ipcr_norm_codes, ['UNK']) AS ipcr_codes,
+    m.cited_patent_ids,
+    m.cited_pub_ids
+  FROM base b
+  LEFT JOIN meta m
+    USING (family_id)
+),
+
+-- ------------------------------------------------------------
+-- Outgoing citation edges (deduplicated)
+-- ------------------------------------------------------------
+pat_edges AS (
+  SELECT DISTINCT
+    family_id,
+    country_code,
+    quarter,
+    w_domestic,
+    ipcr_codes,
+    'patent' AS cited_type,
+    cid AS cited_id
+  FROM citing
+  CROSS JOIN UNNEST(IFNULL(cited_patent_ids, CAST([] AS ARRAY<STRING>))) AS cid
+  WHERE cid IS NOT NULL
+),
+
+pub_edges AS (
+  SELECT DISTINCT
+    family_id,
+    country_code,
+    quarter,
+    w_domestic,
+    ipcr_codes,
+    'publication' AS cited_type,
+    cid AS cited_id
+  FROM citing
+  CROSS JOIN UNNEST(IFNULL(cited_pub_ids, CAST([] AS ARRAY<STRING>))) AS cid
+  WHERE cid IS NOT NULL
+),
+
+edges AS (
+  SELECT * FROM pat_edges
+  UNION ALL
+  SELECT * FROM pub_edges
+),
+
+org_dim AS (
+  SELECT org_id, country_code, is_gov_surico
+  FROM ${ref("rd_ref", "org_gov_surico")}
+),
+
+-- ------------------------------------------------------------
+-- Determine whether each cited PATENT is a domestic-government document
+-- (gov assignee in the citing country)
+-- ------------------------------------------------------------
+pat_gov AS (
+  SELECT
+    e.family_id,
+    e.country_code,
+    e.quarter,
+    e.w_domestic,
+    e.ipcr_codes,
+    e.cited_type,
+    e.cited_id,
+    MAX(CASE WHEN od.is_gov_surico AND od.country_code = e.country_code THEN 1 ELSE 0 END) AS is_gov_doc
+  FROM edges e
+  JOIN `dimensions-ai.data_analytics.patents` p
+    ON e.cited_type = 'patent'
+   AND p.id = e.cited_id
+  LEFT JOIN UNNEST(IFNULL(p.assignee_orgs, CAST([] AS ARRAY<STRING>))) AS ao
+  LEFT JOIN org_dim od
+    ON od.org_id = ao
+  GROUP BY e.family_id, e.country_code, e.quarter, e.w_domestic, e.ipcr_codes, e.cited_type, e.cited_id
+),
+
+-- ------------------------------------------------------------
+-- Determine whether each cited PUBLICATION is a domestic-government document
+-- (gov affiliation in the citing country)
+-- ------------------------------------------------------------
+pub_aff AS (
+  SELECT
+    e.family_id,
+    e.country_code,
+    e.quarter,
+    e.w_domestic,
+    e.ipcr_codes,
+    e.cited_type,
+    e.cited_id,
+    COALESCE(
+      (
+        SELECT
+          MAX(
+            CASE
+              WHEN od.is_gov_surico
+               AND COALESCE(
+                     CASE WHEN aff.country_code = 'UK' THEN 'GB' ELSE aff.country_code END,
+                     od.country_code
+                   ) = e.country_code
+              THEN 1
+              ELSE 0
+            END
+          )
+        FROM `dimensions-ai.data_analytics.publications` pub
+        LEFT JOIN UNNEST(IFNULL(pub.authors, [])) AS a
+        LEFT JOIN UNNEST(IFNULL(a.affiliations_address, [])) AS aff
+        LEFT JOIN org_dim od
+          ON od.org_id = aff.grid_id
+        WHERE pub.id = e.cited_id
+          AND aff.grid_id IS NOT NULL
+      ),
+      0
+    ) AS is_gov_doc
+  FROM edges e
+  WHERE e.cited_type = 'publication'
+),
+
+gov_edges AS (
+  SELECT * FROM pat_gov
+  UNION ALL
+  SELECT * FROM pub_aff
+),
+
+-- ------------------------------------------------------------
+-- Family×country citation shares
+-- ------------------------------------------------------------
+family_share AS (
+  SELECT
+    family_id,
+    country_code,
+    quarter,
+    w_domestic,
+    ipcr_codes,
+    COUNT(DISTINCT CONCAT(cited_type, ':', cited_id)) AS n_cites_total,
+    COUNT(DISTINCT IF(is_gov_doc = 1, CONCAT(cited_type, ':', cited_id), NULL)) AS n_cites_gov,
+    SAFE_DIVIDE(
+      COUNT(DISTINCT IF(is_gov_doc = 1, CONCAT(cited_type, ':', cited_id), NULL)),
+      COUNT(DISTINCT CONCAT(cited_type, ':', cited_id))
+    ) AS share_gov_cites
+  FROM gov_edges
+  GROUP BY family_id, country_code, quarter, w_domestic, ipcr_codes
+),
+
+-- ------------------------------------------------------------
+-- Split by IPCR code for normalization
+-- ------------------------------------------------------------
+family_ipcr AS (
+  SELECT
+    fs.family_id,
+    fs.country_code,
+    fs.quarter,
+    fs.w_domestic,
+    fs.n_cites_total,
+    fs.n_cites_gov,
+    COALESCE(fs.share_gov_cites, 0.0) AS share_gov_cites,
+    ipcr_code,
+    SAFE_DIVIDE(1.0, ARRAY_LENGTH(fs.ipcr_codes)) AS w_ipcr
+  FROM family_share fs
+  CROSS JOIN UNNEST(fs.ipcr_codes) AS ipcr_code
+),
+
+baseline AS (
+  SELECT
+    quarter,
+    ipcr_code,
+    SAFE_DIVIDE(
+      SUM(w_domestic * w_ipcr * share_gov_cites),
+      SUM(w_domestic * w_ipcr)
+    ) AS avg_share_gov_cites
+  FROM family_ipcr
+  WHERE n_cites_total > 0
+  GROUP BY quarter, ipcr_code
+),
+
+country_quarter_raw AS (
+  SELECT
+    country_code,
+    quarter,
+    SUM(w_domestic * COALESCE(share_gov_cites, 0.0)) AS pat_private_cite_gov_raw_ctq,
+    SUM(w_domestic) AS pat_private_total_ctq,
+    SUM(w_domestic * CAST(n_cites_total > 0 AS INT64)) AS pat_private_with_cites_ctq
+  FROM family_share
+  GROUP BY country_code, quarter
+),
+
+country_quarter_norm AS (
+  SELECT
+    f.country_code,
+    f.quarter,
+    SUM(
+      f.w_domestic * f.w_ipcr * SAFE_DIVIDE(f.share_gov_cites, NULLIF(b.avg_share_gov_cites, 0.0))
+    ) AS pat_private_cite_gov_norm_ctq
+  FROM family_ipcr f
+  LEFT JOIN baseline b
+    ON b.quarter = f.quarter
+   AND b.ipcr_code = f.ipcr_code
+  GROUP BY f.country_code, f.quarter
+)
+
+SELECT
+  r.country_code,
+  r.quarter,
+  r.pat_private_total_ctq,
+  r.pat_private_with_cites_ctq,
+  r.pat_private_cite_gov_raw_ctq,
+  COALESCE(n.pat_private_cite_gov_norm_ctq, 0.0) AS pat_private_cite_gov_norm_ctq
+FROM country_quarter_raw r
+LEFT JOIN country_quarter_norm n
+  ON n.country_code = r.country_code
+ AND n.quarter = r.quarter

@@ -1,0 +1,98 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_family_country_base",
+  tags: ["int", "patents"],
+  description: "Patent family × country analytic base for domestic innovation: anchored to earliest application quarter. Includes inventor and assignee fractional weights, government assignee share, FoR codes, and linked grant IDs."
+}
+
+WITH anchor AS (
+  SELECT family_id, family_app_dt, family_app_qtr AS quarter
+  FROM ${ref("rd_stage", "patent_family_anchor")}
+  WHERE family_app_dt IS NOT NULL
+    AND family_app_dt >= DATE('${dataform.projectConfig.vars.sample_start}')
+    AND family_app_dt <= DATE('${dataform.projectConfig.vars.sample_end}')
+),
+
+w_inv AS (
+  SELECT family_id, country_code, w_inv
+  FROM ${ref("rd_stage", "patent_family_inventor_weights")}
+),
+
+w_assg AS (
+  SELECT family_id, country_code, w_assg, w_assg_gov_surico
+  FROM ${ref("rd_stage", "patent_family_assignee_weights")}
+),
+
+flags AS (
+  SELECT family_id, country_code, dom_gov_assg_flag
+  FROM ${ref("rd_stage", "patent_family_assignee_flags")}
+),
+
+for4 AS (
+  SELECT family_id, for4_codes
+  FROM ${ref("rd_stage", "patent_family_for4")}
+),
+
+family_grants AS (
+  SELECT
+    family_id,
+    ARRAY(
+      SELECT DISTINCT gid
+      FROM (
+        SELECT gid
+        FROM UNNEST(ARRAY_CONCAT(IFNULL(direct_grant_ids, []), IFNULL(associated_grant_ids, []))) AS gid
+        WHERE gid IS NOT NULL
+      )
+    ) AS all_grant_ids
+  FROM ${ref("rd_stage", "patent_doc_core")}
+  GROUP BY family_id
+)
+
+SELECT
+  a.family_id,
+  a.quarter,
+  a.family_app_dt,
+
+  i.country_code,
+
+  -- Fractional weights (requested: share of domestic inventors × share of domestic assignees)
+  i.w_inv,
+  s.w_assg,
+  (i.w_inv * s.w_assg) AS w_domestic,
+
+  -- Government ownership share within domestic assignees (Surico government definition)
+  (i.w_inv * s.w_assg * COALESCE(s.w_assg_gov_surico, 0.0)) AS w_gov_owned,
+
+  COALESCE(f.dom_gov_assg_flag, 0) AS dom_gov_assg_flag,
+
+  -- Research codes (FoR)
+  COALESCE(f4.for4_codes, CAST([] AS ARRAY<STRING>)) AS for4_codes,
+  ARRAY(
+    SELECT DISTINCT SUBSTR(code, 1, 2)
+    FROM UNNEST(COALESCE(f4.for4_codes, CAST([] AS ARRAY<STRING>))) AS code
+    WHERE code IS NOT NULL
+  ) AS for2_codes,
+
+  COALESCE(g.all_grant_ids, CAST([] AS ARRAY<STRING>)) AS all_grant_ids
+
+FROM anchor a
+JOIN w_inv i
+  ON i.family_id = a.family_id
+JOIN w_assg s
+  ON s.family_id = a.family_id
+ AND s.country_code = i.country_code
+LEFT JOIN flags f
+  ON f.family_id = a.family_id
+ AND f.country_code = i.country_code
+LEFT JOIN for4 f4
+  ON f4.family_id = a.family_id
+LEFT JOIN family_grants g
+  ON g.family_id = a.family_id
+
+WHERE i.country_code IS NOT NULL
+  AND s.w_assg IS NOT NULL
+  AND i.w_inv IS NOT NULL
+  AND i.w_inv > 0
+  AND s.w_assg > 0
+  AND (i.w_inv * s.w_assg) > 0

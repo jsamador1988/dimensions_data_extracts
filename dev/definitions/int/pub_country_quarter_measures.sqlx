@@ -1,0 +1,79 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_country_quarter_measures",
+  tags: ["int", "publications"],
+  description: "Country×quarter publication innovation time series (2a–2f): total domestic publications, government-produced component, multiple government-funding proxies, and private→government citation-based measures."
+}
+
+WITH base AS (
+  SELECT
+    country_code,
+    quarter,
+    SUM(w_aff) AS pub_total_ctq,
+    SUM(w_public_prod) AS pub_gov_owned_ctq,
+    SUM(IF(w_public_prod = 0, w_aff, 0.0)) AS pub_private_total_ctq
+  FROM ${ref("rd_int", "pub_pub_country_base")}
+  GROUP BY country_code, quarter
+),
+
+direct AS (
+  SELECT country_code, quarter, SUM(w_aff) AS pub_govfund_direct_ctq
+  FROM ${ref("rd_int", "pub_govfund_direct_pc")}
+  GROUP BY country_code, quarter
+),
+
+rid AS (
+  SELECT country_code, quarter, SUM(w_aff) AS pub_govfund_rid_ctq
+  FROM ${ref("rd_int", "pub_govfund_rid_pc")}
+  GROUP BY country_code, quarter
+),
+
+inst AS (
+  SELECT country_code, quarter, SUM(w_aff) AS pub_govfund_inst_ctq
+  FROM ${ref("rd_int", "pub_govfund_inst_pc")}
+  GROUP BY country_code, quarter
+),
+
+cite AS (
+  SELECT
+    country_code,
+    quarter,
+    pub_private_with_cites_ctq,
+    pub_private_cite_gov_raw_ctq,
+    pub_private_cite_gov_norm_ctq
+  FROM ${ref("rd_int", "pub_private_cite_gov_ctq")}
+)
+
+SELECT
+  b.country_code,
+  b.quarter,
+
+  -- 2a
+  b.pub_total_ctq,
+
+  -- 2b
+  b.pub_gov_owned_ctq,
+
+  -- Private-only denominator (no gov affiliation)
+  b.pub_private_total_ctq,
+
+  -- 2c/2d/2e (all restricted to private-only)
+  COALESCE(d.pub_govfund_direct_ctq, 0.0) AS pub_govfund_direct_ctq,
+  COALESCE(r.pub_govfund_rid_ctq, 0.0) AS pub_govfund_rid_ctq,
+  COALESCE(i.pub_govfund_inst_ctq, 0.0) AS pub_govfund_inst_ctq,
+
+  -- 2f
+  COALESCE(c.pub_private_with_cites_ctq, 0.0) AS pub_private_with_cites_ctq,
+  COALESCE(c.pub_private_cite_gov_raw_ctq, 0.0) AS pub_private_cite_gov_raw_ctq,
+  COALESCE(c.pub_private_cite_gov_norm_ctq, 0.0) AS pub_private_cite_gov_norm_ctq
+
+FROM base b
+LEFT JOIN direct d
+  ON d.country_code = b.country_code AND d.quarter = b.quarter
+LEFT JOIN rid r
+  ON r.country_code = b.country_code AND r.quarter = b.quarter
+LEFT JOIN inst i
+  ON i.country_code = b.country_code AND i.quarter = b.quarter
+LEFT JOIN cite c
+  ON c.country_code = b.country_code AND c.quarter = b.quarter

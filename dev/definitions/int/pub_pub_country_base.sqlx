@@ -1,0 +1,57 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_pub_country_base",
+  tags: ["int", "publications"],
+  description: "Publication×country analytic base: author-weighted country fractions (w_aff), government-produced component (w_public_prod), research codes, funders, and references."
+}
+
+WITH core AS (
+  SELECT
+    pub_id,
+    pub_dt_best,
+    quarter,
+    authors,
+    funder_orgs,
+    funding_details,
+    reference_ids,
+    for4_codes
+  FROM ${ref("rd_stage", "pub_core")}
+),
+
+w AS (
+  SELECT
+    pub_id,
+    quarter,
+    country_code,
+    w_aff,
+    w_public_prod,
+    w_private_prod
+  FROM ${ref("rd_stage", "pub_country_weights")}
+)
+
+SELECT
+  c.pub_id,
+  w.country_code,
+  w.quarter,
+  c.pub_dt_best,
+  w.w_aff,
+  w.w_public_prod,
+  w.w_private_prod,
+
+  COALESCE(c.for4_codes, CAST([] AS ARRAY<STRING>)) AS for4_codes,
+  ARRAY(
+    SELECT DISTINCT SUBSTR(code,1,2)
+    FROM UNNEST(COALESCE(c.for4_codes, CAST([] AS ARRAY<STRING>))) AS code
+    WHERE code IS NOT NULL
+  ) AS for2_codes,
+
+  c.funder_orgs,
+  c.funding_details,
+  c.reference_ids
+
+FROM core c
+JOIN w
+  ON w.pub_id = c.pub_id
+ AND w.quarter = c.quarter
+WHERE w.w_aff IS NOT NULL AND w.w_aff > 0

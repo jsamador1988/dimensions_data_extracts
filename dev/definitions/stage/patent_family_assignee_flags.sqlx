@@ -1,0 +1,15 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "patent_family_assignee_flags",
+  tags: ["stage", "patents"],
+  description: "Family×country assignee presence flags: any domestic assignee and any domestic Surico-government assignee."
+}
+
+SELECT
+  family_id,
+  country_code,
+  CAST(n_assg_country > 0 AS INT64) AS dom_assg_flag,
+  CAST(n_gov_assg_country > 0 AS INT64) AS dom_gov_assg_flag
+FROM ${ref("rd_stage", "patent_family_assignee_weights")}
+WHERE family_id IS NOT NULL AND country_code IS NOT NULL

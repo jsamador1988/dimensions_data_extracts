@@ -1,0 +1,49 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "pub_country_orgs",
+  tags: ["stage", "publications"],
+  description: "Distinct publication×country×organization (GRID) affiliations derived from authors.affiliations_address (at time of publication). Used for institution-based grant matching."
+}
+
+WITH core AS (
+  SELECT pub_id, quarter, authors
+  FROM ${ref("rd_stage", "pub_core")}
+  WHERE pub_id IS NOT NULL AND quarter IS NOT NULL
+),
+
+org_dim AS (
+  SELECT
+    o.id AS org_id,
+    CASE WHEN o.legal_country_code = 'UK' THEN 'GB' ELSE o.legal_country_code END AS legal_country_code
+  FROM `dimensions-ai.data_analytics.organizations` o
+),
+
+aff_flat AS (
+  SELECT
+    c.pub_id,
+    c.quarter,
+    aff.grid_id AS org_id,
+    CASE WHEN aff.country_code = 'UK' THEN 'GB' ELSE aff.country_code END AS aff_country_code
+  FROM core c
+  CROSS JOIN UNNEST(IFNULL(c.authors, [])) AS a
+  LEFT JOIN UNNEST(IFNULL(a.affiliations_address, [])) AS aff
+)
+
+SELECT DISTINCT
+  f.pub_id,
+  f.quarter,
+  CASE
+    WHEN f.aff_country_code IS NOT NULL THEN f.aff_country_code
+    ELSE od.legal_country_code
+  END AS country_code,
+  f.org_id
+FROM aff_flat f
+LEFT JOIN org_dim od
+  ON od.org_id = f.org_id
+WHERE f.org_id IS NOT NULL
+  AND (
+    (f.aff_country_code IS NOT NULL AND REGEXP_CONTAINS(f.aff_country_code, r'^[A-Z]{2}$'))
+    OR (f.aff_country_code IS NULL AND od.legal_country_code IS NOT NULL AND REGEXP_CONTAINS(od.legal_country_code, r'^[A-Z]{2}$'))
+  )
+  AND (CASE WHEN f.aff_country_code IS NOT NULL THEN f.aff_country_code ELSE od.legal_country_code END) NOT IN ('EP','WO')

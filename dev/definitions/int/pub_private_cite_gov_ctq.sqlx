@@ -1,0 +1,174 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_private_cite_gov_ctq",
+  tags: ["int", "publications"],
+  description: "Country×quarter measures for private publications citing domestic-government publications. Produces both raw and quarter×FoR4-normalized fractional sums. (Outgoing citations to patents are not available in the publications schema; this measure uses publication→publication references only.)"
+}
+
+WITH base AS (
+  SELECT
+    pub_id,
+    country_code,
+    quarter,
+    w_aff,
+    w_public_prod,
+    IF(IFNULL(ARRAY_LENGTH(for4_codes), 0) > 0, for4_codes, ['UNK']) AS for4_codes,
+    reference_ids
+  FROM ${ref("rd_int", "pub_pub_country_base")}
+  WHERE w_public_prod = 0
+),
+
+base_totals AS (
+  SELECT
+    country_code,
+    quarter,
+    SUM(w_aff) AS pub_private_total_ctq
+  FROM base
+  GROUP BY country_code, quarter
+),
+
+edges AS (
+  SELECT DISTINCT
+    b.pub_id,
+    b.country_code,
+    b.quarter,
+    b.w_aff,
+    b.for4_codes,
+    cid AS cited_pub_id
+  FROM base b
+  CROSS JOIN UNNEST(IFNULL(b.reference_ids, CAST([] AS ARRAY<STRING>))) AS cid
+  WHERE cid IS NOT NULL
+),
+
+org_dim AS (
+  SELECT org_id, country_code, is_gov_surico
+  FROM ${ref("rd_ref", "org_gov_surico")}
+),
+
+-- Determine whether each cited publication is a domestic-government document
+-- (any gov affiliation in the citing country)
+edge_gov AS (
+  SELECT
+    e.pub_id,
+    e.country_code,
+    e.quarter,
+    e.w_aff,
+    e.for4_codes,
+    e.cited_pub_id,
+    COALESCE(
+      (
+        SELECT
+          MAX(
+            CASE
+              WHEN od.is_gov_surico
+               AND COALESCE(
+                     CASE WHEN aff.country_code = 'UK' THEN 'GB' ELSE aff.country_code END,
+                     od.country_code
+                   ) = e.country_code
+              THEN 1
+              ELSE 0
+            END
+          )
+        FROM `dimensions-ai.data_analytics.publications` pub
+        LEFT JOIN UNNEST(IFNULL(pub.authors, [])) AS a
+        LEFT JOIN UNNEST(IFNULL(a.affiliations_address, [])) AS aff
+        LEFT JOIN org_dim od
+          ON od.org_id = aff.grid_id
+        WHERE pub.id = e.cited_pub_id
+          AND aff.grid_id IS NOT NULL
+      ),
+      0
+    ) AS is_gov_doc
+  FROM edges e
+),
+
+pub_share AS (
+  SELECT
+    pub_id,
+    country_code,
+    quarter,
+    w_aff,
+    for4_codes,
+    COUNT(DISTINCT cited_pub_id) AS n_cites_total,
+    COUNT(DISTINCT IF(is_gov_doc = 1, cited_pub_id, NULL)) AS n_cites_gov,
+    SAFE_DIVIDE(COUNT(DISTINCT IF(is_gov_doc = 1, cited_pub_id, NULL)), COUNT(DISTINCT cited_pub_id)) AS share_gov_cites
+  FROM edge_gov
+  GROUP BY pub_id, country_code, quarter, w_aff, for4_codes
+),
+
+pub_for4 AS (
+  SELECT
+    ps.pub_id,
+    ps.country_code,
+    ps.quarter,
+    ps.w_aff,
+    ps.n_cites_total,
+    ps.n_cites_gov,
+    COALESCE(ps.share_gov_cites, 0.0) AS share_gov_cites,
+    for4,
+    SAFE_DIVIDE(1.0, ARRAY_LENGTH(ps.for4_codes)) AS w_for4
+  FROM pub_share ps
+  CROSS JOIN UNNEST(ps.for4_codes) AS for4
+),
+
+baseline AS (
+  SELECT
+    quarter,
+    for4,
+    SAFE_DIVIDE(
+      SUM(w_aff * w_for4 * share_gov_cites),
+      SUM(w_aff * w_for4)
+    ) AS avg_share_gov_cites
+  FROM pub_for4
+  WHERE n_cites_total > 0
+  GROUP BY quarter, for4
+),
+
+base_totals AS (
+  SELECT
+    country_code,
+    quarter,
+    SUM(w_aff) AS pub_private_total_ctq
+  FROM base
+  GROUP BY country_code, quarter
+),
+
+country_quarter_raw AS (
+  SELECT
+    country_code,
+    quarter,
+    SUM(w_aff * COALESCE(share_gov_cites, 0.0)) AS pub_private_cite_gov_raw_ctq,
+    SUM(w_aff * CAST(n_cites_total > 0 AS INT64)) AS pub_private_with_cites_ctq
+  FROM pub_share
+  GROUP BY country_code, quarter
+),
+
+country_quarter_norm AS (
+  SELECT
+    f.country_code,
+    f.quarter,
+    SUM(
+      f.w_aff * f.w_for4 * SAFE_DIVIDE(f.share_gov_cites, NULLIF(b.avg_share_gov_cites, 0.0))
+    ) AS pub_private_cite_gov_norm_ctq
+  FROM pub_for4 f
+  LEFT JOIN baseline b
+    ON b.quarter = f.quarter
+   AND b.for4 = f.for4
+  GROUP BY f.country_code, f.quarter
+)
+
+SELECT
+  t.country_code,
+  t.quarter,
+  t.pub_private_total_ctq,
+  COALESCE(r.pub_private_with_cites_ctq, 0.0) AS pub_private_with_cites_ctq,
+  COALESCE(r.pub_private_cite_gov_raw_ctq, 0.0) AS pub_private_cite_gov_raw_ctq,
+  COALESCE(n.pub_private_cite_gov_norm_ctq, 0.0) AS pub_private_cite_gov_norm_ctq
+FROM base_totals t
+LEFT JOIN country_quarter_raw r
+  ON r.country_code = t.country_code
+ AND r.quarter = t.quarter
+LEFT JOIN country_quarter_norm n
+  ON n.country_code = t.country_code
+ AND n.quarter = t.quarter

@@ -1,0 +1,15 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "patent_family_for4",
+  tags: ["stage", "patents"],
+  description: "Family-level FoR4 code set (deduplicated) aggregated across family members."
+}
+
+SELECT
+  family_id,
+  ARRAY_AGG(DISTINCT for4 IGNORE NULLS) AS for4_codes
+FROM ${ref("rd_stage", "patent_doc_core")} p
+CROSS JOIN UNNEST(IFNULL(p.for4_codes, CAST([] AS ARRAY<STRING>))) AS for4
+WHERE p.family_id IS NOT NULL
+GROUP BY family_id

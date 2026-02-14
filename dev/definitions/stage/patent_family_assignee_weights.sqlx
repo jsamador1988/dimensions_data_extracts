@@ -1,0 +1,67 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "patent_family_assignee_weights",
+  tags: ["stage", "patents"],
+  description: "Family×assignee-country fractional weights (by distinct assignee organizations), with Surico government share within each country."
+}
+
+WITH assg_flat AS (
+  SELECT DISTINCT
+    p.family_id,
+    org_id
+  FROM ${ref("rd_stage", "patent_doc_core")} p
+  CROSS JOIN UNNEST(IFNULL(p.assignee_orgs, CAST([] AS ARRAY<STRING>))) AS org_id
+  WHERE p.family_id IS NOT NULL
+    AND org_id IS NOT NULL
+),
+
+org_dim AS (
+  SELECT org_id, country_code, is_gov_surico
+  FROM ${ref("rd_ref", "org_gov_surico")}
+),
+
+assg_enriched AS (
+  SELECT
+    a.family_id,
+    od.country_code,
+    od.is_gov_surico,
+    a.org_id
+  FROM assg_flat a
+  JOIN org_dim od
+    ON od.org_id = a.org_id
+  WHERE od.country_code IS NOT NULL
+    AND REGEXP_CONTAINS(od.country_code, r'^[A-Z]{2}$')
+    AND od.country_code NOT IN ('EP','WO')
+),
+
+counts AS (
+  SELECT
+    family_id,
+    country_code,
+    COUNT(DISTINCT org_id) AS n_assg_country,
+    COUNT(DISTINCT IF(is_gov_surico, org_id, NULL)) AS n_gov_assg_country
+  FROM assg_enriched
+  GROUP BY family_id, country_code
+),
+
+totals AS (
+  SELECT
+    family_id,
+    SUM(n_assg_country) AS n_assg_total
+  FROM counts
+  GROUP BY family_id
+)
+
+SELECT
+  c.family_id,
+  c.country_code,
+  SAFE_DIVIDE(c.n_assg_country, t.n_assg_total) AS w_assg,
+  SAFE_DIVIDE(c.n_gov_assg_country, c.n_assg_country) AS w_assg_gov_surico,
+  c.n_assg_country,
+  c.n_gov_assg_country,
+  t.n_assg_total
+FROM counts c
+JOIN totals t
+  USING (family_id)
+WHERE t.n_assg_total > 0

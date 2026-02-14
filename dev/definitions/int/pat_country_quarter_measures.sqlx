@@ -1,0 +1,79 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_country_quarter_measures",
+  tags: ["int", "patents"],
+  description: "Country×quarter patent innovation time series (1a–1f): total domestic patents, government-owned, multiple government-funding proxies, and private→government citation-based measures."
+}
+
+WITH base AS (
+  SELECT
+    country_code,
+    quarter,
+    SUM(w_domestic) AS pat_total_ctq,
+    SUM(w_gov_owned) AS pat_gov_owned_ctq,
+    SUM(IF(dom_gov_assg_flag = 0, w_domestic, 0.0)) AS pat_private_total_ctq
+  FROM ${ref("rd_int", "pat_family_country_base")}
+  GROUP BY country_code, quarter
+),
+
+direct AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_direct_ctq
+  FROM ${ref("rd_int", "pat_govfund_direct_fc")}
+  GROUP BY country_code, quarter
+),
+
+rid AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_rid_ctq
+  FROM ${ref("rd_int", "pat_govfund_rid_fc")}
+  GROUP BY country_code, quarter
+),
+
+inst AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_inst_ctq
+  FROM ${ref("rd_int", "pat_govfund_inst_fc")}
+  GROUP BY country_code, quarter
+),
+
+cite AS (
+  SELECT
+    country_code,
+    quarter,
+    pat_private_cite_gov_raw_ctq,
+    pat_private_cite_gov_norm_ctq,
+    pat_private_with_cites_ctq
+  FROM ${ref("rd_int", "pat_private_cite_gov_ctq")}
+)
+
+SELECT
+  b.country_code,
+  b.quarter,
+
+  -- 1a
+  b.pat_total_ctq,
+
+  -- 1b
+  b.pat_gov_owned_ctq,
+
+  -- Private-only denominator (no government assignee)
+  b.pat_private_total_ctq,
+
+  -- 1c/1d/1e (all exclude government-owned families)
+  COALESCE(d.pat_govfund_direct_ctq, 0.0) AS pat_govfund_direct_ctq,
+  COALESCE(r.pat_govfund_rid_ctq, 0.0) AS pat_govfund_rid_ctq,
+  COALESCE(i.pat_govfund_inst_ctq, 0.0) AS pat_govfund_inst_ctq,
+
+  -- 1f
+  COALESCE(c.pat_private_with_cites_ctq, 0.0) AS pat_private_with_cites_ctq,
+  COALESCE(c.pat_private_cite_gov_raw_ctq, 0.0) AS pat_private_cite_gov_raw_ctq,
+  COALESCE(c.pat_private_cite_gov_norm_ctq, 0.0) AS pat_private_cite_gov_norm_ctq
+
+FROM base b
+LEFT JOIN direct d
+  ON d.country_code = b.country_code AND d.quarter = b.quarter
+LEFT JOIN rid r
+  ON r.country_code = b.country_code AND r.quarter = b.quarter
+LEFT JOIN inst i
+  ON i.country_code = b.country_code AND i.quarter = b.quarter
+LEFT JOIN cite c
+  ON c.country_code = b.country_code AND c.quarter = b.quarter
