@@ -3,7 +3,11 @@ config {
   schema: "rd_mart",
   name: "panel_country_quarter_wide",
   tags: ["mart"],
-  description: "Balanced country×quarter panel combining patent and publication innovation decompositions (requested series 1a–1f and 2a–2f)."
+  description: "Balanced country×quarter panel combining patent and publication innovation decompositions (requested series 1a–1f and 2a–2f).",
+  bigquery: {
+    partitionBy: "quarter",
+    clusterBy: ["country_code"]
+  }
 }
 
 WITH country_dim AS (
