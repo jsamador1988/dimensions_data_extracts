@@ -94,4 +94,3 @@ LEFT JOIN pat
   ON pat.country_code = grid.country_code AND pat.quarter = grid.quarter
 LEFT JOIN pub
   ON pub.country_code = grid.country_code AND pub.quarter = grid.quarter
-ORDER BY country_code, quarter
