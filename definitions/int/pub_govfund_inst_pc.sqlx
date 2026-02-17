@@ -3,7 +3,7 @@ config {
   schema: "rd_int",
   name: "pub_govfund_inst_pc",
   tags: ["int", "publications"],
-  description: "Publications matched to domestic Surico-government grants by recipient institution (publication affiliation org_id), with FoR overlap/Jaccard and a configurable post-grant time window. Restricted to private-produced publications (no gov affiliation in that country)."
+  description: "Publications matched to domestic Surico-government grants by recipient institution (publication affiliation org_id), with FoR overlap/Jaccard, configurable post-grant time window, and Phase-1 fuzzy hardening (concept + title token Jaccard). Restricted to private-produced publications (no gov affiliation in that country)."
 }
 
 WITH base AS (
@@ -33,18 +33,34 @@ grant_orgs AS (
 ),
 
 grants AS (
-  SELECT country_code, grant_id, start_dt, grant_for4, grant_for2
+  SELECT
+    country_code,
+    grant_id,
+    start_dt,
+    grant_for4,
+    grant_for2,
+    grant_title_tokens,
+    grant_concepts
   FROM ${ref("rd_stage", "grants_gov_core")}
   WHERE start_dt IS NOT NULL
 ),
 
-pairs AS (
+pub_feat AS (
+  SELECT pub_id, pub_title_tokens, pub_concepts
+  FROM ${ref("rd_stage", "pub_text_features")}
+),
+
+-- Candidate pairs with time window + (institution link) + FoR overlaps computed
+pairs0 AS (
   SELECT
     b.pub_id,
     b.country_code,
     b.quarter,
     b.w_aff,
     g.grant_id,
+
+    g.grant_title_tokens,
+    g.grant_concepts,
 
     ARRAY_LENGTH(ARRAY(
       SELECT DISTINCT x
@@ -90,6 +106,86 @@ pairs AS (
       g.start_dt,
       INTERVAL CAST(${(dataform.projectConfig.vars.grant_match_window_years || 10)} AS INT64) YEAR
     )
+),
+
+-- Apply your existing FoR Jaccard filter first (cheap)
+pairs_fieldpass AS (
+  SELECT
+    *,
+    SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) AS jaccard_for4,
+    SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) AS jaccard_for2
+  FROM pairs0
+  WHERE (
+    (overlap_for4 >= CAST(${(dataform.projectConfig.vars.min_for4_overlap || 1)} AS INT64)
+     AND SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
+    OR
+    (overlap_for2 >= 1
+     AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
+  )
+),
+
+-- Add fuzzy scoring (concept + title token Jaccard)
+pairs_scored AS (
+  SELECT
+    p.*,
+    pf.pub_title_tokens,
+    pf.pub_concepts,
+
+    SAFE_DIVIDE(
+      ARRAY_LENGTH(ARRAY(
+        SELECT DISTINCT x
+        FROM UNNEST(COALESCE(pf.pub_concepts, CAST([] AS ARRAY<STRING>))) x
+        INTERSECT DISTINCT
+        SELECT DISTINCT y
+        FROM UNNEST(COALESCE(p.grant_concepts, CAST([] AS ARRAY<STRING>))) y
+      )),
+      NULLIF(ARRAY_LENGTH(ARRAY(
+        SELECT DISTINCT z
+        FROM UNNEST(ARRAY_CONCAT(
+          COALESCE(pf.pub_concepts, CAST([] AS ARRAY<STRING>)),
+          COALESCE(p.grant_concepts, CAST([] AS ARRAY<STRING>))
+        )) z
+        WHERE z IS NOT NULL
+      )), 0)
+    ) AS jaccard_concepts,
+
+    SAFE_DIVIDE(
+      ARRAY_LENGTH(ARRAY(
+        SELECT DISTINCT x
+        FROM UNNEST(COALESCE(pf.pub_title_tokens, CAST([] AS ARRAY<STRING>))) x
+        INTERSECT DISTINCT
+        SELECT DISTINCT y
+        FROM UNNEST(COALESCE(p.grant_title_tokens, CAST([] AS ARRAY<STRING>))) y
+      )),
+      NULLIF(ARRAY_LENGTH(ARRAY(
+        SELECT DISTINCT z
+        FROM UNNEST(ARRAY_CONCAT(
+          COALESCE(pf.pub_title_tokens, CAST([] AS ARRAY<STRING>)),
+          COALESCE(p.grant_title_tokens, CAST([] AS ARRAY<STRING>))
+        )) z
+        WHERE z IS NOT NULL
+      )), 0)
+    ) AS jaccard_title
+
+  FROM pairs_fieldpass p
+  LEFT JOIN pub_feat pf
+    ON pf.pub_id = p.pub_id
+),
+
+pairs_fuzzy_pass AS (
+  SELECT
+    *,
+    (0.7 * COALESCE(jaccard_concepts, 0.0) + 0.3 * COALESCE(jaccard_title, 0.0)) AS fuzzy_score
+  FROM pairs_scored
+  WHERE (
+    COALESCE(jaccard_concepts, 0.0) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_concept_jaccard || 0.10)} AS FLOAT64)
+    OR
+    COALESCE(jaccard_title, 0.0) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_jaccard || 0.20)} AS FLOAT64)
+  )
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY pub_id, country_code
+    ORDER BY (0.7 * COALESCE(jaccard_concepts, 0.0) + 0.3 * COALESCE(jaccard_title, 0.0)) DESC
+  ) <= CAST(${(dataform.projectConfig.vars.inst_fuzzy_topk || 3)} AS INT64)
 )
 
 SELECT
@@ -97,16 +193,16 @@ SELECT
   country_code,
   quarter,
   w_aff,
+
   COUNT(DISTINCT grant_id) AS matched_gov_grants,
-  MAX(SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0))) AS max_jaccard_for4,
-  MAX(SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0))) AS max_jaccard_for2
-FROM pairs
-WHERE (
-  (overlap_for4 >= CAST(${(dataform.projectConfig.vars.min_for4_overlap || 1)} AS INT64)
-   AND SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
-  OR
-  (overlap_for2 >= 1
-   AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
-)
+
+  MAX(jaccard_for4) AS max_jaccard_for4,
+  MAX(jaccard_for2) AS max_jaccard_for2,
+
+  MAX(COALESCE(jaccard_concepts, 0.0)) AS max_concept_jaccard,
+  MAX(COALESCE(jaccard_title, 0.0)) AS max_title_jaccard,
+  MAX(COALESCE(fuzzy_score, 0.0)) AS max_fuzzy_score
+
+FROM pairs_fuzzy_pass
 GROUP BY pub_id, country_code, quarter, w_aff
 HAVING matched_gov_grants > 0

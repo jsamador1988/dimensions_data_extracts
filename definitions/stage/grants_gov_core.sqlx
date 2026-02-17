@@ -3,7 +3,7 @@ config {
   schema: "rd_stage",
   name: "grants_gov_core",
   tags: ["stage"],
-  description: "Surico-style government-funded grants (gov orgs via rd_ref.org_gov_surico), with funder country, start date, FoR(4) set, and key linkage fields."
+  description: "Surico-style government-funded grants (gov orgs via rd_ref.org_gov_surico), with funder country, start date, FoR(4) set, key linkage fields, and Phase-1 fuzzy features (concepts + title tokens)."
 }
 
 WITH target_countries AS (
@@ -39,7 +39,51 @@ grants AS (
 
     g.researcher_ids,
     g.investigators,
-    g.organisation_details
+    g.organisation_details,
+
+    -- -------- Phase 1 fuzzy features --------
+    g.title AS grant_title,
+
+    -- Title tokens (lowercase, punctuation stripped, stopwords removed)
+    ARRAY(
+      SELECT DISTINCT tok
+      FROM UNNEST(
+        SPLIT(
+          REGEXP_REPLACE(LOWER(IFNULL(g.title, "")), r"[^a-z0-9]+", " "),
+          " "
+        )
+      ) AS tok
+      WHERE tok IS NOT NULL
+        AND tok != ""
+        AND LENGTH(tok) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_token_len || 3)} AS INT64)
+        AND NOT REGEXP_CONTAINS(tok, r"^\d+$")
+        AND tok NOT IN UNNEST([
+          "a","an","and","are","as","at","be","been","being","by","for","from","has","have","had",
+          "in","into","is","it","its","of","on","or","that","the","their","this","to","was","were",
+          "with","without","via","using","use","used","based","approach","approaches","method","methods",
+          "study","analysis","data","model","models","system","systems","development","design","project",
+          "research","program","programme","grant","funded","funding","proposal","investigation"
+        ])
+    ) AS grant_title_tokens,
+
+    -- Concepts: take top-N by relevance; normalize to lowercase; drop very generic concepts
+    ARRAY(
+      SELECT concept
+      FROM (
+        SELECT
+          LOWER(c.concept) AS concept,
+          SAFE_CAST(c.relevance AS FLOAT64) AS rel
+        FROM UNNEST(IFNULL(g.concepts, CAST([] AS ARRAY<STRUCT<concept STRING, relevance FLOAT64>>))) AS c
+        WHERE c.concept IS NOT NULL
+          AND LOWER(c.concept) NOT IN UNNEST([
+            "present invention","invention","device","devices","method","methods","system","systems",
+            "apparatus","apparatuses","embodiment","embodiments"
+          ])
+      )
+      ORDER BY rel DESC
+      LIMIT CAST(${(dataform.projectConfig.vars.inst_fuzzy_max_concepts_grant || 20)} AS INT64)
+    ) AS grant_concepts
+
   FROM `dimensions-ai.data_analytics.grants` g
   WHERE (g.start_date IS NOT NULL OR g.start_year IS NOT NULL)
 ),
@@ -58,7 +102,13 @@ SELECT
   g.grant_for2,
   g.researcher_ids,
   g.investigators,
-  g.organisation_details
+  g.organisation_details,
+
+  -- Phase 1 fuzzy
+  g.grant_title,
+  g.grant_title_tokens,
+  g.grant_concepts
+
 FROM grants g
 JOIN funder f
   ON f.org_id = g.funder_org_id
