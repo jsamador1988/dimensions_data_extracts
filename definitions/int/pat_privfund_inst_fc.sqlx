@@ -3,7 +3,7 @@ config {
   schema: "rd_int",
   name: "pat_privfund_inst_fc",
   tags: ["int", "patents"],
-  description: "Patent families matched to domestic NON-government-funded grants by assignee institution (grant recipient org_id), with FoR overlap/Jaccard, configurable post-grant time window, and Phase-1 fuzzy hardening (concept + title token Jaccard). Subset of pat_family_country_base excluding government-owned families."
+  description: "Patent families matched to domestic NON-government-funded grants by assignee institution (grant recipient org_id), with FoR overlap/Jaccard, configurable post-grant time window, and Phase-1 fuzzy hardening (concept + title token Jaccard). Subset of pat_family_country_base excluding government-owned families. Field failures may be overridden only by strong concept overlap."
 }
 
 WITH base AS (
@@ -56,7 +56,13 @@ pairs0 AS (
     b.country_code,
     b.quarter,
     b.w_domestic,
+    b.for4_codes,
+    b.for2_codes,
     g.grant_id,
+    g.grant_for4,
+    g.grant_for2,
+    g.grant_title_tokens,
+    g.grant_concepts,
 
     ARRAY_LENGTH(ARRAY(
       SELECT DISTINCT x
@@ -103,82 +109,95 @@ pairs0 AS (
     )
 ),
 
-pairs_fieldpass AS (
+pairs_prefilter AS (
   SELECT
     *,
     SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) AS jaccard_for4,
-    SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) AS jaccard_for2
+    SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) AS jaccard_for2,
+
+    (
+      (overlap_for4 >= CAST(${(dataform.projectConfig.vars.min_for4_overlap || 1)} AS INT64)
+       AND SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
+      OR
+      (overlap_for2 >= 1
+       AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
+    ) AS field_pass
   FROM pairs0
-  WHERE (
-    (overlap_for4 >= CAST(${(dataform.projectConfig.vars.min_for4_overlap || 1)} AS INT64)
-     AND SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
-    OR
-    (overlap_for2 >= 1
-     AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
-  )
+  WHERE (overlap_for4 >= 1 OR overlap_for2 >= 1 OR (union_for4 = 0 AND union_for2 = 0))
 ),
 
 pairs_scored AS (
   SELECT
     p.*,
-    gf.grant_title_tokens,
-    gf.grant_concepts,
     pf.pat_title_tokens,
     pf.pat_concepts,
 
-    SAFE_DIVIDE(
-      ARRAY_LENGTH(ARRAY(
-        SELECT DISTINCT x
-        FROM UNNEST(COALESCE(pf.pat_concepts, CAST([] AS ARRAY<STRING>))) x
-        INTERSECT DISTINCT
-        SELECT DISTINCT y
-        FROM UNNEST(COALESCE(gf.grant_concepts, CAST([] AS ARRAY<STRING>))) y
-      )),
-      NULLIF(ARRAY_LENGTH(ARRAY(
-        SELECT DISTINCT z
-        FROM UNNEST(ARRAY_CONCAT(
-          COALESCE(pf.pat_concepts, CAST([] AS ARRAY<STRING>)),
-          COALESCE(gf.grant_concepts, CAST([] AS ARRAY<STRING>))
-        )) z
-        WHERE z IS NOT NULL
-      )), 0)
-    ) AS jaccard_concepts,
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(pf.pat_concepts, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(p.grant_concepts, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_concepts,
 
-    SAFE_DIVIDE(
-      ARRAY_LENGTH(ARRAY(
-        SELECT DISTINCT x
-        FROM UNNEST(COALESCE(pf.pat_title_tokens, CAST([] AS ARRAY<STRING>))) x
-        INTERSECT DISTINCT
-        SELECT DISTINCT y
-        FROM UNNEST(COALESCE(gf.grant_title_tokens, CAST([] AS ARRAY<STRING>))) y
-      )),
-      NULLIF(ARRAY_LENGTH(ARRAY(
-        SELECT DISTINCT z
-        FROM UNNEST(ARRAY_CONCAT(
-          COALESCE(pf.pat_title_tokens, CAST([] AS ARRAY<STRING>)),
-          COALESCE(gf.grant_title_tokens, CAST([] AS ARRAY<STRING>))
-        )) z
-        WHERE z IS NOT NULL
-      )), 0)
-    ) AS jaccard_title
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT z
+      FROM UNNEST(ARRAY_CONCAT(
+        COALESCE(pf.pat_concepts, CAST([] AS ARRAY<STRING>)),
+        COALESCE(p.grant_concepts, CAST([] AS ARRAY<STRING>))
+      )) z
+      WHERE z IS NOT NULL
+    )) AS union_concepts,
 
-  FROM pairs_fieldpass p
-  JOIN grants gf
-    ON gf.grant_id = p.grant_id
-   AND gf.country_code = p.country_code
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(pf.pat_title_tokens, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(p.grant_title_tokens, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_title,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT z
+      FROM UNNEST(ARRAY_CONCAT(
+        COALESCE(pf.pat_title_tokens, CAST([] AS ARRAY<STRING>)),
+        COALESCE(p.grant_title_tokens, CAST([] AS ARRAY<STRING>))
+      )) z
+      WHERE z IS NOT NULL
+    )) AS union_title
+
+  FROM pairs_prefilter p
   LEFT JOIN pat_feat pf
     ON pf.family_id = p.family_id
+),
+
+pairs_scored2 AS (
+  SELECT
+    *,
+    SAFE_DIVIDE(overlap_concepts, NULLIF(union_concepts, 0)) AS jaccard_concepts,
+    SAFE_DIVIDE(overlap_title, NULLIF(union_title, 0)) AS jaccard_title
+  FROM pairs_scored
 ),
 
 pairs_fuzzy_pass AS (
   SELECT
     *,
     (0.7 * COALESCE(jaccard_concepts, 0.0) + 0.3 * COALESCE(jaccard_title, 0.0)) AS fuzzy_score
-  FROM pairs_scored
+  FROM pairs_scored2
   WHERE (
-    COALESCE(jaccard_concepts, 0.0) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_concept_jaccard || 0.10)} AS FLOAT64)
+    (
+      field_pass
+      AND (
+        COALESCE(jaccard_concepts, 0.0) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_concept_jaccard || 0.10)} AS FLOAT64)
+        OR COALESCE(jaccard_title, 0.0) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_jaccard || 0.20)} AS FLOAT64)
+      )
+    )
     OR
-    COALESCE(jaccard_title, 0.0) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_jaccard || 0.20)} AS FLOAT64)
+    (
+      NOT field_pass
+      AND COALESCE(jaccard_concepts, 0.0) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_concept_jaccard_nofield || 0.05)} AS FLOAT64)
+      AND overlap_concepts >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_concept_overlap_nofield || 2)} AS INT64)
+    )
   )
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY family_id, country_code
@@ -192,7 +211,9 @@ SELECT
   quarter,
   w_domestic,
 
-  COUNT(DISTINCT grant_id) AS matched_priv_grants,
+  COUNT(DISTINCT grant_id) AS matched_grants,
+
+  MAX(CASE WHEN NOT field_pass THEN 1 ELSE 0 END) AS used_concept_override,
 
   MAX(jaccard_for4) AS max_jaccard_for4,
   MAX(jaccard_for2) AS max_jaccard_for2,
@@ -203,4 +224,4 @@ SELECT
 
 FROM pairs_fuzzy_pass
 GROUP BY family_id, country_code, quarter, w_domestic
-HAVING matched_priv_grants > 0
+HAVING matched_grants > 0
