@@ -3,23 +3,25 @@ config {
   name: "grant_rids_flat",
   schema: "rd_stage",
   tags: ["stage"],
-  description: "Grant×researcher_id rows (scalar-only). Built from grants_gov_core; avoids UNION DISTINCT over ARRAY columns."
+  description: "Grant×researcher_id rows (scalar-only) for researcher-based funding matching. Built from rd_stage.grants_domestic_core and includes an is_gov_surico flag for the FUNDER (so the same table supports gov-funded and non-gov-funded matching)."
 }
 
 WITH g AS (
   SELECT
     country_code,
+    is_gov_surico,
     grant_id,
     start_dt,
     researcher_ids,
     investigators
-  FROM ${ref("grants_gov_core")}
+  FROM ${ref("rd_stage", "grants_domestic_core")}
   WHERE start_dt IS NOT NULL
 ),
 
 rid1 AS (
   SELECT
     country_code,
+    is_gov_surico,
     grant_id,
     start_dt,
     rid AS researcher_id
@@ -31,6 +33,7 @@ rid1 AS (
 rid2 AS (
   SELECT
     country_code,
+    is_gov_surico,
     grant_id,
     start_dt,
     inv.researcher_id AS researcher_id
@@ -41,6 +44,7 @@ rid2 AS (
 
 SELECT DISTINCT
   country_code,
+  is_gov_surico,
   grant_id,
   start_dt,
   researcher_id
@@ -49,3 +53,4 @@ FROM (
   UNION ALL
   SELECT * FROM rid2
 )
+WHERE researcher_id IS NOT NULL

@@ -1,35 +1,35 @@
 config {
   type: "table",
   schema: "rd_int",
-  name: "pat_govfund_inst_fc",
-  tags: ["int", "patents"],
-  description: "Patent families matched to domestic Surico-government grants by assignee institution (grant recipient org_id), with FoR overlap/Jaccard, configurable post-grant time window, and Phase-1 fuzzy hardening (concept + title token Jaccard). Subset of pat_family_country_base excluding government-owned families."
+  name: "pub_privfund_inst_pc",
+  tags: ["int", "publications"],
+  description: "Publications matched to domestic NON-government-funded grants by recipient institution (publication affiliation org_id), with FoR overlap/Jaccard, configurable post-grant time window, and Phase-1 fuzzy hardening (concept + title token Jaccard). Restricted to private-produced publications (no gov affiliation in that country)."
 }
 
 WITH base AS (
   SELECT
-    family_id,
+    pub_id,
     country_code,
     quarter,
-    family_app_dt,
-    w_domestic,
-    dom_gov_assg_flag,
+    pub_dt_best,
+    w_aff,
+    w_public_prod,
     for4_codes,
     for2_codes
-  FROM ${ref("rd_int", "pat_family_country_base")}
-  WHERE dom_gov_assg_flag = 0
+  FROM ${ref("rd_int", "pub_pub_country_base")}
+  WHERE w_public_prod = 0
 ),
 
-assg_orgs AS (
-  SELECT family_id, org_id
-  FROM ${ref("rd_stage", "patent_family_assignee_orgs")}
+pub_orgs AS (
+  SELECT pub_id, country_code, org_id
+  FROM ${ref("rd_stage", "pub_country_orgs")}
   WHERE org_id IS NOT NULL
 ),
 
 grant_orgs AS (
   SELECT country_code, grant_id, start_dt, org_id
   FROM ${ref("rd_stage", "grant_orgs_flat")}
-  WHERE org_id IS NOT NULL AND start_dt IS NOT NULL AND is_gov_surico
+  WHERE org_id IS NOT NULL AND start_dt IS NOT NULL AND NOT is_gov_surico
 ),
 
 grants AS (
@@ -41,22 +41,26 @@ grants AS (
     grant_for2,
     grant_title_tokens,
     grant_concepts
-  FROM ${ref("rd_stage", "grants_gov_core")}
+  FROM ${ref("rd_stage", "grants_nongov_core")}
   WHERE start_dt IS NOT NULL
 ),
 
-pat_feat AS (
-  SELECT family_id, pat_title_tokens, pat_concepts
-  FROM ${ref("rd_stage", "patent_family_text_features")}
+pub_feat AS (
+  SELECT pub_id, pub_title_tokens, pub_concepts
+  FROM ${ref("rd_stage", "pub_text_features")}
 ),
 
+-- Candidate pairs with time window + (institution link) + FoR overlaps computed
 pairs0 AS (
   SELECT
-    b.family_id,
+    b.pub_id,
     b.country_code,
     b.quarter,
-    b.w_domestic,
+    b.w_aff,
     g.grant_id,
+
+    g.grant_title_tokens,
+    g.grant_concepts,
 
     ARRAY_LENGTH(ARRAY(
       SELECT DISTINCT x
@@ -87,22 +91,24 @@ pairs0 AS (
     )) AS union_for2
 
   FROM base b
-  JOIN assg_orgs ao
-    ON ao.family_id = b.family_id
+  JOIN pub_orgs po
+    ON po.pub_id = b.pub_id
+   AND po.country_code = b.country_code
   JOIN grant_orgs go
-    ON go.org_id = ao.org_id
+    ON go.org_id = po.org_id
    AND go.country_code = b.country_code
   JOIN grants g
     ON g.grant_id = go.grant_id
    AND g.country_code = b.country_code
 
-  WHERE b.family_app_dt >= g.start_dt
-    AND b.family_app_dt < DATE_ADD(
+  WHERE b.pub_dt_best >= g.start_dt
+    AND b.pub_dt_best < DATE_ADD(
       g.start_dt,
       INTERVAL CAST(${(dataform.projectConfig.vars.grant_match_window_years || 10)} AS INT64) YEAR
     )
 ),
 
+-- Apply your existing FoR Jaccard filter first (cheap)
 pairs_fieldpass AS (
   SELECT
     *,
@@ -118,27 +124,26 @@ pairs_fieldpass AS (
   )
 ),
 
+-- Add fuzzy scoring (concept + title token Jaccard)
 pairs_scored AS (
   SELECT
     p.*,
-    gf.grant_title_tokens,
-    gf.grant_concepts,
-    pf.pat_title_tokens,
-    pf.pat_concepts,
+    pf.pub_title_tokens,
+    pf.pub_concepts,
 
     SAFE_DIVIDE(
       ARRAY_LENGTH(ARRAY(
         SELECT DISTINCT x
-        FROM UNNEST(COALESCE(pf.pat_concepts, CAST([] AS ARRAY<STRING>))) x
+        FROM UNNEST(COALESCE(pf.pub_concepts, CAST([] AS ARRAY<STRING>))) x
         INTERSECT DISTINCT
         SELECT DISTINCT y
-        FROM UNNEST(COALESCE(gf.grant_concepts, CAST([] AS ARRAY<STRING>))) y
+        FROM UNNEST(COALESCE(p.grant_concepts, CAST([] AS ARRAY<STRING>))) y
       )),
       NULLIF(ARRAY_LENGTH(ARRAY(
         SELECT DISTINCT z
         FROM UNNEST(ARRAY_CONCAT(
-          COALESCE(pf.pat_concepts, CAST([] AS ARRAY<STRING>)),
-          COALESCE(gf.grant_concepts, CAST([] AS ARRAY<STRING>))
+          COALESCE(pf.pub_concepts, CAST([] AS ARRAY<STRING>)),
+          COALESCE(p.grant_concepts, CAST([] AS ARRAY<STRING>))
         )) z
         WHERE z IS NOT NULL
       )), 0)
@@ -147,27 +152,24 @@ pairs_scored AS (
     SAFE_DIVIDE(
       ARRAY_LENGTH(ARRAY(
         SELECT DISTINCT x
-        FROM UNNEST(COALESCE(pf.pat_title_tokens, CAST([] AS ARRAY<STRING>))) x
+        FROM UNNEST(COALESCE(pf.pub_title_tokens, CAST([] AS ARRAY<STRING>))) x
         INTERSECT DISTINCT
         SELECT DISTINCT y
-        FROM UNNEST(COALESCE(gf.grant_title_tokens, CAST([] AS ARRAY<STRING>))) y
+        FROM UNNEST(COALESCE(p.grant_title_tokens, CAST([] AS ARRAY<STRING>))) y
       )),
       NULLIF(ARRAY_LENGTH(ARRAY(
         SELECT DISTINCT z
         FROM UNNEST(ARRAY_CONCAT(
-          COALESCE(pf.pat_title_tokens, CAST([] AS ARRAY<STRING>)),
-          COALESCE(gf.grant_title_tokens, CAST([] AS ARRAY<STRING>))
+          COALESCE(pf.pub_title_tokens, CAST([] AS ARRAY<STRING>)),
+          COALESCE(p.grant_title_tokens, CAST([] AS ARRAY<STRING>))
         )) z
         WHERE z IS NOT NULL
       )), 0)
     ) AS jaccard_title
 
   FROM pairs_fieldpass p
-  JOIN grants gf
-    ON gf.grant_id = p.grant_id
-   AND gf.country_code = p.country_code
-  LEFT JOIN pat_feat pf
-    ON pf.family_id = p.family_id
+  LEFT JOIN pub_feat pf
+    ON pf.pub_id = p.pub_id
 ),
 
 pairs_fuzzy_pass AS (
@@ -181,18 +183,18 @@ pairs_fuzzy_pass AS (
     COALESCE(jaccard_title, 0.0) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_jaccard || 0.20)} AS FLOAT64)
   )
   QUALIFY ROW_NUMBER() OVER (
-    PARTITION BY family_id, country_code
+    PARTITION BY pub_id, country_code
     ORDER BY (0.7 * COALESCE(jaccard_concepts, 0.0) + 0.3 * COALESCE(jaccard_title, 0.0)) DESC
   ) <= CAST(${(dataform.projectConfig.vars.inst_fuzzy_topk || 3)} AS INT64)
 )
 
 SELECT
-  family_id,
+  pub_id,
   country_code,
   quarter,
-  w_domestic,
+  w_aff,
 
-  COUNT(DISTINCT grant_id) AS matched_gov_grants,
+  COUNT(DISTINCT grant_id) AS matched_priv_grants,
 
   MAX(jaccard_for4) AS max_jaccard_for4,
   MAX(jaccard_for2) AS max_jaccard_for2,
@@ -202,5 +204,5 @@ SELECT
   MAX(COALESCE(fuzzy_score, 0.0)) AS max_fuzzy_score
 
 FROM pairs_fuzzy_pass
-GROUP BY family_id, country_code, quarter, w_domestic
-HAVING matched_gov_grants > 0
+GROUP BY pub_id, country_code, quarter, w_aff
+HAVING matched_priv_grants > 0

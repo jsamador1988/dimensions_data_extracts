@@ -1,52 +1,54 @@
 config {
   type: "table",
   schema: "rd_int",
-  name: "pat_govfund_rid_fc",
-  tags: ["int", "patents"],
-  description: "Patent families matched to domestic Surico-government grants by inventor researcher_id, with FoR overlap/Jaccard (FoR4 + FoR2) and a configurable post-grant time window. Subset of pat_family_country_base excluding government-owned families."
+  name: "pub_privfund_rid_pc",
+  tags: ["int", "publications"],
+  description: "Publications matched to domestic NON-government-funded grants by author researcher_id, with FoR overlap/Jaccard and a configurable post-grant time window. Restricted to private-produced publications (no gov affiliation in that country)."
 }
 
 WITH base AS (
   SELECT
-    family_id,
+    pub_id,
     country_code,
     quarter,
-    family_app_dt,
-    w_domestic,
-    dom_gov_assg_flag,
+    pub_dt_best,
+    w_aff,
+    w_public_prod,
     for4_codes,
     for2_codes
-  FROM ${ref("rd_int", "pat_family_country_base")}
-  WHERE dom_gov_assg_flag = 0
+  FROM ${ref("rd_int", "pub_pub_country_base")}
+  WHERE w_public_prod = 0
 ),
 
-pat_rids AS (
-  SELECT family_id, researcher_id
-  FROM ${ref("rd_stage", "patent_family_rids")}
-  WHERE researcher_id IS NOT NULL
+pub_rids AS (
+  SELECT DISTINCT
+    c.pub_id,
+    a.researcher_id
+  FROM ${ref("rd_stage", "pub_core")} c
+  CROSS JOIN UNNEST(IFNULL(c.authors, [])) AS a
+  WHERE a.researcher_id IS NOT NULL
 ),
 
 grant_rids AS (
   SELECT country_code, grant_id, start_dt, researcher_id
   FROM ${ref("rd_stage", "grant_rids_flat")}
-  WHERE researcher_id IS NOT NULL AND start_dt IS NOT NULL AND is_gov_surico
+  WHERE researcher_id IS NOT NULL AND start_dt IS NOT NULL AND NOT is_gov_surico
 ),
 
 grants AS (
   SELECT country_code, grant_id, start_dt, grant_for4, grant_for2
-  FROM ${ref("rd_stage", "grants_gov_core")}
+  FROM ${ref("rd_stage", "grants_nongov_core")}
   WHERE start_dt IS NOT NULL
 ),
 
 pairs AS (
   SELECT
-    b.family_id,
+    b.pub_id,
     b.country_code,
     b.quarter,
-    b.w_domestic,
+    b.w_aff,
     g.grant_id,
 
-    -- Overlap + union (FoR4)
     ARRAY_LENGTH(ARRAY(
       SELECT DISTINCT x
       FROM UNNEST(COALESCE(b.for4_codes, CAST([] AS ARRAY<STRING>))) x
@@ -61,7 +63,6 @@ pairs AS (
       WHERE z IS NOT NULL
     )) AS union_for4,
 
-    -- Overlap + union (FoR2)
     ARRAY_LENGTH(ARRAY(
       SELECT DISTINCT x
       FROM UNNEST(COALESCE(b.for2_codes, CAST([] AS ARRAY<STRING>))) x
@@ -77,8 +78,8 @@ pairs AS (
     )) AS union_for2
 
   FROM base b
-  JOIN pat_rids pr
-    ON pr.family_id = b.family_id
+  JOIN pub_rids pr
+    ON pr.pub_id = b.pub_id
   JOIN grant_rids gr
     ON gr.researcher_id = pr.researcher_id
    AND gr.country_code = b.country_code
@@ -86,24 +87,21 @@ pairs AS (
     ON g.grant_id = gr.grant_id
    AND g.country_code = b.country_code
 
-  -- Time window: family application date must be within N years after grant start
-  WHERE b.family_app_dt >= g.start_dt
-    AND b.family_app_dt < DATE_ADD(
+  WHERE b.pub_dt_best >= g.start_dt
+    AND b.pub_dt_best < DATE_ADD(
       g.start_dt,
       INTERVAL CAST(${(dataform.projectConfig.vars.grant_match_window_years || 10)} AS INT64) YEAR
     )
 )
 
 SELECT
-  family_id,
+  pub_id,
   country_code,
   quarter,
-  w_domestic,
-
-  COUNT(DISTINCT grant_id) AS matched_gov_grants,
+  w_aff,
+  COUNT(DISTINCT grant_id) AS matched_priv_grants,
   MAX(SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0))) AS max_jaccard_for4,
   MAX(SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0))) AS max_jaccard_for2
-
 FROM pairs
 WHERE (
   (overlap_for4 >= CAST(${(dataform.projectConfig.vars.min_for4_overlap || 1)} AS INT64)
@@ -112,5 +110,5 @@ WHERE (
   (overlap_for2 >= 1
    AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
 )
-GROUP BY family_id, country_code, quarter, w_domestic
-HAVING matched_gov_grants > 0
+GROUP BY pub_id, country_code, quarter, w_aff
+HAVING matched_priv_grants > 0

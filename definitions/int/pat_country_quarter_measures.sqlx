@@ -3,7 +3,7 @@ config {
   schema: "rd_int",
   name: "pat_country_quarter_measures",
   tags: ["int", "patents"],
-  description: "Country×quarter patent innovation time series (1a–1f): total domestic patents, government-owned, multiple government-funding proxies, and private→government citation-based measures."
+  description: "Country×quarter patent innovation time series: domestic totals, government-owned component, government-funding proxies (direct / researcher / institution), non-government domestic-funder analogs (direct / researcher / institution), and private→government citation-based measures."
 }
 
 WITH base AS (
@@ -12,29 +12,51 @@ WITH base AS (
     quarter,
     SUM(w_domestic) AS pat_total_ctq,
     SUM(w_gov_owned) AS pat_gov_owned_ctq,
+    -- Private-only denominator (no domestic government assignee on the family)
     SUM(IF(dom_gov_assg_flag = 0, w_domestic, 0.0)) AS pat_private_total_ctq
   FROM ${ref("rd_int", "pat_family_country_base")}
   GROUP BY country_code, quarter
 ),
 
-direct AS (
+-- Government funder proxies (subset of private-only)
+gov_direct AS (
   SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_direct_ctq
   FROM ${ref("rd_int", "pat_govfund_direct_fc")}
   GROUP BY country_code, quarter
 ),
 
-rid AS (
+gov_rid AS (
   SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_rid_ctq
   FROM ${ref("rd_int", "pat_govfund_rid_fc")}
   GROUP BY country_code, quarter
 ),
 
-inst AS (
+gov_inst AS (
   SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_inst_ctq
   FROM ${ref("rd_int", "pat_govfund_inst_fc")}
   GROUP BY country_code, quarter
 ),
 
+-- Non-government domestic funder analogs (subset of private-only)
+priv_direct AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_privfund_direct_ctq
+  FROM ${ref("rd_int", "pat_privfund_direct_fc")}
+  GROUP BY country_code, quarter
+),
+
+priv_rid AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_privfund_rid_ctq
+  FROM ${ref("rd_int", "pat_privfund_rid_fc")}
+  GROUP BY country_code, quarter
+),
+
+priv_inst AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_privfund_inst_ctq
+  FROM ${ref("rd_int", "pat_privfund_inst_fc")}
+  GROUP BY country_code, quarter
+),
+
+-- Private patents citing government-produced research
 cite AS (
   SELECT
     country_code,
@@ -55,13 +77,18 @@ SELECT
   -- 1b
   b.pat_gov_owned_ctq,
 
-  -- Private-only denominator (no government assignee)
+  -- Private-only denominator
   b.pat_private_total_ctq,
 
-  -- 1c/1d/1e (all exclude government-owned families)
-  COALESCE(d.pat_govfund_direct_ctq, 0.0) AS pat_govfund_direct_ctq,
-  COALESCE(r.pat_govfund_rid_ctq, 0.0) AS pat_govfund_rid_ctq,
-  COALESCE(i.pat_govfund_inst_ctq, 0.0) AS pat_govfund_inst_ctq,
+  -- 1c/1d/1e
+  COALESCE(gd.pat_govfund_direct_ctq, 0.0) AS pat_govfund_direct_ctq,
+  COALESCE(gr.pat_govfund_rid_ctq, 0.0) AS pat_govfund_rid_ctq,
+  COALESCE(gi.pat_govfund_inst_ctq, 0.0) AS pat_govfund_inst_ctq,
+
+  -- Non-government domestic funder analogs (new)
+  COALESCE(pd.pat_privfund_direct_ctq, 0.0) AS pat_privfund_direct_ctq,
+  COALESCE(pr.pat_privfund_rid_ctq, 0.0) AS pat_privfund_rid_ctq,
+  COALESCE(pi.pat_privfund_inst_ctq, 0.0) AS pat_privfund_inst_ctq,
 
   -- 1f
   COALESCE(c.pat_private_with_cites_ctq, 0.0) AS pat_private_with_cites_ctq,
@@ -69,11 +96,19 @@ SELECT
   COALESCE(c.pat_private_cite_gov_norm_ctq, 0.0) AS pat_private_cite_gov_norm_ctq
 
 FROM base b
-LEFT JOIN direct d
-  ON d.country_code = b.country_code AND d.quarter = b.quarter
-LEFT JOIN rid r
-  ON r.country_code = b.country_code AND r.quarter = b.quarter
-LEFT JOIN inst i
-  ON i.country_code = b.country_code AND i.quarter = b.quarter
+LEFT JOIN gov_direct gd
+  ON gd.country_code = b.country_code AND gd.quarter = b.quarter
+LEFT JOIN gov_rid gr
+  ON gr.country_code = b.country_code AND gr.quarter = b.quarter
+LEFT JOIN gov_inst gi
+  ON gi.country_code = b.country_code AND gi.quarter = b.quarter
+
+LEFT JOIN priv_direct pd
+  ON pd.country_code = b.country_code AND pd.quarter = b.quarter
+LEFT JOIN priv_rid pr
+  ON pr.country_code = b.country_code AND pr.quarter = b.quarter
+LEFT JOIN priv_inst pi
+  ON pi.country_code = b.country_code AND pi.quarter = b.quarter
+
 LEFT JOIN cite c
   ON c.country_code = b.country_code AND c.quarter = b.quarter

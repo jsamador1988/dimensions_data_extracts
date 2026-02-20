@@ -1,0 +1,131 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "grants_domestic_core",
+  tags: ["stage"],
+  description: "Domestic grants (by funder legal country) for the analysis universe, with Surico-style government flag (rd_ref.org_gov_surico), FoR fields, recipient org hints, and Phase-1 fuzzy features (concepts + title tokens). This is the single scan of Dimensions grants; downstream views split gov vs non-gov funders."
+}
+
+WITH target_countries AS (
+  SELECT DISTINCT country_code
+  FROM ${ref("rd_stage", "analysis_country_universe")}
+),
+
+org_dim AS (
+  SELECT
+    org_id,
+    country_code,
+    is_gov_surico
+  FROM ${ref("rd_ref", "org_gov_surico")}
+  WHERE org_id IS NOT NULL AND country_code IS NOT NULL
+),
+
+grants AS (
+  SELECT
+    g.id AS grant_id,
+    g.funder_org AS funder_org_id,
+
+    COALESCE(
+      SAFE.PARSE_DATE('%Y-%m-%d', g.start_date),
+      DATE(SAFE_CAST(g.start_year AS INT64), 1, 1)
+    ) AS start_dt,
+
+    g.funding_usd,
+
+    -- Field-of-research: 4-digit and 2-digit rollup
+    ARRAY(
+      SELECT DISTINCT LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0')
+      FROM UNNEST(IFNULL(g.category_for.second_level.codes, [])) AS code
+      WHERE code IS NOT NULL
+        AND REGEXP_EXTRACT(code, r'\d+') IS NOT NULL
+    ) AS grant_for4,
+
+    ARRAY(
+      SELECT DISTINCT SUBSTR(LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0'), 1, 2)
+      FROM UNNEST(IFNULL(g.category_for.second_level.codes, [])) AS code
+      WHERE code IS NOT NULL
+        AND REGEXP_EXTRACT(code, r'\d+') IS NOT NULL
+    ) AS grant_for2,
+
+    -- Linkage fields used by Tier 2/3
+    g.researcher_ids,
+    g.investigators,
+
+    -- Recipient org signals (Dimensions provides both a structured list and raw org detail records)
+    g.research_orgs,
+    g.organisation_details,
+
+    -- -------- Phase 1 fuzzy features --------
+    g.title AS grant_title,
+
+    -- Unicode-safe title tokens (keeps accented letters; drops punctuation; removes stopwords)
+    ARRAY(
+      SELECT DISTINCT tok
+      FROM UNNEST(
+        SPLIT(
+          REGEXP_REPLACE(LOWER(IFNULL(g.title, "")), r"[^\p{L}\p{N}]+", " "),
+          " "
+        )
+      ) AS tok
+      WHERE tok IS NOT NULL
+        AND tok != ""
+        AND LENGTH(tok) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_token_len || 3)} AS INT64)
+        AND NOT REGEXP_CONTAINS(tok, r"^\d+$")
+        AND tok NOT IN UNNEST([
+          "a","an","and","are","as","at","be","been","being","by","for","from","has","have","had",
+          "in","into","is","it","its","of","on","or","that","the","their","this","to","was","were",
+          "with","without","via","using","use","used","based","approach","approaches","method","methods",
+          "study","analysis","data","model","models","system","systems","development","design","project",
+          "research","program","programme","grant","funded","funding","proposal","investigation"
+        ])
+    ) AS grant_title_tokens,
+
+    -- Concepts: top-N by relevance; normalized to lowercase; drop generic boilerplate concepts
+    ARRAY(
+      SELECT concept
+      FROM (
+        SELECT
+          LOWER(c.concept) AS concept,
+          SAFE_CAST(c.relevance AS FLOAT64) AS rel
+        FROM UNNEST(IFNULL(g.concepts, CAST([] AS ARRAY<STRUCT<concept STRING, relevance FLOAT64>>))) AS c
+        WHERE c.concept IS NOT NULL
+          AND LOWER(c.concept) NOT IN UNNEST([
+            "present invention","invention","device","devices","method","methods","system","systems",
+            "apparatus","apparatuses","embodiment","embodiments"
+          ])
+      )
+      ORDER BY rel DESC
+      LIMIT CAST(${(dataform.projectConfig.vars.inst_fuzzy_max_concepts_grant || 20)} AS INT64)
+    ) AS grant_concepts
+
+  FROM `dimensions-ai.data_analytics.grants` g
+  WHERE (g.start_date IS NOT NULL OR g.start_year IS NOT NULL)
+)
+
+SELECT
+  od.country_code,
+  od.is_gov_surico,
+
+  g.grant_id,
+  g.funder_org_id,
+  g.start_dt,
+  g.funding_usd,
+  g.grant_for4,
+  g.grant_for2,
+  g.researcher_ids,
+  g.investigators,
+  g.research_orgs,
+  g.organisation_details,
+
+  -- Phase 1 fuzzy
+  g.grant_title,
+  g.grant_title_tokens,
+  g.grant_concepts
+
+FROM grants g
+JOIN org_dim od
+  ON od.org_id = g.funder_org_id
+JOIN target_countries tc
+  ON tc.country_code = od.country_code
+WHERE g.start_dt IS NOT NULL
+  AND g.start_dt <= DATE('${dataform.projectConfig.vars.sample_end}')

@@ -38,7 +38,7 @@ SELECT
     SELECT DISTINCT tok
     FROM UNNEST(
       SPLIT(
-        REGEXP_REPLACE(LOWER(IFNULL(pub_title, "")), r"[^a-z0-9]+", " "),
+        REGEXP_REPLACE(LOWER(IFNULL(pub_title, "")), r"[^\p{L}\p{N}]+", " "),
         " "
       )
     ) AS tok

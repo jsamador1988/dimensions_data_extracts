@@ -1,9 +1,9 @@
 config {
   type: "table",
   schema: "rd_int",
-  name: "pat_govfund_inst_fc",
+  name: "pat_privfund_inst_fc",
   tags: ["int", "patents"],
-  description: "Patent families matched to domestic Surico-government grants by assignee institution (grant recipient org_id), with FoR overlap/Jaccard, configurable post-grant time window, and Phase-1 fuzzy hardening (concept + title token Jaccard). Subset of pat_family_country_base excluding government-owned families."
+  description: "Patent families matched to domestic NON-government-funded grants by assignee institution (grant recipient org_id), with FoR overlap/Jaccard, configurable post-grant time window, and Phase-1 fuzzy hardening (concept + title token Jaccard). Subset of pat_family_country_base excluding government-owned families."
 }
 
 WITH base AS (
@@ -29,7 +29,7 @@ assg_orgs AS (
 grant_orgs AS (
   SELECT country_code, grant_id, start_dt, org_id
   FROM ${ref("rd_stage", "grant_orgs_flat")}
-  WHERE org_id IS NOT NULL AND start_dt IS NOT NULL AND is_gov_surico
+  WHERE org_id IS NOT NULL AND start_dt IS NOT NULL AND NOT is_gov_surico
 ),
 
 grants AS (
@@ -41,7 +41,7 @@ grants AS (
     grant_for2,
     grant_title_tokens,
     grant_concepts
-  FROM ${ref("rd_stage", "grants_gov_core")}
+  FROM ${ref("rd_stage", "grants_nongov_core")}
   WHERE start_dt IS NOT NULL
 ),
 
@@ -192,7 +192,7 @@ SELECT
   quarter,
   w_domestic,
 
-  COUNT(DISTINCT grant_id) AS matched_gov_grants,
+  COUNT(DISTINCT grant_id) AS matched_priv_grants,
 
   MAX(jaccard_for4) AS max_jaccard_for4,
   MAX(jaccard_for2) AS max_jaccard_for2,
@@ -203,4 +203,4 @@ SELECT
 
 FROM pairs_fuzzy_pass
 GROUP BY family_id, country_code, quarter, w_domestic
-HAVING matched_gov_grants > 0
+HAVING matched_priv_grants > 0
