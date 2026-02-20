@@ -32,7 +32,7 @@ pub_rids AS (
 grant_rids AS (
   SELECT country_code, grant_id, start_dt, researcher_id
   FROM ${ref("rd_stage", "grant_rids_flat")}
-  WHERE researcher_id IS NOT NULL AND start_dt IS NOT NULL
+  WHERE researcher_id IS NOT NULL AND start_dt IS NOT NULL AND is_gov_surico
 ),
 
 grants AS (

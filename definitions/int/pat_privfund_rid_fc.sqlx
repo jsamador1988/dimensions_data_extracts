@@ -1,9 +1,9 @@
 config {
   type: "table",
   schema: "rd_int",
-  name: "pat_govfund_rid_fc",
+  name: "pat_privfund_rid_fc",
   tags: ["int", "patents"],
-  description: "Patent families matched to domestic Surico-government grants by inventor researcher_id, with FoR overlap/Jaccard (FoR4 + FoR2) and a configurable post-grant time window. Subset of pat_family_country_base excluding government-owned families."
+  description: "Patent families matched to domestic NON-government-funded grants by inventor researcher_id, with FoR overlap/Jaccard (FoR4 + FoR2) and a configurable post-grant time window. Subset of pat_family_country_base excluding government-owned families."
 }
 
 WITH base AS (
@@ -29,12 +29,12 @@ pat_rids AS (
 grant_rids AS (
   SELECT country_code, grant_id, start_dt, researcher_id
   FROM ${ref("rd_stage", "grant_rids_flat")}
-  WHERE researcher_id IS NOT NULL AND start_dt IS NOT NULL AND is_gov_surico
+  WHERE researcher_id IS NOT NULL AND start_dt IS NOT NULL AND NOT is_gov_surico
 ),
 
 grants AS (
   SELECT country_code, grant_id, start_dt, grant_for4, grant_for2
-  FROM ${ref("rd_stage", "grants_gov_core")}
+  FROM ${ref("rd_stage", "grants_nongov_core")}
   WHERE start_dt IS NOT NULL
 ),
 
@@ -100,7 +100,7 @@ SELECT
   quarter,
   w_domestic,
 
-  COUNT(DISTINCT grant_id) AS matched_gov_grants,
+  COUNT(DISTINCT grant_id) AS matched_priv_grants,
   MAX(SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0))) AS max_jaccard_for4,
   MAX(SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0))) AS max_jaccard_for2
 
@@ -113,4 +113,4 @@ WHERE (
    AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
 )
 GROUP BY family_id, country_code, quarter, w_domestic
-HAVING matched_gov_grants > 0
+HAVING matched_priv_grants > 0

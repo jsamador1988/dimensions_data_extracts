@@ -1,0 +1,63 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_privfund_direct_pc",
+  tags: ["int", "publications"],
+  description: "Publications directly acknowledging a domestic NON-government funder (is_gov_surico=FALSE in rd_ref.org_gov_surico) via Dimensions funder_orgs/funding_details. Restricted to private-produced publications (no gov affiliation in that country)."
+}
+
+WITH base AS (
+  SELECT
+    pub_id,
+    country_code,
+    quarter,
+    w_aff,
+    w_public_prod,
+    funder_orgs,
+    funding_details
+  FROM ${ref("rd_int", "pub_pub_country_base")}
+  WHERE w_public_prod = 0
+),
+
+org_dim AS (
+  SELECT org_id, country_code, is_gov_surico
+  FROM ${ref("rd_ref", "org_gov_surico")}
+),
+
+funder_ids AS (
+  SELECT
+    b.pub_id,
+    b.country_code,
+    b.quarter,
+    b.w_aff,
+    fid
+  FROM base b
+  CROSS JOIN UNNEST(
+    ARRAY(
+      SELECT DISTINCT oid
+      FROM (
+        SELECT oid
+        FROM UNNEST(IFNULL(b.funder_orgs, CAST([] AS ARRAY<STRING>))) AS oid
+        WHERE oid IS NOT NULL
+        UNION ALL
+        SELECT fd.grid_id AS oid
+        FROM UNNEST(b.funding_details) AS fd
+        WHERE fd.grid_id IS NOT NULL
+      )
+    )
+  ) AS fid
+)
+
+SELECT
+  f.pub_id,
+  f.country_code,
+  f.quarter,
+  f.w_aff,
+  COUNT(DISTINCT od.org_id) AS matched_priv_funders
+FROM funder_ids f
+JOIN org_dim od
+  ON od.org_id = f.fid
+ AND od.country_code = f.country_code
+WHERE NOT od.is_gov_surico
+GROUP BY f.pub_id, f.country_code, f.quarter, f.w_aff
+HAVING matched_priv_funders > 0

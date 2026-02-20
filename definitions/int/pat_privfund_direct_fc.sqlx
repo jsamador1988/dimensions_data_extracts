@@ -1,0 +1,39 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_privfund_direct_fc",
+  tags: ["int", "patents"],
+  description: "Patent families directly linked to domestic NON-government-funded grants (funder is_gov_surico=FALSE), using Dimensions associated_grant_ids on the patent record. Subset of pat_family_country_base excluding government-owned families."
+}
+
+WITH base AS (
+  SELECT
+    family_id,
+    country_code,
+    quarter,
+    family_app_dt,
+    w_domestic,
+    dom_gov_assg_flag,
+    all_grant_ids
+  FROM ${ref("rd_int", "pat_family_country_base")}
+  WHERE dom_gov_assg_flag = 0
+),
+
+ng AS (
+  SELECT country_code, grant_id
+  FROM ${ref("rd_stage", "grants_nongov_core")}
+)
+
+SELECT
+  b.family_id,
+  b.country_code,
+  b.quarter,
+  b.w_domestic,
+  COUNT(DISTINCT ng.grant_id) AS matched_priv_grants
+FROM base b
+CROSS JOIN UNNEST(IFNULL(b.all_grant_ids, CAST([] AS ARRAY<STRING>))) AS gid
+JOIN ng
+  ON ng.grant_id = gid
+ AND ng.country_code = b.country_code
+GROUP BY b.family_id, b.country_code, b.quarter, b.w_domestic
+HAVING matched_priv_grants > 0

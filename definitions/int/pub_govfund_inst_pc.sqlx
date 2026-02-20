@@ -29,7 +29,7 @@ pub_orgs AS (
 grant_orgs AS (
   SELECT country_code, grant_id, start_dt, org_id
   FROM ${ref("rd_stage", "grant_orgs_flat")}
-  WHERE org_id IS NOT NULL AND start_dt IS NOT NULL
+  WHERE org_id IS NOT NULL AND start_dt IS NOT NULL AND is_gov_surico
 ),
 
 grants AS (
