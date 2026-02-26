@@ -1,0 +1,351 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "grant_publication_linkage_methods",
+  tags: ["int", "publications", "grants", "validation"],
+  description: "Grant-level publication linkage ledger by method (direct grant-id, RID, institution-fuzzy), restricted to private-produced publications. One row per country×grant×method."
+}
+
+WITH base AS (
+  SELECT
+    pub_id,
+    country_code,
+    pub_dt_best,
+    w_public_prod,
+    for4_codes,
+    for2_codes,
+    funding_details
+  FROM ${ref("rd_int", "pub_pub_country_base")}
+  WHERE w_public_prod = 0
+),
+
+grants_all AS (
+  SELECT
+    country_code,
+    grant_id,
+    start_dt,
+    grant_for4,
+    grant_for2,
+    grant_title_tokens,
+    grant_concepts
+  FROM ${ref("rd_int", "grant_domestic_unique")}
+  WHERE grant_id IS NOT NULL
+    AND start_dt IS NOT NULL
+),
+
+-- -------------------------
+-- Direct grant-id links from publication funding details.
+-- -------------------------
+direct_links AS (
+  SELECT DISTINCT
+    b.country_code,
+    g.grant_id,
+    "direct" AS method_id
+  FROM base b
+  CROSS JOIN UNNEST(
+    IFNULL(b.funding_details, CAST([] AS ARRAY<STRUCT<grid_id STRING, grant_id STRING>>))
+  ) AS fd
+  JOIN grants_all g
+    ON g.country_code = b.country_code
+   AND g.grant_id = fd.grant_id
+  WHERE fd.grant_id IS NOT NULL
+),
+
+-- -------------------------
+-- RID matching (all funder types)
+-- -------------------------
+pub_rids AS (
+  SELECT DISTINCT
+    c.pub_id,
+    a.researcher_id
+  FROM ${ref("rd_stage", "pub_core")} c
+  CROSS JOIN UNNEST(IFNULL(c.authors, [])) AS a
+  WHERE a.researcher_id IS NOT NULL
+),
+
+grant_rids AS (
+  SELECT
+    country_code,
+    grant_id,
+    start_dt,
+    researcher_id
+  FROM ${ref("rd_stage", "grant_rids_flat")}
+  WHERE researcher_id IS NOT NULL
+    AND start_dt IS NOT NULL
+),
+
+rid_pairs AS (
+  SELECT
+    b.country_code,
+    g.grant_id,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(b.for4_codes, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(g.grant_for4, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_for4,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT z
+      FROM UNNEST(
+        ARRAY_CONCAT(
+          COALESCE(b.for4_codes, CAST([] AS ARRAY<STRING>)),
+          COALESCE(g.grant_for4, CAST([] AS ARRAY<STRING>))
+        )
+      ) z
+      WHERE z IS NOT NULL
+    )) AS union_for4,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(b.for2_codes, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(g.grant_for2, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_for2,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT z
+      FROM UNNEST(
+        ARRAY_CONCAT(
+          COALESCE(b.for2_codes, CAST([] AS ARRAY<STRING>)),
+          COALESCE(g.grant_for2, CAST([] AS ARRAY<STRING>))
+        )
+      ) z
+      WHERE z IS NOT NULL
+    )) AS union_for2
+  FROM base b
+  JOIN pub_rids pr
+    ON pr.pub_id = b.pub_id
+  JOIN grant_rids gr
+    ON gr.researcher_id = pr.researcher_id
+   AND gr.country_code = b.country_code
+  JOIN grants_all g
+    ON g.grant_id = gr.grant_id
+   AND g.country_code = b.country_code
+  WHERE b.pub_dt_best >= g.start_dt
+    AND b.pub_dt_best < DATE_ADD(
+      g.start_dt,
+      INTERVAL CAST(${(dataform.projectConfig.vars.grant_match_window_years || 10)} AS INT64) YEAR
+    )
+),
+
+rid_links AS (
+  SELECT DISTINCT
+    country_code,
+    grant_id,
+    "researcher_id" AS method_id
+  FROM rid_pairs
+  WHERE (
+    (overlap_for4 >= CAST(${(dataform.projectConfig.vars.min_for4_overlap || 1)} AS INT64)
+      AND SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
+    OR
+    (overlap_for2 >= 1
+      AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
+  )
+),
+
+-- -------------------------
+-- Institution matching + fuzzy hardening (all funder types)
+-- -------------------------
+pub_orgs AS (
+  SELECT pub_id, country_code, org_id
+  FROM ${ref("rd_stage", "pub_country_orgs")}
+  WHERE org_id IS NOT NULL
+),
+
+grant_orgs AS (
+  SELECT
+    country_code,
+    grant_id,
+    start_dt,
+    org_id
+  FROM ${ref("rd_stage", "grant_orgs_flat")}
+  WHERE org_id IS NOT NULL
+    AND start_dt IS NOT NULL
+),
+
+pub_feat AS (
+  SELECT pub_id, pub_title_tokens, pub_concepts
+  FROM ${ref("rd_stage", "pub_text_features")}
+),
+
+inst_pairs0 AS (
+  SELECT
+    b.pub_id,
+    b.country_code,
+    g.grant_id,
+    b.for4_codes,
+    b.for2_codes,
+    g.grant_for4,
+    g.grant_for2,
+    g.grant_title_tokens,
+    g.grant_concepts,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(b.for4_codes, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(g.grant_for4, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_for4,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT z
+      FROM UNNEST(
+        ARRAY_CONCAT(
+          COALESCE(b.for4_codes, CAST([] AS ARRAY<STRING>)),
+          COALESCE(g.grant_for4, CAST([] AS ARRAY<STRING>))
+        )
+      ) z
+      WHERE z IS NOT NULL
+    )) AS union_for4,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(b.for2_codes, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(g.grant_for2, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_for2,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT z
+      FROM UNNEST(
+        ARRAY_CONCAT(
+          COALESCE(b.for2_codes, CAST([] AS ARRAY<STRING>)),
+          COALESCE(g.grant_for2, CAST([] AS ARRAY<STRING>))
+        )
+      ) z
+      WHERE z IS NOT NULL
+    )) AS union_for2
+  FROM base b
+  JOIN pub_orgs po
+    ON po.pub_id = b.pub_id
+   AND po.country_code = b.country_code
+  JOIN grant_orgs go
+    ON go.org_id = po.org_id
+   AND go.country_code = b.country_code
+  JOIN grants_all g
+    ON g.grant_id = go.grant_id
+   AND g.country_code = b.country_code
+  WHERE b.pub_dt_best >= g.start_dt
+    AND b.pub_dt_best < DATE_ADD(
+      g.start_dt,
+      INTERVAL CAST(${(dataform.projectConfig.vars.grant_match_window_years || 10)} AS INT64) YEAR
+    )
+),
+
+inst_prefilter AS (
+  SELECT
+    *,
+    SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) AS jaccard_for4,
+    SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) AS jaccard_for2,
+    (
+      (overlap_for4 >= CAST(${(dataform.projectConfig.vars.min_for4_overlap || 1)} AS INT64)
+        AND SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
+      OR
+      (overlap_for2 >= 1
+        AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
+    ) AS field_pass
+  FROM inst_pairs0
+  WHERE (overlap_for4 >= 1 OR overlap_for2 >= 1 OR (union_for4 = 0 AND union_for2 = 0))
+),
+
+inst_scored AS (
+  SELECT
+    p.*,
+    pf.pub_title_tokens,
+    pf.pub_concepts,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(pf.pub_concepts, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(p.grant_concepts, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_concepts,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT z
+      FROM UNNEST(
+        ARRAY_CONCAT(
+          COALESCE(pf.pub_concepts, CAST([] AS ARRAY<STRING>)),
+          COALESCE(p.grant_concepts, CAST([] AS ARRAY<STRING>))
+        )
+      ) z
+      WHERE z IS NOT NULL
+    )) AS union_concepts,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(pf.pub_title_tokens, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(p.grant_title_tokens, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_title,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT z
+      FROM UNNEST(
+        ARRAY_CONCAT(
+          COALESCE(pf.pub_title_tokens, CAST([] AS ARRAY<STRING>)),
+          COALESCE(p.grant_title_tokens, CAST([] AS ARRAY<STRING>))
+        )
+      ) z
+      WHERE z IS NOT NULL
+    )) AS union_title
+  FROM inst_prefilter p
+  LEFT JOIN pub_feat pf
+    ON pf.pub_id = p.pub_id
+),
+
+inst_scored2 AS (
+  SELECT
+    *,
+    SAFE_DIVIDE(overlap_concepts, NULLIF(union_concepts, 0)) AS jaccard_concepts,
+    SAFE_DIVIDE(overlap_title, NULLIF(union_title, 0)) AS jaccard_title
+  FROM inst_scored
+),
+
+inst_fuzzy_pass AS (
+  SELECT
+    *,
+    (0.7 * COALESCE(jaccard_concepts, 0.0) + 0.3 * COALESCE(jaccard_title, 0.0)) AS fuzzy_score
+  FROM inst_scored2
+  WHERE (
+    (
+      field_pass
+      AND (
+        COALESCE(jaccard_concepts, 0.0) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_concept_jaccard || 0.10)} AS FLOAT64)
+        OR COALESCE(jaccard_title, 0.0) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_jaccard || 0.20)} AS FLOAT64)
+      )
+    )
+    OR
+    (
+      NOT field_pass
+      AND COALESCE(jaccard_concepts, 0.0) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_concept_jaccard_nofield || 0.05)} AS FLOAT64)
+      AND overlap_concepts >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_concept_overlap_nofield || 2)} AS INT64)
+    )
+  )
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY pub_id, country_code
+    ORDER BY (0.7 * COALESCE(jaccard_concepts, 0.0) + 0.3 * COALESCE(jaccard_title, 0.0)) DESC
+  ) <= CAST(${(dataform.projectConfig.vars.inst_fuzzy_topk || 3)} AS INT64)
+),
+
+inst_links AS (
+  SELECT DISTINCT
+    country_code,
+    grant_id,
+    "institution" AS method_id
+  FROM inst_fuzzy_pass
+)
+
+SELECT * FROM direct_links
+UNION ALL
+SELECT * FROM rid_links
+UNION ALL
+SELECT * FROM inst_links

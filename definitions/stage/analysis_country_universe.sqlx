@@ -2,16 +2,10 @@ config {
   type: "table",
   schema: "rd_stage",
   name: "analysis_country_universe",
-  description: "OECD-only analysis country universe: US, CA, AU, CH, GB + EU members that are OECD.",
+  description: "Country universe for analysis and plotting, maintained directly in-pipeline.",
   tags: ["analysis", "phase1"]
 }
 
-SELECT country_code
-FROM UNNEST([
-  -- Non-EU OECD
-  'US','CA','AU','CH','GB',
-
-  -- EU members that are OECD
-  'AT','BE','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','NL',
-  'PL','PT','SK','SI','ES','SE'
-]) AS country_code
+SELECT
+  c.country_code
+FROM ${ref("rd_ref", "analysis_country_map")} c
