@@ -1,0 +1,33 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_govfund_rid_only_fc",
+  tags: ["int", "patents", "exclusive"],
+  description: "Mutually-exclusive Tier-2 government-funded private patent families: RID-linked matches excluding any family-country already captured by Tier-1 direct linkage."
+}
+
+WITH rid AS (
+  SELECT
+    family_id,
+    country_code,
+    quarter,
+    w_domestic
+  FROM ${ref("rd_int", "pat_govfund_rid_fc")}
+),
+direct AS (
+  SELECT
+    family_id,
+    country_code
+  FROM ${ref("rd_int", "pat_govfund_direct_fc")}
+)
+
+SELECT
+  r.family_id,
+  r.country_code,
+  r.quarter,
+  r.w_domestic
+FROM rid r
+LEFT JOIN direct d
+  ON d.family_id = r.family_id
+ AND d.country_code = r.country_code
+WHERE d.family_id IS NULL

@@ -1,0 +1,107 @@
+config {
+  type: "table",
+  schema: "rd_mart",
+  name: "grant_dimensions_coverage_annual",
+  tags: ["mart", "grants", "validation"],
+  description: "Country-year annual grant-dollar coverage output from Dimensions only, for external benchmark comparison done outside Dataform."
+}
+
+WITH coverage AS (
+  SELECT
+    country_code,
+    year,
+    allocation_scenario,
+    funder_type,
+
+    n_grants_with_usd_active_in_year,
+    usd_total_reported,
+    usd_linked_patent_any,
+    usd_linked_publication_any,
+    usd_linked_patent_only,
+    usd_linked_publication_only,
+    usd_linked_both_outputs,
+    usd_linked_any_output,
+    share_usd_linked_patent_any,
+    share_usd_linked_publication_any,
+    share_usd_linked_patent_only,
+    share_usd_linked_publication_only,
+    share_usd_linked_both_outputs,
+    share_usd_linked_any_output,
+    n_grants_start_year_total,
+    n_grants_start_year_with_usd,
+    n_grants_start_year_linked_patent,
+    n_grants_start_year_linked_publication,
+    n_grants_start_year_linked_any_output
+  FROM ${ref("rd_int", "grant_linkage_coverage_annual")}
+),
+
+wide AS (
+  SELECT
+    c.country_code,
+    m.country_name,
+    c.year,
+    c.allocation_scenario,
+
+    MAX(IF(c.funder_type = "gov", c.n_grants_with_usd_active_in_year, NULL)) AS n_grants_with_usd_active_gov,
+    MAX(IF(c.funder_type = "gov", c.usd_total_reported, NULL)) AS usd_total_reported_gov,
+    MAX(IF(c.funder_type = "gov", c.usd_linked_patent_any, NULL)) AS usd_linked_patent_any_gov,
+    MAX(IF(c.funder_type = "gov", c.usd_linked_publication_any, NULL)) AS usd_linked_publication_any_gov,
+    MAX(IF(c.funder_type = "gov", c.usd_linked_patent_only, NULL)) AS usd_linked_patent_only_gov,
+    MAX(IF(c.funder_type = "gov", c.usd_linked_publication_only, NULL)) AS usd_linked_publication_only_gov,
+    MAX(IF(c.funder_type = "gov", c.usd_linked_both_outputs, NULL)) AS usd_linked_both_outputs_gov,
+    MAX(IF(c.funder_type = "gov", c.usd_linked_any_output, NULL)) AS usd_linked_any_output_gov,
+    MAX(IF(c.funder_type = "gov", c.share_usd_linked_patent_any, NULL)) AS share_usd_linked_patent_any_gov,
+    MAX(IF(c.funder_type = "gov", c.share_usd_linked_publication_any, NULL)) AS share_usd_linked_publication_any_gov,
+    MAX(IF(c.funder_type = "gov", c.share_usd_linked_patent_only, NULL)) AS share_usd_linked_patent_only_gov,
+    MAX(IF(c.funder_type = "gov", c.share_usd_linked_publication_only, NULL)) AS share_usd_linked_publication_only_gov,
+    MAX(IF(c.funder_type = "gov", c.share_usd_linked_both_outputs, NULL)) AS share_usd_linked_both_outputs_gov,
+    MAX(IF(c.funder_type = "gov", c.share_usd_linked_any_output, NULL)) AS share_usd_linked_any_output_gov,
+    MAX(IF(c.funder_type = "gov", c.n_grants_start_year_total, NULL)) AS n_grants_start_year_total_gov,
+    MAX(IF(c.funder_type = "gov", c.n_grants_start_year_with_usd, NULL)) AS n_grants_start_year_with_usd_gov,
+    MAX(IF(c.funder_type = "gov", c.n_grants_start_year_linked_patent, NULL)) AS n_grants_start_year_linked_patent_gov,
+    MAX(IF(c.funder_type = "gov", c.n_grants_start_year_linked_publication, NULL)) AS n_grants_start_year_linked_publication_gov,
+    MAX(IF(c.funder_type = "gov", c.n_grants_start_year_linked_any_output, NULL)) AS n_grants_start_year_linked_any_output_gov,
+
+    MAX(IF(c.funder_type = "nongov", c.n_grants_with_usd_active_in_year, NULL)) AS n_grants_with_usd_active_nongov,
+    MAX(IF(c.funder_type = "nongov", c.usd_total_reported, NULL)) AS usd_total_reported_nongov,
+    MAX(IF(c.funder_type = "nongov", c.usd_linked_patent_any, NULL)) AS usd_linked_patent_any_nongov,
+    MAX(IF(c.funder_type = "nongov", c.usd_linked_publication_any, NULL)) AS usd_linked_publication_any_nongov,
+    MAX(IF(c.funder_type = "nongov", c.usd_linked_patent_only, NULL)) AS usd_linked_patent_only_nongov,
+    MAX(IF(c.funder_type = "nongov", c.usd_linked_publication_only, NULL)) AS usd_linked_publication_only_nongov,
+    MAX(IF(c.funder_type = "nongov", c.usd_linked_both_outputs, NULL)) AS usd_linked_both_outputs_nongov,
+    MAX(IF(c.funder_type = "nongov", c.usd_linked_any_output, NULL)) AS usd_linked_any_output_nongov,
+    MAX(IF(c.funder_type = "nongov", c.share_usd_linked_patent_any, NULL)) AS share_usd_linked_patent_any_nongov,
+    MAX(IF(c.funder_type = "nongov", c.share_usd_linked_publication_any, NULL)) AS share_usd_linked_publication_any_nongov,
+    MAX(IF(c.funder_type = "nongov", c.share_usd_linked_patent_only, NULL)) AS share_usd_linked_patent_only_nongov,
+    MAX(IF(c.funder_type = "nongov", c.share_usd_linked_publication_only, NULL)) AS share_usd_linked_publication_only_nongov,
+    MAX(IF(c.funder_type = "nongov", c.share_usd_linked_both_outputs, NULL)) AS share_usd_linked_both_outputs_nongov,
+    MAX(IF(c.funder_type = "nongov", c.share_usd_linked_any_output, NULL)) AS share_usd_linked_any_output_nongov,
+    MAX(IF(c.funder_type = "nongov", c.n_grants_start_year_total, NULL)) AS n_grants_start_year_total_nongov,
+    MAX(IF(c.funder_type = "nongov", c.n_grants_start_year_with_usd, NULL)) AS n_grants_start_year_with_usd_nongov,
+    MAX(IF(c.funder_type = "nongov", c.n_grants_start_year_linked_patent, NULL)) AS n_grants_start_year_linked_patent_nongov,
+    MAX(IF(c.funder_type = "nongov", c.n_grants_start_year_linked_publication, NULL)) AS n_grants_start_year_linked_publication_nongov,
+    MAX(IF(c.funder_type = "nongov", c.n_grants_start_year_linked_any_output, NULL)) AS n_grants_start_year_linked_any_output_nongov
+  FROM coverage c
+  LEFT JOIN ${ref("rd_ref", "analysis_country_map")} m
+    ON m.country_code = c.country_code
+  GROUP BY c.country_code, m.country_name, c.year, c.allocation_scenario
+)
+
+SELECT
+  *,
+  SAFE_DIVIDE(usd_total_reported_gov, 1000000.0) AS usd_total_reported_gov_musd,
+  SAFE_DIVIDE(usd_linked_patent_any_gov, 1000000.0) AS usd_linked_patent_any_gov_musd,
+  SAFE_DIVIDE(usd_linked_publication_any_gov, 1000000.0) AS usd_linked_publication_any_gov_musd,
+  SAFE_DIVIDE(usd_linked_patent_only_gov, 1000000.0) AS usd_linked_patent_only_gov_musd,
+  SAFE_DIVIDE(usd_linked_publication_only_gov, 1000000.0) AS usd_linked_publication_only_gov_musd,
+  SAFE_DIVIDE(usd_linked_both_outputs_gov, 1000000.0) AS usd_linked_both_outputs_gov_musd,
+  SAFE_DIVIDE(usd_linked_any_output_gov, 1000000.0) AS usd_linked_any_output_gov_musd,
+
+  SAFE_DIVIDE(usd_total_reported_nongov, 1000000.0) AS usd_total_reported_nongov_musd,
+  SAFE_DIVIDE(usd_linked_patent_any_nongov, 1000000.0) AS usd_linked_patent_any_nongov_musd,
+  SAFE_DIVIDE(usd_linked_publication_any_nongov, 1000000.0) AS usd_linked_publication_any_nongov_musd,
+  SAFE_DIVIDE(usd_linked_patent_only_nongov, 1000000.0) AS usd_linked_patent_only_nongov_musd,
+  SAFE_DIVIDE(usd_linked_publication_only_nongov, 1000000.0) AS usd_linked_publication_only_nongov_musd,
+  SAFE_DIVIDE(usd_linked_both_outputs_nongov, 1000000.0) AS usd_linked_both_outputs_nongov_musd,
+  SAFE_DIVIDE(usd_linked_any_output_nongov, 1000000.0) AS usd_linked_any_output_nongov_musd
+FROM wide

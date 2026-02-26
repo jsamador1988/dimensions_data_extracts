@@ -1,0 +1,53 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "grant_funding_allocations_annual",
+  tags: ["int", "grants", "validation"],
+  description: "Annualized grant-dollar allocations under timing scenarios (start-year, spread-3y, spread-5y) for robustness to multi-year grant spending profiles."
+}
+
+WITH grant_base AS (
+  SELECT
+    country_code,
+    grant_id,
+    is_gov_surico,
+    EXTRACT(YEAR FROM start_dt) AS start_year,
+    funding_usd
+  FROM ${ref("rd_int", "grant_domestic_unique")}
+  WHERE grant_id IS NOT NULL
+    AND start_dt IS NOT NULL
+    AND funding_usd IS NOT NULL
+    AND funding_usd > 0
+),
+
+scenarios AS (
+  SELECT * FROM UNNEST([
+    STRUCT("start_year" AS allocation_scenario, 1 AS n_years),
+    STRUCT("spread_3y" AS allocation_scenario, 3 AS n_years),
+    STRUCT("spread_5y" AS allocation_scenario, 5 AS n_years)
+  ])
+),
+
+expanded AS (
+  SELECT
+    b.country_code,
+    b.grant_id,
+    b.is_gov_surico,
+    s.allocation_scenario,
+    b.start_year + offs AS year,
+    b.funding_usd,
+    CAST(1.0 / s.n_years AS FLOAT64) AS allocation_weight,
+    CAST(b.funding_usd / s.n_years AS FLOAT64) AS allocated_usd
+  FROM grant_base b
+  CROSS JOIN scenarios s
+  CROSS JOIN UNNEST(GENERATE_ARRAY(0, s.n_years - 1)) AS offs
+),
+
+bounded AS (
+  SELECT *
+  FROM expanded
+  WHERE year >= EXTRACT(YEAR FROM DATE('${dataform.projectConfig.vars.sample_start}'))
+    AND year <= EXTRACT(YEAR FROM DATE('${dataform.projectConfig.vars.sample_end}'))
+)
+
+SELECT * FROM bounded

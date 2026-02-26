@@ -1,0 +1,91 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "grant_output_linkage_flags",
+  tags: ["int", "grants", "validation"],
+  description: "Grant-level linkage flags to patents/publications by method, with one row per country×grant. Designed for deduplicated grant-dollar coverage accounting."
+}
+
+WITH grant_base AS (
+  SELECT
+    country_code,
+    grant_id,
+    is_gov_surico,
+    start_dt,
+    EXTRACT(YEAR FROM start_dt) AS start_year,
+    funding_usd
+  FROM ${ref("rd_int", "grant_domestic_unique")}
+  WHERE grant_id IS NOT NULL
+),
+
+pat AS (
+  SELECT
+    country_code,
+    grant_id,
+    MAX(IF(method_id = "direct", 1, 0)) AS patent_link_direct,
+    MAX(IF(method_id = "researcher_id", 1, 0)) AS patent_link_researcher_id,
+    MAX(IF(method_id = "institution", 1, 0)) AS patent_link_institution
+  FROM ${ref("rd_int", "grant_patent_linkage_methods")}
+  GROUP BY country_code, grant_id
+),
+
+pub AS (
+  SELECT
+    country_code,
+    grant_id,
+    MAX(IF(method_id = "direct", 1, 0)) AS publication_link_direct,
+    MAX(IF(method_id = "researcher_id", 1, 0)) AS publication_link_researcher_id,
+    MAX(IF(method_id = "institution", 1, 0)) AS publication_link_institution
+  FROM ${ref("rd_int", "grant_publication_linkage_methods")}
+  GROUP BY country_code, grant_id
+)
+
+SELECT
+  g.country_code,
+  g.grant_id,
+  g.is_gov_surico,
+  g.start_dt,
+  g.start_year,
+  g.funding_usd,
+
+  COALESCE(p.patent_link_direct, 0) AS patent_link_direct,
+  COALESCE(p.patent_link_researcher_id, 0) AS patent_link_researcher_id,
+  COALESCE(p.patent_link_institution, 0) AS patent_link_institution,
+
+  COALESCE(pub.publication_link_direct, 0) AS publication_link_direct,
+  COALESCE(pub.publication_link_researcher_id, 0) AS publication_link_researcher_id,
+  COALESCE(pub.publication_link_institution, 0) AS publication_link_institution,
+
+  IF(
+    COALESCE(p.patent_link_direct, 0)
+    + COALESCE(p.patent_link_researcher_id, 0)
+    + COALESCE(p.patent_link_institution, 0) > 0,
+    1,
+    0
+  ) AS patent_link_any,
+
+  IF(
+    COALESCE(pub.publication_link_direct, 0)
+    + COALESCE(pub.publication_link_researcher_id, 0)
+    + COALESCE(pub.publication_link_institution, 0) > 0,
+    1,
+    0
+  ) AS publication_link_any,
+
+  IF(
+    (
+      COALESCE(p.patent_link_direct, 0)
+      + COALESCE(p.patent_link_researcher_id, 0)
+      + COALESCE(p.patent_link_institution, 0)
+      + COALESCE(pub.publication_link_direct, 0)
+      + COALESCE(pub.publication_link_researcher_id, 0)
+      + COALESCE(pub.publication_link_institution, 0)
+    ) > 0,
+    1,
+    0
+  ) AS any_output_link_any
+FROM grant_base g
+LEFT JOIN pat p
+  ON p.country_code = g.country_code AND p.grant_id = g.grant_id
+LEFT JOIN pub
+  ON pub.country_code = g.country_code AND pub.grant_id = g.grant_id

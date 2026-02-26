@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "rd_stage",
   name: "analysis_country_quarter_grid",
-  description: "Balanced grid: OECD analysis countries × quarters.",
+  description: "Balanced grid: analysis countries x quarters.",
   tags: ["analysis", "phase1"]
 }
 

@@ -1,0 +1,34 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_govfund_rid_only_pc",
+  tags: ["int", "publications", "exclusive"],
+  description: "Mutually-exclusive Tier-2 government-funded private publications: RID-linked matches excluding any pub-country already captured by Tier-1 direct linkage."
+}
+
+WITH rid AS (
+  SELECT DISTINCT
+    pub_id,
+    country_code,
+    quarter,
+    w_aff
+  FROM ${ref("rd_int", "pub_govfund_rid_pc")}
+),
+direct AS (
+  SELECT DISTINCT
+    pub_id,
+    country_code
+  FROM ${ref("rd_int", "pub_govfund_direct_pc")}
+)
+
+SELECT
+  r.pub_id,
+  r.country_code,
+  r.quarter,
+  r.w_aff
+FROM rid r
+LEFT JOIN direct d
+  ON d.pub_id = r.pub_id
+ AND d.country_code = r.country_code
+WHERE d.pub_id IS NULL
+

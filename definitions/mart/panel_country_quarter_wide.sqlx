@@ -3,7 +3,7 @@ config {
   schema: "rd_mart",
   name: "panel_country_quarter_wide",
   tags: ["mart"],
-  description: "Balanced country×quarter panel combining patent and publication innovation decompositions (domestic totals, ownership, multiple funding proxies for government and non-government domestic funders, and private→government citation-based measures).",
+  description: "Balanced country x quarter panel combining patent and publication innovation decompositions (domestic totals, ownership, overlapping and mutually-exclusive funding proxies for government and non-government domestic funders, and private->government citation-based measures).",
   bigquery: {
     partitionBy: "quarter",
     clusterBy: ["country_code"]
@@ -11,37 +11,10 @@ config {
 }
 
 WITH country_dim AS (
-  -- Self-contained ISO2 -> name mapping for the analysis universe (so we don't depend on an external country-name table).
-  SELECT * FROM UNNEST([
-    STRUCT('US' AS country_code, 'United States' AS country_name),
-    STRUCT('CA' AS country_code, 'Canada' AS country_name),
-    STRUCT('AU' AS country_code, 'Australia' AS country_name),
-    STRUCT('CH' AS country_code, 'Switzerland' AS country_name),
-    STRUCT('GB' AS country_code, 'United Kingdom' AS country_name),
-
-    STRUCT('AT' AS country_code, 'Austria' AS country_name),
-    STRUCT('BE' AS country_code, 'Belgium' AS country_name),
-    STRUCT('CZ' AS country_code, 'Czechia' AS country_name),
-    STRUCT('DK' AS country_code, 'Denmark' AS country_name),
-    STRUCT('EE' AS country_code, 'Estonia' AS country_name),
-    STRUCT('FI' AS country_code, 'Finland' AS country_name),
-    STRUCT('FR' AS country_code, 'France' AS country_name),
-    STRUCT('DE' AS country_code, 'Germany' AS country_name),
-    STRUCT('GR' AS country_code, 'Greece' AS country_name),
-    STRUCT('HU' AS country_code, 'Hungary' AS country_name),
-    STRUCT('IE' AS country_code, 'Ireland' AS country_name),
-    STRUCT('IT' AS country_code, 'Italy' AS country_name),
-    STRUCT('LV' AS country_code, 'Latvia' AS country_name),
-    STRUCT('LT' AS country_code, 'Lithuania' AS country_name),
-    STRUCT('LU' AS country_code, 'Luxembourg' AS country_name),
-    STRUCT('NL' AS country_code, 'Netherlands' AS country_name),
-    STRUCT('PL' AS country_code, 'Poland' AS country_name),
-    STRUCT('PT' AS country_code, 'Portugal' AS country_name),
-    STRUCT('SK' AS country_code, 'Slovakia' AS country_name),
-    STRUCT('SI' AS country_code, 'Slovenia' AS country_name),
-    STRUCT('ES' AS country_code, 'Spain' AS country_name),
-    STRUCT('SE' AS country_code, 'Sweden' AS country_name)
-  ])
+  SELECT
+    country_code,
+    country_name
+  FROM ${ref("rd_ref", "analysis_country_map")}
 ),
 
 grid AS (
@@ -74,10 +47,16 @@ SELECT
   COALESCE(pat.pat_gov_owned_ctq, 0.0) AS pat_gov_owned_ctq,
   COALESCE(pat.pat_private_total_ctq, 0.0) AS pat_private_total_ctq,
 
-  -- Government funding proxies (subset of private-only patents)
+  -- Overlapping government funding proxies (subset of private-only patents)
   COALESCE(pat.pat_govfund_direct_ctq, 0.0) AS pat_govfund_direct_ctq,
   COALESCE(pat.pat_govfund_rid_ctq, 0.0) AS pat_govfund_rid_ctq,
   COALESCE(pat.pat_govfund_inst_ctq, 0.0) AS pat_govfund_inst_ctq,
+
+  -- Mutually-exclusive government funding tiers (subset of private-only patents)
+  COALESCE(pat.pat_govfund_direct_excl_ctq, 0.0) AS pat_govfund_direct_excl_ctq,
+  COALESCE(pat.pat_govfund_rid_only_excl_ctq, 0.0) AS pat_govfund_rid_only_excl_ctq,
+  COALESCE(pat.pat_govfund_inst_only_excl_ctq, 0.0) AS pat_govfund_inst_only_excl_ctq,
+  COALESCE(pat.pat_govfund_any_excl_ctq, 0.0) AS pat_govfund_any_excl_ctq,
 
   -- Non-government domestic-funder analogs (subset of private-only patents)
   COALESCE(pat.pat_privfund_direct_ctq, 0.0) AS pat_privfund_direct_ctq,
@@ -96,10 +75,16 @@ SELECT
   COALESCE(pub.pub_gov_owned_ctq, 0.0) AS pub_gov_owned_ctq,
   COALESCE(pub.pub_private_total_ctq, 0.0) AS pub_private_total_ctq,
 
-  -- Government funding proxies (subset of private-only publications)
+  -- Overlapping government funding proxies (subset of private-only publications)
   COALESCE(pub.pub_govfund_direct_ctq, 0.0) AS pub_govfund_direct_ctq,
   COALESCE(pub.pub_govfund_rid_ctq, 0.0) AS pub_govfund_rid_ctq,
   COALESCE(pub.pub_govfund_inst_ctq, 0.0) AS pub_govfund_inst_ctq,
+
+  -- Mutually-exclusive government funding tiers (subset of private-only publications)
+  COALESCE(pub.pub_govfund_direct_excl_ctq, 0.0) AS pub_govfund_direct_excl_ctq,
+  COALESCE(pub.pub_govfund_rid_only_excl_ctq, 0.0) AS pub_govfund_rid_only_excl_ctq,
+  COALESCE(pub.pub_govfund_inst_only_excl_ctq, 0.0) AS pub_govfund_inst_only_excl_ctq,
+  COALESCE(pub.pub_govfund_any_excl_ctq, 0.0) AS pub_govfund_any_excl_ctq,
 
   -- Non-government domestic-funder analogs (subset of private-only publications)
   COALESCE(pub.pub_privfund_direct_ctq, 0.0) AS pub_privfund_direct_ctq,
