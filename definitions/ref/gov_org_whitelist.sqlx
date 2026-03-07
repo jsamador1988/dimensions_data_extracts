@@ -17,3 +17,118 @@ UNION ALL
 SELECT 'DE', 'grid.453150.6', 'Deutsche Bundesstiftung Umwelt (DBU)',
        'Germany: DBU (treat as government for Surico classification).',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === JP: WS2 Phase 2B audit (2026-03-06) ===
+-- JSPS is Japan's primary research funding council under MEXT.
+-- Dimensions types it as Nonprofit; it is clearly government.
+UNION ALL
+SELECT 'JP', 'grid.54432.34', 'Japan Society for the Promotion of Science (JSPS)',
+       'Japan: national research funding council under MEXT; 44,334 grants, $6.2B; Dimensions type=Nonprofit. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+-- NEDO is Japan's national R&D agency under METI.
+-- Dimensions types it as Education; it is clearly government.
+UNION ALL
+SELECT 'JP', 'grid.453049.f', 'New Energy and Industrial Technology Development Organization (NEDO)',
+       'Japan: national R&D agency under METI; $906M in grants; Dimensions type=Education. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+-- RIKEN is Japan's flagship national research institute.
+-- Dimensions types it as Education; it is clearly government.
+UNION ALL
+SELECT 'JP', 'grid.7597.c', 'RIKEN',
+       'Japan: national research institute; 1,626 patent families, 27,630 pubs; Dimensions type=Education. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === DE: WS2 Phase 2B audit (2026-03-06) ===
+-- Germany's four major publicly-funded research societies (Fraunhofer, Max Planck,
+-- Helmholtz, Leibniz) have umbrella orgs that are mostly typed Government or Nonprofit,
+-- but their individual institutes are typed Facility or Education and thus missed.
+-- These 21 entries cover institutes with >=50 patent families (94.7% of the 9,124 missed families).
+-- Max Planck Society umbrella (Nonprofit in Dimensions)
+UNION ALL
+SELECT 'DE', 'grid.4372.2', 'Max Planck Society',
+       'Germany: Max Planck Society umbrella; Nonprofit in Dimensions; 2,307 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+-- Fraunhofer individual institutes (umbrella grid.4561.6 is already Government)
+UNION ALL
+SELECT 'DE', 'grid.452493.d', 'Fraunhofer Institute for Biomedical Engineering (IBMT)',
+       'Germany: Fraunhofer institute; Education in Dimensions; 2,620 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.435231.2', 'Fraunhofer Institute for Telecommunications, Heinrich Hertz Institute',
+       'Germany: Fraunhofer institute; Facility in Dimensions; 182 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.28894.3f', 'Fraunhofer Institute for Microengineering and Microsystems',
+       'Germany: Fraunhofer institute; Facility in Dimensions; 160 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.461622.5', 'Fraunhofer Institute for Ceramic Technologies and Systems',
+       'Germany: Fraunhofer institute; Facility in Dimensions; 71 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+-- Max Planck individual institutes
+UNION ALL
+SELECT 'DE', 'grid.419607.d', 'Max Planck Institute for Coal Research',
+       'Germany: Max Planck institute; Facility in Dimensions; 233 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+-- Helmholtz individual centers (umbrella grid.211011.2 is already Government)
+UNION ALL
+SELECT 'DE', 'grid.4567.0', 'Helmholtz Zentrum Muenchen',
+       'Germany: Helmholtz center; Facility in Dimensions; 482 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.7490.a', 'Helmholtz Centre for Infection Research',
+       'Germany: Helmholtz center; Facility in Dimensions; 370 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.40602.30', 'Helmholtz-Zentrum Dresden-Rossendorf',
+       'Germany: Helmholtz center; Facility in Dimensions; 250 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.424048.e', 'Helmholtz-Zentrum Berlin fuer Materialien und Energie',
+       'Germany: Helmholtz center; Facility in Dimensions; 244 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.159791.2', 'GSI Helmholtz Centre for Heavy Ion Research',
+       'Germany: Helmholtz center; Company in Dimensions; 214 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.7492.8', 'Helmholtz Centre for Environmental Research',
+       'Germany: Helmholtz center; Facility in Dimensions; 170 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+-- Leibniz individual institutes (umbrella grid.413453.4 is already Government)
+UNION ALL
+SELECT 'DE', 'grid.14841.38', 'Leibniz Institute for Solid State and Materials Research',
+       'Germany: Leibniz institute; Facility in Dimensions; 300 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.418907.3', 'Leibniz Institute of Photonic Technology',
+       'Germany: Leibniz institute; Facility in Dimensions; 261 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.419239.4', 'Leibniz Institute of Polymer Research',
+       'Germany: Leibniz institute; Facility in Dimensions; 205 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.425202.3', 'Leibniz-Institute for New Materials',
+       'Germany: Leibniz institute; Facility in Dimensions; 195 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.440957.b', 'Leibniz Institute for Catalysis',
+       'Germany: Leibniz institute; Facility in Dimensions; 123 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.29160.3c', 'Leibniz Institute for Composite Materials',
+       'Germany: Leibniz institute; Facility in Dimensions; 78 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.461720.6', 'Leibniz Institute for Plasma Science and Technology',
+       'Germany: Leibniz institute; Facility in Dimensions; 61 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.419243.9', 'Leibniz Institute for Analytical Sciences - ISAS',
+       'Germany: Leibniz institute; Facility in Dimensions; 59 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DE', 'grid.461802.9', 'Leibniz Institute of Surface Engineering',
+       'Germany: Leibniz institute; Facility in Dimensions; 57 patent families. WS2 Phase 2B audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
