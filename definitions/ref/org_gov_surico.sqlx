@@ -3,7 +3,7 @@ config {
   schema: "rd_ref",
   name: "org_gov_surico",
   tags: ["ref"],
-  description: "Organization-level government flag consistent with Surico: TRUE if Dimensions org types include 'Government' OR the org appears in rd_ref.gov_org_whitelist for its country (with optional start/end validity). Universities are NOT government unless explicitly whitelisted."
+  description: "Organization-level government flag consistent with Surico: TRUE if Dimensions org types include 'Government' OR the org appears in rd_ref.gov_org_whitelist for its country (with optional start/end validity). Universities are NOT government unless explicitly whitelisted. Orgs whose Government type derives from a foreign government parent (foreign SOE subsidiaries, intergovernmental branch offices) are excluded unless whitelisted."
 }
 
 WITH orgs AS (
@@ -14,6 +14,23 @@ WITH orgs AS (
     o.types
   FROM `dimensions-ai.data_analytics.organizations` o
   WHERE o.id IS NOT NULL
+),
+
+-- Orgs that are typed 'Government' but have a parent in a different country
+-- that is also typed 'Government'. These are foreign SOE subsidiaries or
+-- intergovernmental branch offices — not domestic government innovators.
+foreign_gov_parent AS (
+  SELECT DISTINCT
+    o.id AS org_id
+  FROM `dimensions-ai.data_analytics.organizations` o
+  CROSS JOIN UNNEST(o.relationships) AS r
+  JOIN `dimensions-ai.data_analytics.organizations` po
+    ON po.id = r.id
+  WHERE r.type = 'Parent'
+    AND 'Government' IN UNNEST(o.types)
+    AND 'Government' IN UNNEST(po.types)
+    AND (CASE WHEN o.legal_country_code  = 'UK' THEN 'GB' ELSE o.legal_country_code  END)
+     != (CASE WHEN po.legal_country_code = 'UK' THEN 'GB' ELSE po.legal_country_code END)
 ),
 
 wl AS (
@@ -39,11 +56,16 @@ joined AS (
       WHEN (wl.start_date IS NOT NULL AND wl.start_date > DATE('${dataform.projectConfig.vars.sample_end}')) THEN FALSE
       WHEN (wl.end_date   IS NOT NULL AND wl.end_date   < DATE('${dataform.projectConfig.vars.sample_start}')) THEN FALSE
       ELSE TRUE
-    END AS is_whitelisted
+    END AS is_whitelisted,
+
+    -- foreign government parent flag
+    (fgp.org_id IS NOT NULL) AS has_foreign_gov_parent
   FROM orgs o
   LEFT JOIN wl
     ON wl.org_id = o.org_id
    AND wl.country_code = o.country_code
+  LEFT JOIN foreign_gov_parent fgp
+    ON fgp.org_id = o.org_id
 )
 
 SELECT
@@ -52,8 +74,8 @@ SELECT
   country_code,
   types,
   CASE
-    WHEN 'Government' IN UNNEST(IFNULL(types, [])) THEN TRUE
     WHEN is_whitelisted THEN TRUE
+    WHEN 'Government' IN UNNEST(IFNULL(types, [])) AND NOT has_foreign_gov_parent THEN TRUE
     ELSE FALSE
   END AS is_gov_surico
 FROM joined
