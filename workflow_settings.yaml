@@ -30,5 +30,8 @@ vars:
   # keep only top-K scored grant matches per output (performance guardrail)
   inst_fuzzy_topk: "3"
 
+  # max candidate pairs per pub/patent before concept/title scoring (performance guardrail)
+  inst_max_candidates_per_pub: "100"
+
   # title tokenization
   inst_fuzzy_min_title_token_len: "3"
