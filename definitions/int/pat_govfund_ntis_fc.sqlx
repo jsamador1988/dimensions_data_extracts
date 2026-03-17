@@ -15,7 +15,7 @@ SELECT
   b.w_domestic
 FROM ${ref("rd_int", "pat_family_country_base")} b
 JOIN ${ref("rd_ref", "external_kr_ntis_linkage")} n
-  ON n.dim_family_id = b.family_id
+  ON CAST(n.dim_family_id AS STRING) = b.family_id
 WHERE b.dom_gov_assg_flag = 0
   AND b.country_code = 'KR'
 GROUP BY b.family_id, b.country_code, b.quarter, b.w_domestic
