@@ -1,0 +1,77 @@
+config {
+  type: "table",
+  schema: "rd_ref",
+  name: "external_no_cristin_gov_map",
+  tags: ["ref", "external"],
+  description: "Norwegian institution and funder sector classification for Cristin data. Used to classify Cristin funding sources and institution affiliations as government or non-government. Mirrors the Python-side GOV_FUNDER_CODES and GOV_INSTITUTION_IDS in link_cristin_publications.py."
+}
+
+-- Government funder codes (Cristin funding_source_code values)
+-- and government institution IDs (Cristin institution numeric IDs).
+--
+-- entity_type: 'funder' or 'institution'
+-- code: Cristin funding_source_code (for funders) or NULL (for institutions)
+-- institution_id: Cristin institution ID (for institutions) or NULL (for funders)
+-- is_government: TRUE if government sector
+-- name_en: English name for documentation
+
+SELECT * FROM UNNEST([
+  -- ===== Government Funders =====
+  -- Research Council of Norway (primary government funder)
+  STRUCT('funder' AS entity_type, 'NFR' AS code, CAST(NULL AS INT64) AS institution_id, TRUE AS is_government, 'Research Council of Norway' AS name_en),
+  -- Ministries
+  STRUCT('funder', 'KD',    NULL, TRUE, 'Ministry of Education and Research'),
+  STRUCT('funder', 'HOD',   NULL, TRUE, 'Ministry of Health and Care Services'),
+  STRUCT('funder', 'FD',    NULL, TRUE, 'Ministry of Defence'),
+  STRUCT('funder', 'NFD',   NULL, TRUE, 'Ministry of Trade, Industry and Fisheries'),
+  STRUCT('funder', 'KLD',   NULL, TRUE, 'Ministry of Climate and Environment'),
+  STRUCT('funder', 'SD',    NULL, TRUE, 'Ministry of Transport'),
+  STRUCT('funder', 'JD',    NULL, TRUE, 'Ministry of Justice and Public Security'),
+  STRUCT('funder', 'ASD',   NULL, TRUE, 'Ministry of Labour and Social Inclusion'),
+  STRUCT('funder', 'BFD',   NULL, TRUE, 'Ministry of Children and Families'),
+  STRUCT('funder', 'KUD',   NULL, TRUE, 'Ministry of Culture and Equality'),
+  STRUCT('funder', 'LMD',   NULL, TRUE, 'Ministry of Agriculture and Food'),
+  STRUCT('funder', 'OED',   NULL, TRUE, 'Ministry of Energy'),
+  STRUCT('funder', 'UD',    NULL, TRUE, 'Ministry of Foreign Affairs'),
+  STRUCT('funder', 'KMD',   NULL, TRUE, 'Ministry of Local Government and Regional Development'),
+  STRUCT('funder', 'SMK',   NULL, TRUE, 'Office of the Prime Minister'),
+  -- Supranational (counted as government)
+  STRUCT('funder', 'EU',    NULL, TRUE, 'EU Framework Programme'),
+  -- Health authorities
+  STRUCT('funder', 'HELSE', NULL, TRUE, 'Regional Health Authorities'),
+  -- Government-established foundations
+  STRUCT('funder', 'STIFT', NULL, TRUE, 'Government-established foundations'),
+
+  -- ===== Government Research Institutes =====
+  -- Defence / security
+  STRUCT('institution', NULL, 7466, TRUE, 'FFI (Norwegian Defence Research Establishment)'),
+  -- Public health
+  STRUCT('institution', NULL, 7489, TRUE, 'FHI (Norwegian Institute of Public Health)'),
+  -- Environment / natural resources
+  STRUCT('institution', NULL, 7501, TRUE, 'NILU (Norwegian Institute for Air Research)'),
+  STRUCT('institution', NULL, 7432, TRUE, 'NIVA (Norwegian Institute for Water Research)'),
+  STRUCT('institution', NULL, 7434, TRUE, 'NINA (Norwegian Institute for Nature Research)'),
+  STRUCT('institution', NULL, 7428, TRUE, 'NGI (Norwegian Geotechnical Institute)'),
+  STRUCT('institution', NULL, 7464, TRUE, 'NPI (Norwegian Polar Institute)'),
+  -- Marine / fisheries
+  STRUCT('institution', NULL, 7458, TRUE, 'IMR (Institute of Marine Research)'),
+  -- Technology / industry
+  STRUCT('institution', NULL, 7465, TRUE, 'IFE (Institute for Energy Technology)'),
+  STRUCT('institution', NULL, 7401, TRUE, 'SINTEF (applied research)'),
+  -- Social sciences / policy
+  STRUCT('institution', NULL, 7440, TRUE, 'NIBR (Norwegian Institute for Urban and Regional Research)'),
+  STRUCT('institution', NULL, 7439, TRUE, 'NIFU (Nordic Institute for Studies in Innovation, Research and Education)'),
+  STRUCT('institution', NULL, 7492, TRUE, 'SSB (Statistics Norway)'),
+  STRUCT('institution', NULL, 7478, TRUE, 'NUPI (Norwegian Institute of International Affairs)'),
+  -- Agriculture / food
+  STRUCT('institution', NULL, 7491, TRUE, 'NIBIO (Norwegian Institute of Bioeconomy Research)'),
+  STRUCT('institution', NULL, 7430, TRUE, 'Nofima (Norwegian Institute of Food, Fisheries and Aquaculture Research)'),
+  -- Transport
+  STRUCT('institution', NULL, 7467, TRUE, 'TOI (Institute of Transport Economics)'),
+  -- Meteorology
+  STRUCT('institution', NULL, 7493, TRUE, 'MET Norway (Norwegian Meteorological Institute)'),
+  -- Geological survey
+  STRUCT('institution', NULL, 7435, TRUE, 'NGU (Geological Survey of Norway)'),
+  -- Veterinary
+  STRUCT('institution', NULL, 7498, TRUE, 'NVI (Norwegian Veterinary Institute)')
+])

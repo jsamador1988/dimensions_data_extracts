@@ -3,75 +3,107 @@ config {
   schema: "rd_int",
   name: "pat_country_quarter_measures",
   tags: ["int", "patents"],
-  description: "Country x quarter patent innovation time series: domestic totals, government-owned component, overlapping government-funding proxies (direct / researcher / institution), mutually-exclusive government-funding tiers (direct / RID-only / institution-only / any), non-government domestic-funder analogs (direct / researcher / institution), and private->government citation-based measures."
+  description: "Country x quarter patent innovation time series: domestic totals, government-owned component, overlapping government-funding proxies (direct / researcher / institution), mutually-exclusive government-funding tiers (direct / RID-only / institution-only / any), non-government domestic-funder analogs (direct / researcher / institution), private->government citation-based measures, and whole-count (unweighted) variants for all decomposition columns."
 }
 
 WITH base AS (
   SELECT
     country_code,
     quarter,
+    -- Fractional weighted counts
     SUM(w_domestic) AS pat_total_ctq,
     SUM(w_gov_owned) AS pat_gov_owned_ctq,
     -- Private-only denominator (no domestic government assignee on the family)
-    SUM(IF(dom_gov_assg_flag = 0, w_domestic, 0.0)) AS pat_private_total_ctq
+    SUM(IF(dom_gov_assg_flag = 0, w_domestic, 0.0)) AS pat_private_total_ctq,
+    -- Whole counts (each family counted once regardless of fractional weight)
+    COUNT(DISTINCT family_id) AS pat_total_whole_ctq,
+    COUNT(DISTINCT IF(dom_gov_assg_flag = 1, family_id, NULL)) AS pat_gov_owned_whole_ctq,
+    COUNT(DISTINCT IF(dom_gov_assg_flag = 0, family_id, NULL)) AS pat_private_total_whole_ctq
   FROM ${ref("rd_int", "pat_family_country_base")}
   GROUP BY country_code, quarter
 ),
 
 -- Overlapping government funder proxies (subset of private-only)
 gov_direct AS (
-  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_direct_ctq
+  SELECT country_code, quarter,
+    SUM(w_domestic) AS pat_govfund_direct_ctq,
+    COUNT(DISTINCT family_id) AS pat_govfund_direct_whole_ctq
   FROM ${ref("rd_int", "pat_govfund_direct_fc")}
   GROUP BY country_code, quarter
 ),
 
 gov_rid AS (
-  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_rid_ctq
+  SELECT country_code, quarter,
+    SUM(w_domestic) AS pat_govfund_rid_ctq,
+    COUNT(DISTINCT family_id) AS pat_govfund_rid_whole_ctq
   FROM ${ref("rd_int", "pat_govfund_rid_fc")}
   GROUP BY country_code, quarter
 ),
 
 gov_inst AS (
-  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_inst_ctq
+  SELECT country_code, quarter,
+    SUM(w_domestic) AS pat_govfund_inst_ctq,
+    COUNT(DISTINCT family_id) AS pat_govfund_inst_whole_ctq
   FROM ${ref("rd_int", "pat_govfund_inst_fc")}
   GROUP BY country_code, quarter
 ),
 
 -- Mutually-exclusive government funder tiers (subset of private-only)
 gov_direct_excl AS (
-  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_direct_excl_ctq
+  SELECT country_code, quarter,
+    SUM(w_domestic) AS pat_govfund_direct_excl_ctq,
+    COUNT(DISTINCT family_id) AS pat_govfund_direct_excl_whole_ctq
   FROM ${ref("rd_int", "pat_govfund_direct_fc")}
   GROUP BY country_code, quarter
 ),
 
 gov_rid_only_excl AS (
-  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_rid_only_excl_ctq
+  SELECT country_code, quarter,
+    SUM(w_domestic) AS pat_govfund_rid_only_excl_ctq,
+    COUNT(DISTINCT family_id) AS pat_govfund_rid_only_excl_whole_ctq
   FROM ${ref("rd_int", "pat_govfund_rid_only_fc")}
   GROUP BY country_code, quarter
 ),
 
 gov_inst_only_excl AS (
-  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_inst_only_excl_ctq
+  SELECT country_code, quarter,
+    SUM(w_domestic) AS pat_govfund_inst_only_excl_ctq,
+    COUNT(DISTINCT family_id) AS pat_govfund_inst_only_excl_whole_ctq
   FROM ${ref("rd_int", "pat_govfund_inst_only_fc")}
   GROUP BY country_code, quarter
 ),
 
 -- Non-government domestic funder analogs (subset of private-only)
 priv_direct AS (
-  SELECT country_code, quarter, SUM(w_domestic) AS pat_privfund_direct_ctq
+  SELECT country_code, quarter,
+    SUM(w_domestic) AS pat_privfund_direct_ctq,
+    COUNT(DISTINCT family_id) AS pat_privfund_direct_whole_ctq
   FROM ${ref("rd_int", "pat_privfund_direct_fc")}
   GROUP BY country_code, quarter
 ),
 
 priv_rid AS (
-  SELECT country_code, quarter, SUM(w_domestic) AS pat_privfund_rid_ctq
+  SELECT country_code, quarter,
+    SUM(w_domestic) AS pat_privfund_rid_ctq,
+    COUNT(DISTINCT family_id) AS pat_privfund_rid_whole_ctq
   FROM ${ref("rd_int", "pat_privfund_rid_fc")}
   GROUP BY country_code, quarter
 ),
 
 priv_inst AS (
-  SELECT country_code, quarter, SUM(w_domestic) AS pat_privfund_inst_ctq
+  SELECT country_code, quarter,
+    SUM(w_domestic) AS pat_privfund_inst_ctq,
+    COUNT(DISTINCT family_id) AS pat_privfund_inst_whole_ctq
   FROM ${ref("rd_int", "pat_privfund_inst_fc")}
+  GROUP BY country_code, quarter
+),
+
+-- NTIS external linkage (Korea only)
+gov_ntis AS (
+  SELECT country_code, quarter,
+    SUM(w_domestic) AS pat_govfund_ntis_ctq,
+    COUNT(DISTINCT family_id) AS pat_govfund_ntis_whole_ctq
+  FROM ${ref("rd_int", "pat_govfund_ntis_fc")}
   GROUP BY country_code, quarter
 ),
 
@@ -82,7 +114,14 @@ cite AS (
     quarter,
     pat_private_cite_gov_raw_ctq,
     pat_private_cite_gov_norm_ctq,
-    pat_private_with_cites_ctq
+    pat_private_with_cites_ctq,
+    -- Binary citation decomposition
+    pat_private_citing_gov_ctq,
+    pat_private_not_citing_gov_ctq,
+    -- Whole count variants from citation table
+    pat_private_citing_gov_whole_ctq,
+    pat_private_not_citing_gov_whole_ctq,
+    pat_private_with_cites_whole_ctq
   FROM ${ref("rd_int", "pat_private_cite_gov_ctq")}
 )
 
@@ -90,21 +129,21 @@ SELECT
   b.country_code,
   b.quarter,
 
-  -- 1a
+  -- 1a: Total patents (fractional)
   b.pat_total_ctq,
 
-  -- 1b
+  -- 1b: Government-owned patents (fractional)
   b.pat_gov_owned_ctq,
 
-  -- Private-only denominator
+  -- Private-only denominator (fractional)
   b.pat_private_total_ctq,
 
-  -- 1c/1d/1e overlapping proxies
+  -- 1c/1d/1e overlapping proxies (fractional)
   COALESCE(gd.pat_govfund_direct_ctq, 0.0) AS pat_govfund_direct_ctq,
   COALESCE(gr.pat_govfund_rid_ctq, 0.0) AS pat_govfund_rid_ctq,
   COALESCE(gi.pat_govfund_inst_ctq, 0.0) AS pat_govfund_inst_ctq,
 
-  -- Mutually-exclusive tiers (no double counting by construction)
+  -- Mutually-exclusive tiers (no double counting by construction, fractional)
   COALESCE(gde.pat_govfund_direct_excl_ctq, 0.0) AS pat_govfund_direct_excl_ctq,
   COALESCE(gre.pat_govfund_rid_only_excl_ctq, 0.0) AS pat_govfund_rid_only_excl_ctq,
   COALESCE(gie.pat_govfund_inst_only_excl_ctq, 0.0) AS pat_govfund_inst_only_excl_ctq,
@@ -114,15 +153,55 @@ SELECT
     + COALESCE(gie.pat_govfund_inst_only_excl_ctq, 0.0)
   ) AS pat_govfund_any_excl_ctq,
 
-  -- Non-government domestic funder analogs
+  -- Non-government domestic funder analogs (fractional)
   COALESCE(pd.pat_privfund_direct_ctq, 0.0) AS pat_privfund_direct_ctq,
   COALESCE(pr.pat_privfund_rid_ctq, 0.0) AS pat_privfund_rid_ctq,
   COALESCE(pi.pat_privfund_inst_ctq, 0.0) AS pat_privfund_inst_ctq,
 
-  -- 1f
+  -- 1f: Citation measures (fractional)
   COALESCE(c.pat_private_with_cites_ctq, 0.0) AS pat_private_with_cites_ctq,
   COALESCE(c.pat_private_cite_gov_raw_ctq, 0.0) AS pat_private_cite_gov_raw_ctq,
-  COALESCE(c.pat_private_cite_gov_norm_ctq, 0.0) AS pat_private_cite_gov_norm_ctq
+  COALESCE(c.pat_private_cite_gov_norm_ctq, 0.0) AS pat_private_cite_gov_norm_ctq,
+
+  -- NTIS external linkage (Korea only, zero for all other countries, fractional)
+  COALESCE(gn.pat_govfund_ntis_ctq, 0.0) AS pat_govfund_ntis_ctq,
+
+  -- -------------------------------------------------------
+  -- Whole-count (unweighted) variants: each family counted once
+  -- -------------------------------------------------------
+  b.pat_total_whole_ctq,
+  b.pat_gov_owned_whole_ctq,
+  b.pat_private_total_whole_ctq,
+
+  -- Overlapping government funding proxies (whole count)
+  COALESCE(gd.pat_govfund_direct_whole_ctq, 0) AS pat_govfund_direct_whole_ctq,
+  COALESCE(gr.pat_govfund_rid_whole_ctq, 0) AS pat_govfund_rid_whole_ctq,
+  COALESCE(gi.pat_govfund_inst_whole_ctq, 0) AS pat_govfund_inst_whole_ctq,
+
+  -- Mutually-exclusive government funding tiers (whole count)
+  COALESCE(gde.pat_govfund_direct_excl_whole_ctq, 0) AS pat_govfund_direct_excl_whole_ctq,
+  COALESCE(gre.pat_govfund_rid_only_excl_whole_ctq, 0) AS pat_govfund_rid_only_excl_whole_ctq,
+  COALESCE(gie.pat_govfund_inst_only_excl_whole_ctq, 0) AS pat_govfund_inst_only_excl_whole_ctq,
+  (
+    COALESCE(gde.pat_govfund_direct_excl_whole_ctq, 0)
+    + COALESCE(gre.pat_govfund_rid_only_excl_whole_ctq, 0)
+    + COALESCE(gie.pat_govfund_inst_only_excl_whole_ctq, 0)
+  ) AS pat_govfund_any_excl_whole_ctq,
+
+  -- Non-government domestic funder analogs (whole count)
+  COALESCE(pd.pat_privfund_direct_whole_ctq, 0) AS pat_privfund_direct_whole_ctq,
+  COALESCE(pr.pat_privfund_rid_whole_ctq, 0) AS pat_privfund_rid_whole_ctq,
+  COALESCE(pi.pat_privfund_inst_whole_ctq, 0) AS pat_privfund_inst_whole_ctq,
+
+  -- Citation measures (whole count and binary decomposition)
+  COALESCE(c.pat_private_with_cites_whole_ctq, 0) AS pat_private_with_cites_whole_ctq,
+  COALESCE(c.pat_private_citing_gov_ctq, 0.0) AS pat_private_citing_gov_ctq,
+  COALESCE(c.pat_private_not_citing_gov_ctq, 0.0) AS pat_private_not_citing_gov_ctq,
+  COALESCE(c.pat_private_citing_gov_whole_ctq, 0) AS pat_private_citing_gov_whole_ctq,
+  COALESCE(c.pat_private_not_citing_gov_whole_ctq, 0) AS pat_private_not_citing_gov_whole_ctq,
+
+  -- NTIS external linkage (whole count)
+  COALESCE(gn.pat_govfund_ntis_whole_ctq, 0) AS pat_govfund_ntis_whole_ctq
 
 FROM base b
 LEFT JOIN gov_direct gd
@@ -149,3 +228,5 @@ LEFT JOIN priv_inst pi
 LEFT JOIN cite c
   ON c.country_code = b.country_code AND c.quarter = b.quarter
 
+LEFT JOIN gov_ntis gn
+  ON gn.country_code = b.country_code AND gn.quarter = b.quarter
