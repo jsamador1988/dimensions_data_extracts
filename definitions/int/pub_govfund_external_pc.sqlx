@@ -1,0 +1,47 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_govfund_external_pc",
+  tags: ["int", "publications", "external"],
+  description: "Publications government-funded per external national sources (Cristin, KAKEN, NWO). Each source is a CTE, UNION ALL'd, then joined to pub_pub_country_base. Adding a new source = adding a CTE + UNION ALL line, no downstream changes."
+}
+
+-- External source: Cristin (Norway)
+-- All matched Cristin records with is_gov_funded = TRUE
+WITH cristin_funded AS (
+  SELECT dim_pub_id
+  FROM ${ref("rd_ref", "external_no_cristin_linkage")}
+  WHERE is_gov_funded = 'TRUE'
+),
+
+-- Phase 2: KAKEN (Japan) — uncomment when ref table is uploaded
+-- kaken_funded AS (
+--   SELECT dim_pub_id
+--   FROM ${ref("rd_ref", "external_jp_kaken_linkage")}
+--   WHERE is_gov_funded = 'TRUE'
+-- ),
+
+-- Phase 3: NWO (Netherlands) — uncomment when ref table is uploaded
+-- nwo_funded AS (
+--   SELECT dim_pub_id
+--   FROM ${ref("rd_ref", "external_nl_nwo_linkage")}
+--   WHERE is_gov_funded = 'TRUE'
+-- ),
+
+external_pub_ids AS (
+  SELECT dim_pub_id, 'cristin' AS source_name FROM cristin_funded
+  -- UNION ALL SELECT dim_pub_id, 'kaken' FROM kaken_funded
+  -- UNION ALL SELECT dim_pub_id, 'nwo' FROM nwo_funded
+)
+
+SELECT
+  b.pub_id,
+  b.country_code,
+  b.quarter,
+  b.w_aff,
+  e.source_name
+FROM ${ref("rd_int", "pub_pub_country_base")} b
+JOIN external_pub_ids e
+  ON e.dim_pub_id = b.pub_id
+WHERE b.w_public_prod = 0  -- Exclude gov-owned to avoid double-counting
+GROUP BY b.pub_id, b.country_code, b.quarter, b.w_aff, e.source_name

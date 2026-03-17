@@ -152,16 +152,16 @@ pairs_limited AS (
     SELECT
       *,
       CASE
-        WHEN CAST(${(dataform.projectConfig.vars.inst_max_candidates_per_pub || 100)} AS INT64) = 0 THEN 1
+        WHEN CAST(${(dataform.projectConfig.vars.inst_max_candidates_per_pub || 0)} AS INT64) = 0 THEN 1
         ELSE ROW_NUMBER() OVER (
-          PARTITION BY pub_id, country_code
+          PARTITION BY pub_id, country_code, is_gov_surico
           ORDER BY field_pass DESC, jaccard_for4 DESC, jaccard_for2 DESC
         )
       END AS rn_cap
     FROM pairs_prefilter
   )
   WHERE rn_cap <= GREATEST(
-    CAST(${(dataform.projectConfig.vars.inst_max_candidates_per_pub || 100)} AS INT64),
+    CAST(${(dataform.projectConfig.vars.inst_max_candidates_per_pub || 0)} AS INT64),
     1
   )
 ),

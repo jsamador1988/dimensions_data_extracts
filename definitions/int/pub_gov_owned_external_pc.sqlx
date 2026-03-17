@@ -1,0 +1,26 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_gov_owned_external_pc",
+  tags: ["int", "publications", "external"],
+  description: "Publications government-owned per external national sources. Currently only Cristin (Norway) provides institution-level ownership data. Joined to pub_pub_country_base for consistent weighting."
+}
+
+-- External source: Cristin (Norway)
+-- Cristin records where the owner institution is a government research institute
+WITH cristin_owned AS (
+  SELECT dim_pub_id
+  FROM ${ref("rd_ref", "external_no_cristin_linkage")}
+  WHERE is_gov_owned = 'TRUE'
+)
+
+SELECT
+  b.pub_id,
+  b.country_code,
+  b.quarter,
+  b.w_aff,
+  'cristin' AS source_name
+FROM ${ref("rd_int", "pub_pub_country_base")} b
+JOIN cristin_owned c
+  ON c.dim_pub_id = b.pub_id
+GROUP BY b.pub_id, b.country_code, b.quarter, b.w_aff

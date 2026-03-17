@@ -1,0 +1,22 @@
+config {
+  type: "declaration",
+  schema: "rd_ref",
+  name: "external_nl_nwo_linkage",
+  description: "NWO (Netherlands) -> Dimensions pub_id crosswalk. Manually uploaded table containing accepted matches from link_nwo_publications.py. All NWO projects are government-funded by construction."
+}
+
+-- This is a declaration pointing to a manually-uploaded BigQuery table.
+-- To create the table, upload the linkage CSV to:
+--   dimensionsdataextracts.rd_ref.external_nl_nwo_linkage
+--
+-- Required columns:
+--   dim_pub_id       STRING  (Dimensions publication ID)
+--   source_name      STRING  ('nwo')
+--   source_id        STRING  (NWO project ID)
+--   country_code     STRING  ('NL')
+--   match_method     STRING  ('doi' or 'title_year')
+--   match_score      FLOAT64 (match confidence score)
+--   is_gov_funded    STRING  ('TRUE' -- always TRUE for NWO)
+--   is_gov_owned     STRING  ('FALSE' -- NWO is funding only, not ownership)
+--
+-- Source script: Empirics/code/link_nwo_publications.py

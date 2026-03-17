@@ -132,3 +132,415 @@ UNION ALL
 SELECT 'DE', 'grid.461802.9', 'Leibniz Institute of Surface Engineering',
        'Germany: Leibniz institute; Facility in Dimensions; 57 patent families. WS2 Phase 2B audit.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === KR: Batch 1 whitelist expansion (2026-03-08) ===
+-- Korea has ~25 government research institutes (GRIs) under the National Research Council system.
+-- Nearly all are typed Facility or Education in Dimensions; none typed Government.
+-- ETRI is the largest with 37,549 patent families.
+UNION ALL
+SELECT 'KR', 'grid.36303.35', 'Electronics and Telecommunications Research Institute (ETRI)',
+       'Korea: GRI under MSIT; Education in Dimensions; 37,549 patent families, 5,356 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.35541.36', 'Korea Institute of Science and Technology (KIST)',
+       'Korea: GRI under MSIT; Facility in Dimensions; 7,678 patent families, 13,420 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.410901.d', 'Korea Institute of Machinery and Materials (KIMM)',
+       'Korea: GRI under MSIT; Facility in Dimensions; 5,249 patent families, 2,868 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.454135.2', 'Korea Institute of Industrial Technology (KITECH)',
+       'Korea: GRI under MOTIE; Facility in Dimensions; 4,402 patent families, 2,429 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.418968.a', 'Korea Electronics Technology Institute (KETI)',
+       'Korea: GRI; Facility in Dimensions; 4,250 patent families. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.29869.3c', 'Korea Research Institute of Chemical Technology (KRICT)',
+       'Korea: GRI under MSIT; Facility in Dimensions; 4,000 patent families, 4,708 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.418964.6', 'Korea Atomic Energy Research Institute (KAERI)',
+       'Korea: GRI under MSIT; Facility in Dimensions; 3,383 patent families, 7,108 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.418979.a', 'Korea Institute of Energy Research (KIER)',
+       'Korea: GRI under MOTIE; Facility in Dimensions; 3,253 patent families, 2,654 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.249960.0', 'Korea Electrotechnology Research Institute (KERI)',
+       'Korea: GRI; Nonprofit in Dimensions; 2,765 patent families, 1,561 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.249967.7', 'Korea Research Institute of Bioscience and Biotechnology (KRIBB)',
+       'Korea: GRI under MSIT; Facility in Dimensions; 2,463 patent families, 6,387 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.464614.5', 'Korea Railroad Research Institute (KRRI)',
+       'Korea: GRI under MOLIT; Facility in Dimensions; 2,236 patent families. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.797066.9', 'Korea Research Institute of Standards and Science (KRISS)',
+       'Korea: GRI under MSIT; Education in Dimensions; 1,881 patent families, 4,348 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.418974.7', 'Korea Food Research Institute (KFRI)',
+       'Korea: GRI under MAFRA; Facility in Dimensions; 1,664 patent families. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.410882.7', 'Korea Institute of Geoscience and Mineral Resources (KIGAM)',
+       'Korea: GRI under MSIT; Facility in Dimensions; 1,609 patent families, 2,065 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.410885.0', 'Korea Basic Science Institute (KBSI)',
+       'Korea: GRI under MSIT; Facility in Dimensions; 3,567 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.415464.6', 'Korea Institute of Radiological and Medical Sciences (KIRAMS)',
+       'Korea: GRI; Facility in Dimensions; 1,825 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'KR', 'grid.410902.e', 'Korea Institute of Materials Science (KIMS)',
+       'Korea: GRI; Education in Dimensions; 1,728 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === IT: Batch 1 whitelist expansion (2026-03-08) ===
+-- CNR (National Research Council) is Italy's largest public research body, typed Nonprofit.
+-- INFN umbrella (grid.6045.7) is already Government, but 12 individual sections are typed Facility.
+-- Same pattern as Germany's research society institutes.
+UNION ALL
+SELECT 'IT', 'grid.5326.2', 'Consiglio Nazionale delle Ricerche (CNR)',
+       'Italy: national research council; Nonprofit in Dimensions; 770 patent families, 30,398 pubs, 1,524 grants. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IT', 'grid.410348.a', 'Istituto Nazionale di Geofisica e Vulcanologia (INGV)',
+       'Italy: national geophysics/volcanology institute; Facility in Dimensions; 4,722 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IT', 'grid.157869.4', 'Istituto Nazionale per la Fisica della Materia (INFM)',
+       'Italy: national condensed matter institute (merged into CNR 2003); Facility in Dimensions; 4,500 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IT', 'grid.463190.9', 'INFN Laboratori Nazionali di Frascati',
+       'Italy: INFN national laboratory; Facility in Dimensions; 7,351 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+-- INFN individual sections (umbrella grid.6045.7 is already Government)
+UNION ALL
+SELECT 'IT', 'grid.470212.2', 'INFN Sezione di Padova',
+       'Italy: INFN section; Facility in Dimensions; 5,273 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IT', 'grid.470193.8', 'INFN Sezione di Bologna',
+       'Italy: INFN section; Facility in Dimensions; 4,977 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IT', 'grid.470216.6', 'INFN Sezione di Pisa',
+       'Italy: INFN section; Facility in Dimensions; 4,906 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IT', 'grid.470223.0', 'INFN Sezione di Trieste',
+       'Italy: INFN section; Facility in Dimensions; 4,767 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IT', 'grid.470206.7', 'INFN Sezione di Milano',
+       'Italy: INFN section; Facility in Dimensions; 4,609 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IT', 'grid.470222.1', 'INFN Sezione di Torino',
+       'Italy: INFN section; Facility in Dimensions; 4,403 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IT', 'grid.470211.1', 'INFN Sezione di Napoli',
+       'Italy: INFN section; Facility in Dimensions; 4,121 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IT', 'grid.470190.b', 'INFN Sezione di Bari',
+       'Italy: INFN section; Facility in Dimensions; 3,394 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IT', 'grid.470218.8', 'INFN Sezione di Roma I',
+       'Italy: INFN section; Facility in Dimensions; 3,360 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IT', 'grid.470205.4', 'INFN Sezione di Genova',
+       'Italy: INFN section; Facility in Dimensions; 3,046 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IT', 'grid.470198.3', 'INFN Sezione di Catania',
+       'Italy: INFN section; Facility in Dimensions; 2,637 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IT', 'grid.470204.5', 'INFN Sezione di Firenze',
+       'Italy: INFN section; Facility in Dimensions; 2,564 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === AU: Batch 1 whitelist expansion (2026-03-08) ===
+-- CSIRO umbrella (grid.1016.6) is already Government, but sub-divisions have separate org_ids typed Facility.
+-- AIMS is a Commonwealth statutory authority typed Facility.
+UNION ALL
+SELECT 'AU', 'grid.469914.7', 'CSIRO Land and Water',
+       'Australia: CSIRO division; Facility in Dimensions; 3,227 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'AU', 'grid.417653.2', 'CSIRO Ecosystem Sciences',
+       'Australia: CSIRO division; Facility in Dimensions; 2,910 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'AU', 'grid.1046.3', 'Australian Institute of Marine Science (AIMS)',
+       'Australia: Commonwealth statutory authority; Facility in Dimensions; 2,030 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'AU', 'grid.492990.f', 'CSIRO Oceans and Atmosphere',
+       'Australia: CSIRO division; Facility in Dimensions; 1,985 pubs. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === CA: Batch 1 whitelist expansion (2026-03-08) ===
+-- FRQ-NT is typed Nonprofit while sister agencies FRQ-Santé and FRQ-SC are Government.
+-- CFI and Genome Canada are federally created/funded agencies typed Nonprofit.
+UNION ALL
+SELECT 'CA', 'grid.453081.b', 'Fonds de Recherche du Québec - Nature et Technologies (FRQ-NT)',
+       'Canada: Quebec provincial research funding agency; Nonprofit in Dimensions but sister FRQ agencies are Government; 7,627 grants, $416M. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'CA', 'grid.439998.6', 'Canada Foundation for Innovation (CFI)',
+       'Canada: federally created research infrastructure funder; Nonprofit in Dimensions; 9,307 grants, $4.4B. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'CA', 'grid.440163.4', 'Genome Canada',
+       'Canada: federally created genomics research funder; Nonprofit in Dimensions; 365 grants, $904M. Batch 1 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === CH: Tier 1 investigation (2026-03-09) ===
+-- Switzerland's four federal research institutes under the ETH Domain (Board of
+-- Swiss Federal Institutes of Technology, grid.451538.e) are all typed Facility
+-- or Education. PSI and Empa have significant patent portfolios.
+UNION ALL
+SELECT 'CH', 'grid.5991.4', 'Paul Scherrer Institute (PSI)',
+       'Switzerland: federal research institute under ETH Board; Facility in Dimensions; 207 patent families. Tier 1 investigation.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'CH', 'grid.7354.5', 'Swiss Federal Laboratories for Materials Science and Technology (Empa)',
+       'Switzerland: federal research lab under ETH Board; Education in Dimensions; 166 patent families. Tier 1 investigation.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'CH', 'grid.419754.a', 'Swiss Federal Institute for Forest, Snow and Landscape Research (WSL)',
+       'Switzerland: federal research institute under ETH Board; Facility in Dimensions; 4 patent families. Tier 1 investigation.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'CH', 'grid.418656.8', 'Swiss Federal Institute of Aquatic Science and Technology (EAWAG)',
+       'Switzerland: federal research institute under ETH Board; Facility in Dimensions; 1 patent family. Tier 1 investigation.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === DK: Tier 1 investigation (2026-03-09) ===
+-- Risø was Denmark's national nuclear/energy research lab (merged into DTU 2012).
+-- Statens Serum Institut is the Danish state institute for infectious disease control.
+UNION ALL
+SELECT 'DK', 'grid.798877.e', 'Risø National Laboratory',
+       'Denmark: national energy/nuclear research lab (merged into DTU 2012); Other in Dimensions; 104 patent families. Tier 1 investigation.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'DK', 'grid.6203.7', 'Statens Serum Institut',
+       'Denmark: state institute for infectious disease; Facility in Dimensions; 92 patent families. Tier 1 investigation.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === FI: Tier 1 investigation (2026-03-09) ===
+-- VTT is Finland's state-owned technical research center under Ministry of
+-- Economic Affairs. 1,816 patent families — by far the largest misclassified
+-- gov org among Tier 1 countries. Typed Nonprofit in Dimensions.
+UNION ALL
+SELECT 'FI', 'grid.6324.3', 'VTT Technical Research Centre of Finland',
+       'Finland: state-owned technical research center under MEAE; Nonprofit in Dimensions; 1,816 patent families. Tier 1 investigation.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'FI', 'grid.434062.7', 'Finnish Geospatial Research Institute',
+       'Finland: national geospatial institute under NLS; Facility in Dimensions; 6 patent families. Tier 1 investigation.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'FI', 'grid.6975.d', 'Finnish Institute of Occupational Health',
+       'Finland: government occupational health institute; Facility in Dimensions; 2 patent families. Tier 1 investigation.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === NL: Batch 2 whitelist expansion (2026-03-09) ===
+-- TNO is Netherlands Organisation for Applied Scientific Research, established
+-- by law (TNO Act). Typed Company in Dimensions but is a public-law org.
+-- ECN (Energy Research Centre) merged into TNO in 2018.
+UNION ALL
+SELECT 'NL', 'grid.4858.1', 'Nederlandse Organisatie voor Toegepast Natuurwetenschappelijk Onderzoek (TNO)',
+       'Netherlands: public-law applied research org (TNO Act); Company in Dimensions; 2,083 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'NL', 'grid.796792.4', 'TNO Institute of Industrial Technology',
+       'Netherlands: TNO subsidiary; Company in Dimensions; 183 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'NL', 'grid.7861.8', 'Energy Research Centre of the Netherlands (ECN)',
+       'Netherlands: national energy research centre (merged into TNO 2018); Facility in Dimensions; 261 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === SE: Batch 2 whitelist expansion (2026-03-09) ===
+-- RISE is Sweden's state-owned research institute network.
+UNION ALL
+SELECT 'SE', 'grid.450998.9', 'RISE Research Institutes of Sweden AB',
+       'Sweden: state-owned research institute; Education in Dimensions; 132 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === ES: Batch 2 whitelist expansion (2026-03-09) ===
+-- CSIC umbrella is already Government. CIEMAT and CNIO are government research centres typed Facility.
+UNION ALL
+SELECT 'ES', 'grid.420019.e', 'Centro de Investigaciones Energeticas, Medioambientales y Tecnologicas (CIEMAT)',
+       'Spain: national energy/environment research centre; Facility in Dimensions; 91 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'ES', 'grid.7719.8', 'Spanish National Cancer Research Centre (CNIO)',
+       'Spain: national cancer research centre; Facility in Dimensions; 53 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === IL: Batch 2 whitelist expansion (2026-03-09) ===
+-- Israel defense and government research entities.
+UNION ALL
+SELECT 'IL', 'grid.419290.7', 'Israel Institute for Biological Research (IIBR)',
+       'Israel: government defense biological research; Facility in Dimensions; 41 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IL', 'grid.705479.8', 'Israel Military Industries Ltd (IMI)',
+       'Israel: state-owned defense manufacturer (merged into Elbit 2018); Other in Dimensions; 74 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'IL', 'grid.580564.a', 'Defence Israel',
+       'Israel: government defense entity; Other in Dimensions; 43 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === NO: Batch 2 whitelist expansion (2026-03-09) ===
+-- IFE is Norway's national energy research institute. FFI is the Norwegian Defence Research Establishment.
+UNION ALL
+SELECT 'NO', 'grid.12112.31', 'Institute for Energy Technology (IFE)',
+       'Norway: national energy research institute; Facility in Dimensions; 87 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'NO', 'grid.450834.e', 'Forsvarets Forskningsinstitutt (FFI)',
+       'Norway: Norwegian Defence Research Establishment; Facility in Dimensions; 48 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === PL: Batch 2 whitelist expansion (2026-03-09) ===
+-- Poland has many government research institutes typed Facility/Education/Other.
+-- Polish Academy of Sciences (PAS) umbrella is already Government, but individual
+-- PAS institutes are typed Facility. Many others are now part of the Lukasiewicz
+-- Research Network (government). All entries below have >= 100 patent families.
+UNION ALL
+SELECT 'PL', 'grid.424985.6', 'Industrial Chemistry Research Institute',
+       'Poland: government research institute; Facility in Dimensions; 754 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.460358.c', 'Institute of Heavy Organic Synthesis Blachownia',
+       'Poland: government research institute; Facility in Dimensions; 574 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.423527.5', 'Central Mining Institute',
+       'Poland: government research institute; Facility in Dimensions; 512 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.460603.7', 'Institute for Sustainable Technologies',
+       'Poland: Lukasiewicz network institute; Facility in Dimensions; 481 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.460397.f', 'Tele and Radio Research Institute',
+       'Poland: government research institute; Facility in Dimensions; 443 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.4612.1', 'Institute of Electron Technology',
+       'Poland: government research institute; Facility in Dimensions; 338 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.425049.e', 'Institute of Non-Ferrous Metals',
+       'Poland: government research institute; Facility in Dimensions; 332 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.425678.a', 'Industrial Research Institute for Automation and Measurements',
+       'Poland: government research institute; Company in Dimensions; 323 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.437002.2', 'Oil and Gas Institute - National Research Institute',
+       'Poland: national research institute; Facility in Dimensions; 318 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.418598.9', 'Instytut Farmaceutyczny',
+       'Poland: pharmaceutical research institute; Facility in Dimensions; 237 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.435369.e', 'Lukasiewicz Research Network - Institute of Precision Mechanics',
+       'Poland: Lukasiewicz network institute; Facility in Dimensions; 217 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.425118.b', 'Institute of Natural Fibres and Medicinal Plants',
+       'Poland: government research institute; Facility in Dimensions; 214 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.460443.1', 'Institute of Industrial Organic Chemistry',
+       'Poland: government research institute; Facility in Dimensions; 172 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.424613.6', 'Lukasiewicz Research Network - Krakow Institute of Technology',
+       'Poland: Lukasiewicz network institute; Facility in Dimensions; 165 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.435475.4', 'Air Force Institute of Technology',
+       'Poland: military research institute; Facility in Dimensions; 150 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.425290.8', 'Institute of Physical Chemistry, Polish Academy of Sciences',
+       'Poland: PAS research institute; Facility in Dimensions; 148 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.434545.7', 'Electrotechnical Institute',
+       'Poland: government research institute; Facility in Dimensions; 139 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.435444.6', 'Road and Bridge Research Institute',
+       'Poland: government research institute; Facility in Dimensions; 106 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.460634.3', 'Industrial Institute of Agricultural Engineering',
+       'Poland: government research institute; Education in Dimensions; 106 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.435139.9', 'Institute of Biopolymers and Chemical Fibres',
+       'Poland: government research institute; Facility in Dimensions; 105 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.425113.0', 'Institute of Electronic Materials Technology',
+       'Poland: government research institute; Facility in Dimensions; 104 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.418825.2', 'Institute of Biochemistry and Biophysics, Polish Academy of Sciences',
+       'Poland: PAS research institute; Education in Dimensions; 100 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'PL', 'grid.425105.7', 'Lukasiewicz Research Network - Institute of Welding',
+       'Poland: Lukasiewicz network institute; Facility in Dimensions; 100 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+
+-- === HU: Batch 2 whitelist expansion (2026-03-09) ===
+-- Hungarian Academy of Sciences (MTA) umbrella is already Government, but individual
+-- MTA institutes are typed Other. Names contain "Magyar Tudomanyos Akademia".
+UNION ALL
+SELECT 'HU', 'grid.695567.e', 'Magyar Tudomanyos Akademia Kozponti Kemiai Kutato Intezet',
+       'Hungary: MTA Central Chemical Research Institute; Other in Dimensions; 63 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'HU', 'grid.418331.c', 'Biological Research Centre',
+       'Hungary: HUN-REN (formerly MTA) biological research centre; Facility in Dimensions; 50 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'HU', 'grid.417760.3', 'Agricultural Institute',
+       'Hungary: government agricultural research institute; Facility in Dimensions; 58 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'HU', 'grid.688709.8', 'Magyar Tudomanyos Akademia Muszaki Fizikai Kutato Intezete',
+       'Hungary: MTA Technical Physics Research Institute; Other in Dimensions; 30 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
+SELECT 'HU', 'grid.736071.4', 'Magyar Tudomanyos Akademia Kozponti Fizikai Kutato Intezet',
+       'Hungary: MTA Central Physics Research Institute (KFKI); Other in Dimensions; 26 patent families. Batch 2 audit.',
+       CAST(NULL AS DATE), CAST(NULL AS DATE)

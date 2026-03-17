@@ -1,0 +1,22 @@
+config {
+  type: "declaration",
+  schema: "rd_ref",
+  name: "external_jp_kaken_linkage",
+  description: "KAKEN (Japan) -> Dimensions pub_id crosswalk. Manually uploaded table containing accepted matches from link_kaken_publications.py. All KAKEN projects are JSPS/MEXT government-funded by construction."
+}
+
+-- This is a declaration pointing to a manually-uploaded BigQuery table.
+-- To create the table, upload the linkage CSV to:
+--   dimensionsdataextracts.rd_ref.external_jp_kaken_linkage
+--
+-- Required columns:
+--   dim_pub_id       STRING  (Dimensions publication ID)
+--   source_name      STRING  ('kaken')
+--   source_id        STRING  (KAKEN project number)
+--   country_code     STRING  ('JP')
+--   match_method     STRING  ('doi' or 'title_year')
+--   match_score      FLOAT64 (match confidence score)
+--   is_gov_funded    STRING  ('TRUE' -- always TRUE for KAKEN)
+--   is_gov_owned     STRING  ('FALSE' -- KAKEN is funding only, not ownership)
+--
+-- Source script: Empirics/code/link_kaken_publications.py

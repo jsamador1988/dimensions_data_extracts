@@ -1,0 +1,19 @@
+config {
+  type: "declaration",
+  schema: "rd_ref",
+  name: "external_kr_ntis_linkage",
+  description: "NTIS (Korea) → Dimensions family_id crosswalk via Google Patents intermediary (Strategy E). Manually uploaded table containing high-confidence matches (combined_score >= 0.7, rank = 1). Source: ntis_gp_dim_crosswalk.csv filtered to non-null dim_family_id."
+}
+
+-- This is a declaration pointing to a manually-uploaded BigQuery table.
+-- To create the table, upload the filtered crosswalk CSV to:
+--   dimensionsdataextracts.rd_ref.external_kr_ntis_linkage
+--
+-- Required columns:
+--   dim_family_id     INT64   (Dimensions patent family ID)
+--   ntis_agency       STRING  (NTIS filing/registration agency, Korean)
+--   ntis_year         INT64   (NTIS year_of_output)
+--   combined_score    FLOAT64 (title match score, all >= 0.7)
+--
+-- Row count: ~11,600 unique family_ids
+-- Source script: Empirics/code/link_google_patents_kr.py (Strategy E)
