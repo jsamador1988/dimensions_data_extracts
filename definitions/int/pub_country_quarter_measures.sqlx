@@ -126,7 +126,7 @@ gov_ext AS (
     CAST(NULL AS DATE) AS quarter,
     CAST(NULL AS FLOAT64) AS pub_govfund_external_ctq,
     CAST(NULL AS INT64) AS pub_govfund_external_whole_ctq
-  WHERE FALSE
+  FROM UNNEST([]) AS empty
 ),
 
 -- External national source: government-owned publications (Cristin only)
@@ -137,7 +137,7 @@ gov_owned_ext AS (
     CAST(NULL AS DATE) AS quarter,
     CAST(NULL AS FLOAT64) AS pub_gov_owned_external_ctq,
     CAST(NULL AS INT64) AS pub_gov_owned_external_whole_ctq
-  WHERE FALSE
+  FROM UNNEST([]) AS empty
 )
 
 SELECT
