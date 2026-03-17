@@ -259,24 +259,25 @@ country_quarter_binary AS (
 )
 
 SELECT
-  r.country_code,
-  r.quarter,
-  r.pat_private_total_ctq,
-  r.pat_private_with_cites_ctq,
-  r.pat_private_cite_gov_raw_ctq,
+  bin.country_code,
+  bin.quarter,
+  -- Continuous citation measures (from family_share subset — 0 when no citations resolved)
+  COALESCE(r.pat_private_total_ctq, 0.0) AS pat_private_total_ctq,
+  COALESCE(r.pat_private_with_cites_ctq, 0.0) AS pat_private_with_cites_ctq,
+  COALESCE(r.pat_private_cite_gov_raw_ctq, 0.0) AS pat_private_cite_gov_raw_ctq,
   COALESCE(n.pat_private_cite_gov_norm_ctq, 0.0) AS pat_private_cite_gov_norm_ctq,
   -- Binary citation decomposition (fractional)
-  COALESCE(bin.pat_private_citing_gov_ctq, 0.0) AS pat_private_citing_gov_ctq,
-  COALESCE(bin.pat_private_not_citing_gov_ctq, 0.0) AS pat_private_not_citing_gov_ctq,
+  bin.pat_private_citing_gov_ctq,
+  bin.pat_private_not_citing_gov_ctq,
   -- Whole count variants
-  COALESCE(bin.pat_private_citing_gov_whole_ctq, 0) AS pat_private_citing_gov_whole_ctq,
-  COALESCE(bin.pat_private_not_citing_gov_whole_ctq, 0) AS pat_private_not_citing_gov_whole_ctq,
-  COALESCE(bin.pat_private_total_whole_ctq, 0) AS pat_private_total_whole_ctq,
-  COALESCE(bin.pat_private_with_cites_whole_ctq, 0) AS pat_private_with_cites_whole_ctq
-FROM country_quarter_raw r
+  bin.pat_private_citing_gov_whole_ctq,
+  bin.pat_private_not_citing_gov_whole_ctq,
+  bin.pat_private_total_whole_ctq,
+  bin.pat_private_with_cites_whole_ctq
+FROM country_quarter_binary bin
+LEFT JOIN country_quarter_raw r
+  ON r.country_code = bin.country_code
+ AND r.quarter = bin.quarter
 LEFT JOIN country_quarter_norm n
-  ON n.country_code = r.country_code
- AND n.quarter = r.quarter
-LEFT JOIN country_quarter_binary bin
-  ON bin.country_code = r.country_code
- AND bin.quarter = r.quarter
+  ON n.country_code = bin.country_code
+ AND n.quarter = bin.quarter
