@@ -99,12 +99,18 @@ priv_inst AS (
 ),
 
 -- NTIS external linkage (Korea only)
+-- Stubbed out: the external_kr_ntis_linkage table is not uploaded to BQ,
+-- so pat_govfund_ntis_fc cannot be built.  This empty CTE ensures
+-- pat_country_quarter_measures is not skipped.  The LEFT JOIN below
+-- produces NULLs -> COALESCE to 0.  Re-enable ${ref} once NTIS table
+-- is uploaded.
 gov_ntis AS (
-  SELECT country_code, quarter,
-    SUM(w_domestic) AS pat_govfund_ntis_ctq,
-    COUNT(DISTINCT family_id) AS pat_govfund_ntis_whole_ctq
-  FROM ${ref("rd_int", "pat_govfund_ntis_fc")}
-  GROUP BY country_code, quarter
+  SELECT
+    CAST(NULL AS STRING) AS country_code,
+    CAST(NULL AS DATE) AS quarter,
+    CAST(NULL AS FLOAT64) AS pat_govfund_ntis_ctq,
+    CAST(NULL AS INT64) AS pat_govfund_ntis_whole_ctq
+  WHERE FALSE
 ),
 
 -- Private patents citing government-produced research
