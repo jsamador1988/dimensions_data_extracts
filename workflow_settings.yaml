@@ -35,3 +35,11 @@ vars:
 
   # title tokenization
   inst_fuzzy_min_title_token_len: "3"
+
+  # --- Enhanced fuzzy scoring (abstract Jaccard blend) ---
+  inst_fuzzy_base_weight: "0.7"
+  inst_fuzzy_abstract_weight: "0.3"
+  inst_fuzzy_max_abstract_tokens: "200"
+
+  # --- Tier 2 RID Top-K filtering ---
+  rid_topk: "3"

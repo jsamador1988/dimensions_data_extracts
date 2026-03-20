@@ -3,7 +3,7 @@ config {
   schema: "rd_int",
   name: "pat_privfund_rid_fc",
   tags: ["int", "patents"],
-  description: "Patent families matched to domestic NON-government-funded grants by inventor researcher_id, with FoR overlap/Jaccard (FoR4 + FoR2) and a configurable post-grant time window. Subset of pat_family_country_base excluding government-owned families."
+  description: "Patent families matched to domestic NON-government-funded grants by inventor researcher_id, with FoR overlap/Jaccard (FoR4 + FoR2), abstract Jaccard scoring, configurable Top-K filtering, and a configurable post-grant time window. Subset of pat_family_country_base excluding government-owned families."
 }
 
 WITH base AS (
@@ -33,9 +33,14 @@ grant_rids AS (
 ),
 
 grants AS (
-  SELECT country_code, grant_id, start_dt, grant_for4, grant_for2
+  SELECT country_code, grant_id, start_dt, grant_for4, grant_for2, grant_abstract_tokens
   FROM ${ref("rd_stage", "grants_nongov_core")}
   WHERE start_dt IS NOT NULL
+),
+
+pat_feat AS (
+  SELECT family_id, pat_abstract_tokens
+  FROM ${ref("rd_stage", "patent_family_text_features")}
 ),
 
 pairs AS (
@@ -74,7 +79,29 @@ pairs AS (
       SELECT DISTINCT z
       FROM UNNEST(ARRAY_CONCAT(COALESCE(b.for2_codes, CAST([] AS ARRAY<STRING>)), COALESCE(g.grant_for2, CAST([] AS ARRAY<STRING>)))) z
       WHERE z IS NOT NULL
-    )) AS union_for2
+    )) AS union_for2,
+
+    -- Abstract Jaccard (inline computation)
+    SAFE_DIVIDE(
+      ARRAY_LENGTH(ARRAY(
+        SELECT DISTINCT x
+        FROM UNNEST(COALESCE(pf.pat_abstract_tokens, CAST([] AS ARRAY<STRING>))) x
+        INTERSECT DISTINCT
+        SELECT DISTINCT y
+        FROM UNNEST(COALESCE(g.grant_abstract_tokens, CAST([] AS ARRAY<STRING>))) y
+      )),
+      NULLIF(
+        ARRAY_LENGTH(ARRAY(
+          SELECT DISTINCT z
+          FROM UNNEST(ARRAY_CONCAT(
+            COALESCE(pf.pat_abstract_tokens, CAST([] AS ARRAY<STRING>)),
+            COALESCE(g.grant_abstract_tokens, CAST([] AS ARRAY<STRING>))
+          )) z
+          WHERE z IS NOT NULL
+        )),
+        0
+      )
+    ) AS jaccard_abstract
 
   FROM base b
   JOIN pat_rids pr
@@ -85,6 +112,8 @@ pairs AS (
   JOIN grants g
     ON g.grant_id = gr.grant_id
    AND g.country_code = b.country_code
+  LEFT JOIN pat_feat pf
+    ON pf.family_id = b.family_id
 
   -- Time window: family application date must be within N years after grant start
   WHERE b.family_app_dt >= g.start_dt
@@ -92,6 +121,30 @@ pairs AS (
       g.start_dt,
       INTERVAL CAST(${(dataform.projectConfig.vars.grant_match_window_years || 10)} AS INT64) YEAR
     )
+),
+
+-- FoR filter (same as original)
+pairs_filtered AS (
+  SELECT *
+  FROM pairs
+  WHERE (
+    (overlap_for4 >= CAST(${(dataform.projectConfig.vars.min_for4_overlap || 1)} AS INT64)
+     AND SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
+    OR
+    (overlap_for2 >= 1
+     AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
+  )
+),
+
+-- Top-K by abstract Jaccard (0 = disabled, keeps all)
+pairs_ranked AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (
+      PARTITION BY family_id, country_code
+      ORDER BY COALESCE(jaccard_abstract, 0.0) DESC
+    ) AS rn_abstract
+  FROM pairs_filtered
 )
 
 SELECT
@@ -102,15 +155,11 @@ SELECT
 
   COUNT(DISTINCT grant_id) AS matched_priv_grants,
   MAX(SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0))) AS max_jaccard_for4,
-  MAX(SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0))) AS max_jaccard_for2
+  MAX(SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0))) AS max_jaccard_for2,
+  MAX(COALESCE(jaccard_abstract, 0.0)) AS max_abstract_jaccard
 
-FROM pairs
-WHERE (
-  (overlap_for4 >= CAST(${(dataform.projectConfig.vars.min_for4_overlap || 1)} AS INT64)
-   AND SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
-  OR
-  (overlap_for2 >= 1
-   AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
-)
+FROM pairs_ranked
+WHERE CAST(${(dataform.projectConfig.vars.rid_topk || 3)} AS INT64) = 0
+   OR rn_abstract <= CAST(${(dataform.projectConfig.vars.rid_topk || 3)} AS INT64)
 GROUP BY family_id, country_code, quarter, w_domestic
 HAVING matched_priv_grants > 0

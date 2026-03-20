@@ -3,7 +3,7 @@ config {
   schema: "rd_stage",
   name: "pub_text_features",
   tags: ["stage", "publications"],
-  description: "Phase-1 fuzzy features for publications: title tokens + top concepts (using concepts_relevant where available). Restricted to the pub_core universe."
+  description: "Phase-1 fuzzy features for publications: title tokens + top concepts + abstract tokens (using concepts_relevant where available). Restricted to the pub_core universe."
 }
 
 WITH core AS (
@@ -15,6 +15,7 @@ raw AS (
   SELECT
     p.id AS pub_id,
     p.title.preferred AS pub_title,
+    p.abstract.preferred AS pub_abstract,
 
     -- Use concepts_relevant when present; fallback to concepts
     IFNULL(
@@ -70,6 +71,29 @@ SELECT
     )
     ORDER BY rel DESC
     LIMIT CAST(${(dataform.projectConfig.vars.inst_fuzzy_max_concepts_pub || 20)} AS INT64)
-  ) AS pub_concepts
+  ) AS pub_concepts,
+
+  -- Abstract tokens for enhanced fuzzy scoring (Phase 2)
+  ARRAY(
+    SELECT DISTINCT tok
+    FROM UNNEST(
+      SPLIT(
+        REGEXP_REPLACE(LOWER(IFNULL(pub_abstract, "")), r"[^\p{L}\p{N}]+", " "),
+        " "
+      )
+    ) AS tok
+    WHERE tok IS NOT NULL
+      AND tok != ""
+      AND LENGTH(tok) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_token_len || 3)} AS INT64)
+      AND NOT REGEXP_CONTAINS(tok, r"^\d+$")
+      AND tok NOT IN UNNEST([
+        "a","an","and","are","as","at","be","been","being","by","for","from","has","have","had",
+        "in","into","is","it","its","of","on","or","that","the","their","this","to","was","were",
+        "with","without","via","using","use","used","based","approach","approaches","method","methods",
+        "study","analysis","data","model","models","system","systems","development","design","project",
+        "research","program","programme","grant","funded","funding","proposal","investigation"
+      ])
+    LIMIT CAST(${(dataform.projectConfig.vars.inst_fuzzy_max_abstract_tokens || 200)} AS INT64)
+  ) AS pub_abstract_tokens
 
 FROM raw

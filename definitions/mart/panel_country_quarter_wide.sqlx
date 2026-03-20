@@ -3,7 +3,7 @@ config {
   schema: "rd_mart",
   name: "panel_country_quarter_wide",
   tags: ["mart"],
-  description: "Balanced country x quarter panel combining patent and publication innovation decompositions (domestic totals, ownership, overlapping and mutually-exclusive funding proxies for government and non-government domestic funders, private->government citation-based measures, and whole-count unweighted variants for all columns).",
+  description: "Balanced country x quarter panel combining patent and publication innovation decompositions (domestic totals, ownership, overlapping and mutually-exclusive funding proxies for government and non-government domestic funders, and private->government citation-based measures).",
   bigquery: {
     partitionBy: "quarter",
     clusterBy: ["country_code"]
@@ -40,9 +40,9 @@ SELECT
   grid.country_name,
   grid.quarter,
 
-  -- =============================================
-  -- Patents (fractional weighted)
-  -- =============================================
+  -- -----------------------------
+  -- Patents
+  -- -----------------------------
   COALESCE(pat.pat_total_ctq, 0.0) AS pat_total_ctq,
   COALESCE(pat.pat_gov_owned_ctq, 0.0) AS pat_gov_owned_ctq,
   COALESCE(pat.pat_private_total_ctq, 0.0) AS pat_private_total_ctq,
@@ -71,42 +71,9 @@ SELECT
   -- NTIS external linkage (Korea only)
   COALESCE(pat.pat_govfund_ntis_ctq, 0.0) AS pat_govfund_ntis_ctq,
 
-  -- =============================================
-  -- Patents (whole-count, unweighted)
-  -- =============================================
-  COALESCE(pat.pat_total_whole_ctq, 0) AS pat_total_whole_ctq,
-  COALESCE(pat.pat_gov_owned_whole_ctq, 0) AS pat_gov_owned_whole_ctq,
-  COALESCE(pat.pat_private_total_whole_ctq, 0) AS pat_private_total_whole_ctq,
-
-  -- Overlapping government funding proxies (whole count)
-  COALESCE(pat.pat_govfund_direct_whole_ctq, 0) AS pat_govfund_direct_whole_ctq,
-  COALESCE(pat.pat_govfund_rid_whole_ctq, 0) AS pat_govfund_rid_whole_ctq,
-  COALESCE(pat.pat_govfund_inst_whole_ctq, 0) AS pat_govfund_inst_whole_ctq,
-
-  -- Mutually-exclusive government funding tiers (whole count)
-  COALESCE(pat.pat_govfund_direct_excl_whole_ctq, 0) AS pat_govfund_direct_excl_whole_ctq,
-  COALESCE(pat.pat_govfund_rid_only_excl_whole_ctq, 0) AS pat_govfund_rid_only_excl_whole_ctq,
-  COALESCE(pat.pat_govfund_inst_only_excl_whole_ctq, 0) AS pat_govfund_inst_only_excl_whole_ctq,
-  COALESCE(pat.pat_govfund_any_excl_whole_ctq, 0) AS pat_govfund_any_excl_whole_ctq,
-
-  -- Non-government domestic-funder analogs (whole count)
-  COALESCE(pat.pat_privfund_direct_whole_ctq, 0) AS pat_privfund_direct_whole_ctq,
-  COALESCE(pat.pat_privfund_rid_whole_ctq, 0) AS pat_privfund_rid_whole_ctq,
-  COALESCE(pat.pat_privfund_inst_whole_ctq, 0) AS pat_privfund_inst_whole_ctq,
-
-  -- Citation measures (whole count and binary decomposition)
-  COALESCE(pat.pat_private_with_cites_whole_ctq, 0) AS pat_private_with_cites_whole_ctq,
-  COALESCE(pat.pat_private_citing_gov_ctq, 0.0) AS pat_private_citing_gov_ctq,
-  COALESCE(pat.pat_private_not_citing_gov_ctq, 0.0) AS pat_private_not_citing_gov_ctq,
-  COALESCE(pat.pat_private_citing_gov_whole_ctq, 0) AS pat_private_citing_gov_whole_ctq,
-  COALESCE(pat.pat_private_not_citing_gov_whole_ctq, 0) AS pat_private_not_citing_gov_whole_ctq,
-
-  -- NTIS external linkage (whole count)
-  COALESCE(pat.pat_govfund_ntis_whole_ctq, 0) AS pat_govfund_ntis_whole_ctq,
-
-  -- =============================================
-  -- Publications (fractional weighted)
-  -- =============================================
+  -- -----------------------------
+  -- Publications
+  -- -----------------------------
   COALESCE(pub.pub_total_ctq, 0.0) AS pub_total_ctq,
   COALESCE(pub.pub_gov_owned_ctq, 0.0) AS pub_gov_owned_ctq,
   COALESCE(pub.pub_private_total_ctq, 0.0) AS pub_private_total_ctq,
@@ -134,41 +101,7 @@ SELECT
 
   -- External national source linkage (non-zero for NO, JP, NL only)
   COALESCE(pub.pub_govfund_external_ctq, 0.0) AS pub_govfund_external_ctq,
-  COALESCE(pub.pub_gov_owned_external_ctq, 0.0) AS pub_gov_owned_external_ctq,
-
-  -- =============================================
-  -- Publications (whole-count, unweighted)
-  -- =============================================
-  COALESCE(pub.pub_total_whole_ctq, 0) AS pub_total_whole_ctq,
-  COALESCE(pub.pub_gov_owned_whole_ctq, 0) AS pub_gov_owned_whole_ctq,
-  COALESCE(pub.pub_private_total_whole_ctq, 0) AS pub_private_total_whole_ctq,
-
-  -- Overlapping government funding proxies (whole count)
-  COALESCE(pub.pub_govfund_direct_whole_ctq, 0) AS pub_govfund_direct_whole_ctq,
-  COALESCE(pub.pub_govfund_rid_whole_ctq, 0) AS pub_govfund_rid_whole_ctq,
-  COALESCE(pub.pub_govfund_inst_whole_ctq, 0) AS pub_govfund_inst_whole_ctq,
-
-  -- Mutually-exclusive government funding tiers (whole count)
-  COALESCE(pub.pub_govfund_direct_excl_whole_ctq, 0) AS pub_govfund_direct_excl_whole_ctq,
-  COALESCE(pub.pub_govfund_rid_only_excl_whole_ctq, 0) AS pub_govfund_rid_only_excl_whole_ctq,
-  COALESCE(pub.pub_govfund_inst_only_excl_whole_ctq, 0) AS pub_govfund_inst_only_excl_whole_ctq,
-  COALESCE(pub.pub_govfund_any_excl_whole_ctq, 0) AS pub_govfund_any_excl_whole_ctq,
-
-  -- Non-government domestic-funder analogs (whole count)
-  COALESCE(pub.pub_privfund_direct_whole_ctq, 0) AS pub_privfund_direct_whole_ctq,
-  COALESCE(pub.pub_privfund_rid_whole_ctq, 0) AS pub_privfund_rid_whole_ctq,
-  COALESCE(pub.pub_privfund_inst_whole_ctq, 0) AS pub_privfund_inst_whole_ctq,
-
-  -- Citation measures (whole count and binary decomposition)
-  COALESCE(pub.pub_private_with_cites_whole_ctq, 0) AS pub_private_with_cites_whole_ctq,
-  COALESCE(pub.pub_private_citing_gov_ctq, 0.0) AS pub_private_citing_gov_ctq,
-  COALESCE(pub.pub_private_not_citing_gov_ctq, 0.0) AS pub_private_not_citing_gov_ctq,
-  COALESCE(pub.pub_private_citing_gov_whole_ctq, 0) AS pub_private_citing_gov_whole_ctq,
-  COALESCE(pub.pub_private_not_citing_gov_whole_ctq, 0) AS pub_private_not_citing_gov_whole_ctq,
-
-  -- External national sources (whole count)
-  COALESCE(pub.pub_govfund_external_whole_ctq, 0) AS pub_govfund_external_whole_ctq,
-  COALESCE(pub.pub_gov_owned_external_whole_ctq, 0) AS pub_gov_owned_external_whole_ctq
+  COALESCE(pub.pub_gov_owned_external_ctq, 0.0) AS pub_gov_owned_external_ctq
 
 FROM grid
 LEFT JOIN pat
