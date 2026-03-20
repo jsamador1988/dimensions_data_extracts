@@ -3,7 +3,7 @@ config {
   schema: "rd_int",
   name: "pub_private_cite_gov_ctq",
   tags: ["int", "publications"],
-  description: "Country x quarter measures for private publications citing domestic-government publications. Produces raw and quarter x FoR4-normalized fractional sums, plus binary citation decomposition (citing >= 1 gov doc vs not) in both fractional and whole-count variants. (Outgoing citations to patents are not available in the publications schema; this measure uses publication->publication references only.)"
+  description: "Country×quarter measures for private publications citing domestic-government publications. Produces both raw and quarter×FoR4-normalized fractional sums. (Outgoing citations to patents are not available in the publications schema; this measure uses publication→publication references only.)"
 }
 
 WITH base AS (
@@ -147,30 +147,6 @@ country_quarter_norm AS (
     ON b.quarter = f.quarter
    AND b.for4 = f.for4
   GROUP BY f.country_code, f.quarter
-),
-
--- ------------------------------------------------------------
--- Binary citation decomposition: LEFT JOIN from base to pub_share
--- to capture publications with zero citations (not in pub_share)
--- ------------------------------------------------------------
-country_quarter_binary AS (
-  SELECT
-    b.country_code,
-    b.quarter,
-    -- Binary fractional: private pubs citing >= 1 gov doc
-    SUM(IF(COALESCE(ps.n_cites_gov, 0) > 0, b.w_aff, 0.0)) AS pub_private_citing_gov_ctq,
-    -- Binary fractional: private pubs citing 0 gov docs
-    SUM(IF(COALESCE(ps.n_cites_gov, 0) = 0, b.w_aff, 0.0)) AS pub_private_not_citing_gov_ctq,
-    -- Whole count variants
-    COUNT(DISTINCT IF(COALESCE(ps.n_cites_gov, 0) > 0, b.pub_id, NULL)) AS pub_private_citing_gov_whole_ctq,
-    COUNT(DISTINCT IF(COALESCE(ps.n_cites_gov, 0) = 0, b.pub_id, NULL)) AS pub_private_not_citing_gov_whole_ctq,
-    -- Whole count: total private and with-cites
-    COUNT(DISTINCT b.pub_id) AS pub_private_total_whole_ctq,
-    COUNT(DISTINCT IF(COALESCE(ps.n_cites_total, 0) > 0, b.pub_id, NULL)) AS pub_private_with_cites_whole_ctq
-  FROM base b
-  LEFT JOIN pub_share ps
-    ON ps.pub_id = b.pub_id AND ps.country_code = b.country_code
-  GROUP BY b.country_code, b.quarter
 )
 
 SELECT
@@ -179,15 +155,7 @@ SELECT
   t.pub_private_total_ctq,
   COALESCE(r.pub_private_with_cites_ctq, 0.0) AS pub_private_with_cites_ctq,
   COALESCE(r.pub_private_cite_gov_raw_ctq, 0.0) AS pub_private_cite_gov_raw_ctq,
-  COALESCE(n.pub_private_cite_gov_norm_ctq, 0.0) AS pub_private_cite_gov_norm_ctq,
-  -- Binary citation decomposition (fractional)
-  COALESCE(bin.pub_private_citing_gov_ctq, 0.0) AS pub_private_citing_gov_ctq,
-  COALESCE(bin.pub_private_not_citing_gov_ctq, 0.0) AS pub_private_not_citing_gov_ctq,
-  -- Whole count variants
-  COALESCE(bin.pub_private_citing_gov_whole_ctq, 0) AS pub_private_citing_gov_whole_ctq,
-  COALESCE(bin.pub_private_not_citing_gov_whole_ctq, 0) AS pub_private_not_citing_gov_whole_ctq,
-  COALESCE(bin.pub_private_total_whole_ctq, 0) AS pub_private_total_whole_ctq,
-  COALESCE(bin.pub_private_with_cites_whole_ctq, 0) AS pub_private_with_cites_whole_ctq
+  COALESCE(n.pub_private_cite_gov_norm_ctq, 0.0) AS pub_private_cite_gov_norm_ctq
 FROM base_totals t
 LEFT JOIN country_quarter_raw r
   ON r.country_code = t.country_code
@@ -195,6 +163,3 @@ LEFT JOIN country_quarter_raw r
 LEFT JOIN country_quarter_norm n
   ON n.country_code = t.country_code
  AND n.quarter = t.quarter
-LEFT JOIN country_quarter_binary bin
-  ON bin.country_code = t.country_code
- AND bin.quarter = t.quarter

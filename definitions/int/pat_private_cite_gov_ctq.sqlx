@@ -3,7 +3,7 @@ config {
   schema: "rd_int",
   name: "pat_private_cite_gov_ctq",
   tags: ["int", "patents"],
-  description: "Country x quarter measures for private patents citing domestic-government documents (patents or publications). Produces raw and quarter x IPCR-normalized fractional sums, plus binary citation decomposition (citing >= 1 gov doc vs not) in both fractional and whole-count variants."
+  description: "Country×quarter measures for private patents citing domestic-government documents (patents or publications). Produces both raw and quarter×IPCR-normalized fractional sums."
 }
 
 -- Government documents for country c are defined as:
@@ -159,7 +159,7 @@ gov_edges AS (
 ),
 
 -- ------------------------------------------------------------
--- Family x country citation shares
+-- Family×country citation shares
 -- ------------------------------------------------------------
 family_share AS (
   SELECT
@@ -232,52 +232,16 @@ country_quarter_norm AS (
     ON b.quarter = f.quarter
    AND b.ipcr_code = f.ipcr_code
   GROUP BY f.country_code, f.quarter
-),
-
--- ------------------------------------------------------------
--- Binary citation decomposition: LEFT JOIN from base to family_share
--- to capture families with zero citations (not in family_share)
--- ------------------------------------------------------------
-country_quarter_binary AS (
-  SELECT
-    b.country_code,
-    b.quarter,
-    -- Binary fractional: private patents citing >= 1 gov doc
-    SUM(IF(COALESCE(fs.n_cites_gov, 0) > 0, b.w_domestic, 0.0)) AS pat_private_citing_gov_ctq,
-    -- Binary fractional: private patents citing 0 gov docs
-    SUM(IF(COALESCE(fs.n_cites_gov, 0) = 0, b.w_domestic, 0.0)) AS pat_private_not_citing_gov_ctq,
-    -- Whole count variants
-    COUNT(DISTINCT IF(COALESCE(fs.n_cites_gov, 0) > 0, b.family_id, NULL)) AS pat_private_citing_gov_whole_ctq,
-    COUNT(DISTINCT IF(COALESCE(fs.n_cites_gov, 0) = 0, b.family_id, NULL)) AS pat_private_not_citing_gov_whole_ctq,
-    -- Whole count: total private and with-cites
-    COUNT(DISTINCT b.family_id) AS pat_private_total_whole_ctq,
-    COUNT(DISTINCT IF(COALESCE(fs.n_cites_total, 0) > 0, b.family_id, NULL)) AS pat_private_with_cites_whole_ctq
-  FROM base b
-  LEFT JOIN family_share fs
-    ON fs.family_id = b.family_id AND fs.country_code = b.country_code
-  GROUP BY b.country_code, b.quarter
 )
 
 SELECT
-  bin.country_code,
-  bin.quarter,
-  -- Continuous citation measures (from family_share subset — 0 when no citations resolved)
-  COALESCE(r.pat_private_total_ctq, 0.0) AS pat_private_total_ctq,
-  COALESCE(r.pat_private_with_cites_ctq, 0.0) AS pat_private_with_cites_ctq,
-  COALESCE(r.pat_private_cite_gov_raw_ctq, 0.0) AS pat_private_cite_gov_raw_ctq,
-  COALESCE(n.pat_private_cite_gov_norm_ctq, 0.0) AS pat_private_cite_gov_norm_ctq,
-  -- Binary citation decomposition (fractional)
-  bin.pat_private_citing_gov_ctq,
-  bin.pat_private_not_citing_gov_ctq,
-  -- Whole count variants
-  bin.pat_private_citing_gov_whole_ctq,
-  bin.pat_private_not_citing_gov_whole_ctq,
-  bin.pat_private_total_whole_ctq,
-  bin.pat_private_with_cites_whole_ctq
-FROM country_quarter_binary bin
-LEFT JOIN country_quarter_raw r
-  ON r.country_code = bin.country_code
- AND r.quarter = bin.quarter
+  r.country_code,
+  r.quarter,
+  r.pat_private_total_ctq,
+  r.pat_private_with_cites_ctq,
+  r.pat_private_cite_gov_raw_ctq,
+  COALESCE(n.pat_private_cite_gov_norm_ctq, 0.0) AS pat_private_cite_gov_norm_ctq
+FROM country_quarter_raw r
 LEFT JOIN country_quarter_norm n
-  ON n.country_code = bin.country_code
- AND n.quarter = bin.quarter
+  ON n.country_code = r.country_code
+ AND n.quarter = r.quarter

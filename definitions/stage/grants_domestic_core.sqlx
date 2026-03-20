@@ -3,7 +3,7 @@ config {
   schema: "rd_stage",
   name: "grants_domestic_core",
   tags: ["stage"],
-  description: "Domestic grants (by funder legal country) for the analysis universe, with Surico-style government flag (rd_ref.org_gov_surico), FoR fields, recipient org hints, and Phase-1 fuzzy features (concepts + title tokens). This is the single scan of Dimensions grants; downstream views split gov vs non-gov funders."
+  description: "Domestic grants (by funder legal country) for the analysis universe, with Surico-style government flag (rd_ref.org_gov_surico), FoR fields, recipient org hints, and Phase-1 fuzzy features (concepts + title tokens + abstract tokens). This is the single scan of Dimensions grants; downstream views split gov vs non-gov funders."
 }
 
 WITH target_countries AS (
@@ -96,7 +96,30 @@ grants AS (
       )
       ORDER BY rel DESC
       LIMIT CAST(${(dataform.projectConfig.vars.inst_fuzzy_max_concepts_grant || 20)} AS INT64)
-    ) AS grant_concepts
+    ) AS grant_concepts,
+
+    -- Abstract tokens for enhanced fuzzy scoring (Phase 2)
+    ARRAY(
+      SELECT DISTINCT tok
+      FROM UNNEST(
+        SPLIT(
+          REGEXP_REPLACE(LOWER(IFNULL(CAST(g.abstract AS STRING), "")), r"[^\p{L}\p{N}]+", " "),
+          " "
+        )
+      ) AS tok
+      WHERE tok IS NOT NULL
+        AND tok != ""
+        AND LENGTH(tok) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_token_len || 3)} AS INT64)
+        AND NOT REGEXP_CONTAINS(tok, r"^\d+$")
+        AND tok NOT IN UNNEST([
+          "a","an","and","are","as","at","be","been","being","by","for","from","has","have","had",
+          "in","into","is","it","its","of","on","or","that","the","their","this","to","was","were",
+          "with","without","via","using","use","used","based","approach","approaches","method","methods",
+          "study","analysis","data","model","models","system","systems","development","design","project",
+          "research","program","programme","grant","funded","funding","proposal","investigation"
+        ])
+      LIMIT CAST(${(dataform.projectConfig.vars.inst_fuzzy_max_abstract_tokens || 200)} AS INT64)
+    ) AS grant_abstract_tokens
 
   FROM `dimensions-ai.data_analytics.grants` g
   WHERE (g.start_date IS NOT NULL OR g.start_year IS NOT NULL)
@@ -120,7 +143,10 @@ SELECT
   -- Phase 1 fuzzy
   g.grant_title,
   g.grant_title_tokens,
-  g.grant_concepts
+  g.grant_concepts,
+
+  -- Phase 2: abstract tokens
+  g.grant_abstract_tokens
 
 FROM grants g
 JOIN org_dim od

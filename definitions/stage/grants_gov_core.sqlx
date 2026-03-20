@@ -3,7 +3,7 @@ config {
   schema: "rd_stage",
   name: "grants_gov_core",
   tags: ["stage"],
-  description: "Domestic Surico-government grants (funder is_gov_surico=TRUE), derived from rd_stage.grants_domestic_core. Contains FoR fields, linkage fields, and Phase-1 fuzzy features."
+  description: "Domestic Surico-government grants (funder is_gov_surico=TRUE), derived from rd_stage.grants_domestic_core. Contains FoR fields, linkage fields, Phase-1 fuzzy features, and abstract tokens."
 }
 
 SELECT
@@ -19,6 +19,7 @@ SELECT
   organisation_details,
   grant_title,
   grant_title_tokens,
-  grant_concepts
+  grant_concepts,
+  grant_abstract_tokens
 FROM ${ref("rd_stage", "grants_domestic_core")}
 WHERE is_gov_surico

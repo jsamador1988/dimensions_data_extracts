@@ -3,7 +3,7 @@ config {
   schema: "rd_stage",
   name: "patent_family_text_features",
   tags: ["stage", "patents"],
-  description: "Phase-1 fuzzy features for patents at the family level (via representative patent): title tokens + top concepts. Restricted to anchored families in sample window."
+  description: "Phase-1 fuzzy features for patents at the family level (via representative patent): title tokens + top concepts + abstract tokens. Restricted to anchored families in sample window."
 }
 
 WITH rep AS (
@@ -22,6 +22,7 @@ pat AS (
   SELECT
     p.id AS rep_patent_id,
     p.title AS pat_title,
+    p.abstract AS pat_abstract,
     IFNULL(p.concepts, CAST([] AS ARRAY<STRUCT<concept STRING, relevance FLOAT64>>)) AS concept_src
   FROM `dimensions-ai.data_analytics.patents` p
 )
@@ -68,7 +69,31 @@ SELECT
     )
     ORDER BY rel DESC
     LIMIT CAST(${(dataform.projectConfig.vars.inst_fuzzy_max_concepts_patent || 20)} AS INT64)
-  ) AS pat_concepts
+  ) AS pat_concepts,
+
+  -- Abstract tokens for enhanced fuzzy scoring (Phase 2)
+  ARRAY(
+    SELECT DISTINCT tok
+    FROM UNNEST(
+      SPLIT(
+        REGEXP_REPLACE(LOWER(IFNULL(p.pat_abstract, "")), r"[^\p{L}\p{N}]+", " "),
+        " "
+      )
+    ) AS tok
+    WHERE tok IS NOT NULL
+      AND tok != ""
+      AND LENGTH(tok) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_token_len || 3)} AS INT64)
+      AND NOT REGEXP_CONTAINS(tok, r"^\d+$")
+      AND tok NOT IN UNNEST([
+        "a","an","and","are","as","at","be","been","being","by","for","from","has","have","had",
+        "in","into","is","it","its","of","on","or","that","the","their","this","to","was","were",
+        "with","without","via","using","use","used","based","approach","approaches","method","methods",
+        "study","analysis","data","model","models","system","systems","development","design","project",
+        "research","program","programme","grant","funded","funding","proposal","investigation",
+        "patent","invention","inventor","inventors"
+      ])
+    LIMIT CAST(${(dataform.projectConfig.vars.inst_fuzzy_max_abstract_tokens || 200)} AS INT64)
+  ) AS pat_abstract_tokens
 
 FROM rep r
 JOIN anchor a
