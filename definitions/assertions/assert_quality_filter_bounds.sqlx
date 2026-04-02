@@ -1,9 +1,8 @@
 config {
   type: "assertion",
-  schema: "rd_assert",
   name: "assert_quality_filter_bounds",
-  tags: ["assert"],
-  description: "Validates monotone inclusion bounds for quality-filtered publication variants and basic research cross-tabs. Quality-filtered subsets must be <= their unfiltered parents. Basic research subsets must be <= both their org-category parent and the total basic count."
+  tags: ["assert", "assertion"],
+  description: "Validates monotone inclusion bounds for quality-filtered publication variants and for basic-research subsets relative to their publication and patent parent series."
 }
 
 WITH p AS (

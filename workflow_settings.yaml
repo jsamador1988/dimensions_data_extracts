@@ -1,6 +1,6 @@
 defaultProject: dimensionsdataextracts
 defaultDataset: rd_stage
-defaultAssertionDataset: dataform_assertions
+defaultAssertionDataset: rd_assert
 defaultLocation: US
 dataformCoreVersion: 3.0.37
 

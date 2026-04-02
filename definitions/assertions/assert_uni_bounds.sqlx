@@ -1,9 +1,8 @@
 config {
   type: "assertion",
-  schema: "rd_assert",
   name: "assert_uni_bounds",
-  tags: ["assert"],
-  description: "Validates monotone inclusion bounds for university and science linkage variables. All set-inclusion relationships must hold: subsets <= supersets."
+  tags: ["assert", "assertion"],
+  description: "Validates monotone inclusion bounds for university, science-linkage, and cross-combination series in the live apr_02 mart."
 }
 
 -- Returns rows that violate the monotone bounds (should be empty).
