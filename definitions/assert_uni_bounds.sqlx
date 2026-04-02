@@ -26,8 +26,20 @@ SELECT country_code, quarter, 'pub_uni_total > pub_total'
 FROM p WHERE pub_uni_total_ctq > pub_total_ctq + 0.001
 
 UNION ALL
+SELECT country_code, quarter, 'pub_uni_basic > pub_uni_total'
+FROM p WHERE pub_uni_basic_ctq > pub_uni_total_ctq + 0.001
+
+UNION ALL
 SELECT country_code, quarter, 'pub_uni_govfund > pub_uni_total'
 FROM p WHERE pub_uni_govfund_ctq > pub_uni_total_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pub_uni_basic_govfund > pub_uni_basic'
+FROM p WHERE pub_uni_basic_govfund_ctq > pub_uni_basic_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pub_uni_basic_govfund > pub_uni_govfund'
+FROM p WHERE pub_uni_basic_govfund_ctq > pub_uni_govfund_ctq + 0.001
 
 -- Science linkage inclusion chain
 UNION ALL
@@ -70,6 +82,18 @@ FROM p WHERE pat_uni_citepub_basic_ctq > pat_uni_citepub_ctq + 0.001
 UNION ALL
 SELECT country_code, quarter, 'pat_uni_citepub_govfund_basic > pat_uni_citepub_basic'
 FROM p WHERE pat_uni_citepub_govfund_basic_ctq > pat_uni_citepub_basic_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pat_uni_basic > pat_uni_total'
+FROM p WHERE pat_uni_basic_ctq > pat_uni_total_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pat_uni_basic_govfund > pat_uni_basic'
+FROM p WHERE pat_uni_basic_govfund_ctq > pat_uni_basic_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pat_uni_basic_govfund > pat_uni_govfund'
+FROM p WHERE pat_uni_basic_govfund_ctq > pat_uni_govfund_ctq + 0.001
 
 UNION ALL
 SELECT country_code, quarter, 'pat_govfund_citepub > pat_govfund_any_excl'

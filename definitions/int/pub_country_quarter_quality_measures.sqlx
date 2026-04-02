@@ -1,0 +1,108 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_country_quarter_quality_measures",
+  tags: ["int", "publications"],
+  description: "Quality-filtered publication measures: _top5j (top 5% journals) and _top01 (top 0.1% breakthrough) variants of key publication counts. Companion file to pub_country_quarter_measures; joined at the mart level. Single-pass aggregation for efficiency."
+}
+
+-- Reuse the basic-research flag from pub_country_quarter_measures
+WITH pub_basic_flag AS (
+  SELECT
+    pub_id,
+    CASE
+      WHEN ARRAY_LENGTH(ANY_VALUE(for2_codes)) = 0 THEN FALSE
+      ELSE (
+        SELECT SAFE_DIVIDE(COUNTIF(bm.is_basic_science), COUNT(*)) > 0.5
+        FROM UNNEST(ANY_VALUE(for2_codes)) AS code
+        LEFT JOIN ${ref("rd_ref", "for2_basic_research_map")} bm
+          ON bm.for2_code = code
+      )
+    END AS is_basic_pub
+  FROM ${ref("rd_int", "pub_pub_country_base")}
+  GROUP BY pub_id
+),
+
+-- Base quality aggregation: one scan of pub_pub_country_base joined to quality flags + basic flag
+base_quality AS (
+  SELECT
+    p.country_code,
+    p.quarter,
+
+    -- Top 5% journal variants
+    SUM(IF(IFNULL(qf.is_top5j, FALSE), p.w_aff, 0.0)) AS pub_total_top5j_ctq,
+    SUM(IF(IFNULL(qf.is_top5j, FALSE), p.w_public_prod, 0.0)) AS pub_gov_owned_top5j_ctq,
+    SUM(IF(IFNULL(qf.is_top5j, FALSE) AND p.w_public_prod = 0, p.w_aff, 0.0)) AS pub_private_total_top5j_ctq,
+    SUM(IF(IFNULL(qf.is_top5j, FALSE), p.w_edu_prod, 0.0)) AS pub_uni_total_top5j_ctq,
+    SUM(IF(IFNULL(qf.is_top5j, FALSE) AND IFNULL(bf.is_basic_pub, FALSE), p.w_edu_prod, 0.0)) AS pub_uni_basic_top5j_ctq,
+
+    -- Top 0.1% breakthrough variants
+    SUM(IF(IFNULL(qf.is_breakthrough, FALSE), p.w_aff, 0.0)) AS pub_total_top01_ctq,
+    SUM(IF(IFNULL(qf.is_breakthrough, FALSE), p.w_public_prod, 0.0)) AS pub_gov_owned_top01_ctq,
+    SUM(IF(IFNULL(qf.is_breakthrough, FALSE) AND p.w_public_prod = 0, p.w_aff, 0.0)) AS pub_private_total_top01_ctq,
+    SUM(IF(IFNULL(qf.is_breakthrough, FALSE), p.w_edu_prod, 0.0)) AS pub_uni_total_top01_ctq,
+    SUM(IF(IFNULL(qf.is_breakthrough, FALSE) AND IFNULL(bf.is_basic_pub, FALSE), p.w_edu_prod, 0.0)) AS pub_uni_basic_top01_ctq
+
+  FROM ${ref("rd_int", "pub_pub_country_base")} p
+  LEFT JOIN ${ref("rd_int", "pub_quality_flags")} qf
+    ON qf.pub_id = p.pub_id
+  LEFT JOIN pub_basic_flag bf
+    ON bf.pub_id = p.pub_id
+  GROUP BY p.country_code, p.quarter
+),
+
+-- Gov-funded quality variants (requires joining with govfund union)
+pub_govfund_any_pubs AS (
+  SELECT DISTINCT pub_id, country_code
+  FROM ${ref("rd_int", "pub_govfund_direct_pc")}
+  UNION DISTINCT
+  SELECT DISTINCT pub_id, country_code
+  FROM ${ref("rd_int", "pub_govfund_rid_pc")}
+  UNION DISTINCT
+  SELECT DISTINCT pub_id, country_code
+  FROM ${ref("rd_int", "pub_govfund_inst_pc")}
+),
+
+govfund_quality AS (
+  SELECT
+    p.country_code,
+    p.quarter,
+    SUM(IF(IFNULL(qf.is_top5j, FALSE), p.w_aff, 0.0)) AS pub_govfund_any_excl_top5j_ctq,
+    SUM(IF(IFNULL(qf.is_breakthrough, FALSE), p.w_aff, 0.0)) AS pub_govfund_any_excl_top01_ctq,
+    SUM(IF(IFNULL(qf.is_top5j, FALSE), p.w_edu_prod, 0.0)) AS pub_uni_govfund_top5j_ctq,
+    SUM(IF(IFNULL(qf.is_breakthrough, FALSE), p.w_edu_prod, 0.0)) AS pub_uni_govfund_top01_ctq
+  FROM ${ref("rd_int", "pub_pub_country_base")} p
+  JOIN pub_govfund_any_pubs gf
+    ON gf.pub_id = p.pub_id AND gf.country_code = p.country_code
+  LEFT JOIN ${ref("rd_int", "pub_quality_flags")} qf
+    ON qf.pub_id = p.pub_id
+  GROUP BY p.country_code, p.quarter
+)
+
+SELECT
+  bq.country_code,
+  bq.quarter,
+
+  -- Top 5% journal variants
+  bq.pub_total_top5j_ctq,
+  bq.pub_gov_owned_top5j_ctq,
+  bq.pub_private_total_top5j_ctq,
+  bq.pub_uni_total_top5j_ctq,
+  bq.pub_uni_basic_top5j_ctq,
+
+  -- Top 0.1% breakthrough variants
+  bq.pub_total_top01_ctq,
+  bq.pub_gov_owned_top01_ctq,
+  bq.pub_private_total_top01_ctq,
+  bq.pub_uni_total_top01_ctq,
+  bq.pub_uni_basic_top01_ctq,
+
+  -- Gov-funded quality variants
+  COALESCE(gfq.pub_govfund_any_excl_top5j_ctq, 0.0) AS pub_govfund_any_excl_top5j_ctq,
+  COALESCE(gfq.pub_govfund_any_excl_top01_ctq, 0.0) AS pub_govfund_any_excl_top01_ctq,
+  COALESCE(gfq.pub_uni_govfund_top5j_ctq, 0.0) AS pub_uni_govfund_top5j_ctq,
+  COALESCE(gfq.pub_uni_govfund_top01_ctq, 0.0) AS pub_uni_govfund_top01_ctq
+
+FROM base_quality bq
+LEFT JOIN govfund_quality gfq
+  ON gfq.country_code = bq.country_code AND gfq.quarter = bq.quarter

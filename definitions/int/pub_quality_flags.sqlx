@@ -1,0 +1,40 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_quality_flags",
+  tags: ["int", "publications"],
+  description: "Per-publication quality flags joining journal ranking and breakthrough classification. Only includes publications that appear in pub_pub_country_base (i.e., within the sample window). Flags: is_top5j (journal in top 5% by mean field-normalized citations), is_breakthrough (top 0.1% within FoR2 x year)."
+}
+
+WITH base_pubs AS (
+  SELECT DISTINCT pub_id
+  FROM ${ref("rd_int", "pub_pub_country_base")}
+),
+
+journal_map AS (
+  SELECT pub_id, journal_id
+  FROM ${ref("rd_stage", "pub_quality_features")}
+  WHERE journal_id IS NOT NULL
+),
+
+journal_rank AS (
+  SELECT journal_id, is_top5_journal
+  FROM ${ref("rd_ref", "top_journal_ranking")}
+),
+
+breakthrough AS (
+  SELECT pub_id, is_breakthrough
+  FROM ${ref("rd_int", "pub_breakthrough_flags")}
+)
+
+SELECT
+  bp.pub_id,
+  IFNULL(jr.is_top5_journal, FALSE) AS is_top5j,
+  IFNULL(bt.is_breakthrough, FALSE) AS is_breakthrough
+FROM base_pubs bp
+LEFT JOIN journal_map jm
+  ON jm.pub_id = bp.pub_id
+LEFT JOIN journal_rank jr
+  ON jr.journal_id = jm.journal_id
+LEFT JOIN breakthrough bt
+  ON bt.pub_id = bp.pub_id

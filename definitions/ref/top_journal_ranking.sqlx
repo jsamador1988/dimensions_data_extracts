@@ -1,0 +1,88 @@
+config {
+  type: "table",
+  schema: "rd_ref",
+  name: "top_journal_ranking",
+  tags: ["ref"],
+  description: "Journal quality ranking based on mean field-normalized citation rate. Journals with >= journal_elig_min_articles (1000) publications are ranked; top top_journal_pct (5%) flagged as is_top5_journal. Computed over the full pub_quality_features table (no date filter) for sample-window independence. Time-invariant ranking. Follows Nagaraj & Yao (2026) methodology."
+}
+
+-- Step 1: Compute field-year citation averages
+WITH field_year_avg AS (
+  SELECT
+    for2_code,
+    pub_year,
+    AVG(times_cited) AS avg_times_cited,
+    COUNT(*) AS n_pubs
+  FROM ${ref("rd_stage", "pub_quality_features")} pqf
+  CROSS JOIN UNNEST(pqf.for2_codes) AS for2_code
+  WHERE pub_year IS NOT NULL
+    AND pub_year >= 1980
+  GROUP BY for2_code, pub_year
+),
+
+-- Global year-level average (fallback for pubs without FoR codes)
+global_year_avg AS (
+  SELECT
+    pub_year,
+    AVG(times_cited) AS avg_times_cited
+  FROM ${ref("rd_stage", "pub_quality_features")}
+  WHERE pub_year IS NOT NULL
+    AND pub_year >= 1980
+  GROUP BY pub_year
+),
+
+-- Step 2: Compute per-publication field-normalized citation score
+-- For pubs with FoR codes: mean of (times_cited / field_year_avg) across FoR2 codes
+-- For pubs without FoR codes: times_cited / global_year_avg
+pub_norm_cite AS (
+  SELECT
+    pqf.pub_id,
+    pqf.journal_id,
+    pqf.times_cited,
+    pqf.pub_year,
+    CASE
+      WHEN ARRAY_LENGTH(pqf.for2_codes) > 0 THEN (
+        SELECT AVG(SAFE_DIVIDE(pqf.times_cited, NULLIF(fya.avg_times_cited, 0)))
+        FROM UNNEST(pqf.for2_codes) AS fc
+        JOIN field_year_avg fya
+          ON fya.for2_code = fc AND fya.pub_year = pqf.pub_year
+      )
+      ELSE SAFE_DIVIDE(pqf.times_cited, NULLIF(gya.avg_times_cited, 0))
+    END AS field_norm_cite
+  FROM ${ref("rd_stage", "pub_quality_features")} pqf
+  LEFT JOIN global_year_avg gya
+    ON gya.pub_year = pqf.pub_year
+  WHERE pqf.pub_year IS NOT NULL
+    AND pqf.pub_year >= 1980
+    AND pqf.journal_id IS NOT NULL
+),
+
+-- Step 3: Compute journal-level quality score = mean(field_norm_cite) across all pubs
+journal_quality AS (
+  SELECT
+    journal_id,
+    AVG(field_norm_cite) AS journal_quality_score,
+    COUNT(*) AS n_articles
+  FROM pub_norm_cite
+  WHERE field_norm_cite IS NOT NULL
+  GROUP BY journal_id
+  HAVING COUNT(*) >= SAFE_CAST(${dataform.projectConfig.vars.journal_elig_min_articles} AS INT64)
+),
+
+-- Step 4: Rank journals and flag top 5%
+ranked AS (
+  SELECT
+    journal_id,
+    journal_quality_score,
+    n_articles,
+    PERCENT_RANK() OVER (ORDER BY journal_quality_score ASC) AS pct_rank
+  FROM journal_quality
+)
+
+SELECT
+  r.journal_id,
+  r.journal_quality_score,
+  r.n_articles,
+  r.pct_rank,
+  (r.pct_rank >= 1.0 - SAFE_CAST(${dataform.projectConfig.vars.top_journal_pct} AS FLOAT64)) AS is_top5_journal
+FROM ranked r

@@ -1,0 +1,85 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_breakthrough_flags",
+  tags: ["int", "publications"],
+  description: "Per-publication breakthrough flag: top 0.1% most-cited publications within each FoR2 x year cell, using lifetime field-normalized citations. Publications with multiple FoR2 codes use the maximum normalized score. FoR2-year cells with fewer than breakthrough_min_cell_pubs (100) publications are excluded. Publications without FoR codes are excluded."
+}
+
+-- Step 1: Field-year citation averages (same as journal ranking but used for breakthrough)
+WITH field_year_avg AS (
+  SELECT
+    for2_code,
+    pub_year,
+    AVG(times_cited) AS avg_times_cited,
+    COUNT(*) AS n_pubs
+  FROM ${ref("rd_stage", "pub_quality_features")} pqf
+  CROSS JOIN UNNEST(pqf.for2_codes) AS for2_code
+  WHERE pub_year IS NOT NULL
+    AND pub_year >= 1980
+  GROUP BY for2_code, pub_year
+),
+
+-- Step 2: Per-publication per-FoR2 normalized citation
+pub_field_norm AS (
+  SELECT
+    pqf.pub_id,
+    fc AS for2_code,
+    pqf.pub_year,
+    SAFE_DIVIDE(pqf.times_cited, NULLIF(fya.avg_times_cited, 0)) AS field_norm_cite,
+    fya.n_pubs AS cell_size
+  FROM ${ref("rd_stage", "pub_quality_features")} pqf
+  CROSS JOIN UNNEST(pqf.for2_codes) AS fc
+  JOIN field_year_avg fya
+    ON fya.for2_code = fc AND fya.pub_year = pqf.pub_year
+  WHERE ARRAY_LENGTH(pqf.for2_codes) > 0
+    AND pqf.pub_year IS NOT NULL
+    AND pqf.pub_year >= 1980
+),
+
+-- Step 3: For each pub, take the maximum field-normalized score across its FoR2 codes
+-- (a pub is breakthrough if it's top 0.1% in ANY of its fields)
+pub_max_norm AS (
+  SELECT
+    pub_id,
+    MAX(field_norm_cite) AS max_field_norm_cite,
+    -- For ranking, use the FoR2 code that gave the max score
+    ARRAY_AGG(for2_code ORDER BY field_norm_cite DESC LIMIT 1)[OFFSET(0)] AS best_for2_code,
+    MAX(cell_size) AS max_cell_size
+  FROM pub_field_norm
+  -- Exclude small cells (configurable threshold)
+  WHERE cell_size >= SAFE_CAST(IFNULL('${dataform.projectConfig.vars.breakthrough_min_cell_pubs}', '100') AS INT64)
+  GROUP BY pub_id
+),
+
+-- Step 4: Rank within each FoR2 x year and flag top 0.1%
+pub_ranked AS (
+  SELECT
+    pfn.pub_id,
+    pfn.for2_code,
+    pfn.pub_year,
+    pfn.field_norm_cite,
+    pfn.cell_size,
+    PERCENT_RANK() OVER (
+      PARTITION BY pfn.for2_code, pfn.pub_year
+      ORDER BY pfn.field_norm_cite ASC
+    ) AS pct_rank_in_field
+  FROM pub_field_norm pfn
+  WHERE pfn.cell_size >= SAFE_CAST(IFNULL('${dataform.projectConfig.vars.breakthrough_min_cell_pubs}', '100') AS INT64)
+),
+
+-- A publication is breakthrough if it's in the top 0.1% in ANY of its field-year cells
+pub_is_breakthrough AS (
+  SELECT DISTINCT pub_id
+  FROM pub_ranked
+  WHERE pct_rank_in_field >= 0.999
+)
+
+SELECT
+  pmn.pub_id,
+  pmn.max_field_norm_cite,
+  pmn.best_for2_code,
+  (bt.pub_id IS NOT NULL) AS is_breakthrough
+FROM pub_max_norm pmn
+LEFT JOIN pub_is_breakthrough bt
+  ON bt.pub_id = pmn.pub_id

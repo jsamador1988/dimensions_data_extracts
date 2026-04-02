@@ -33,6 +33,10 @@ pat AS (
 
 pub AS (
   SELECT * FROM ${ref("rd_int", "pub_country_quarter_measures")}
+),
+
+pub_qual AS (
+  SELECT * FROM ${ref("rd_int", "pub_country_quarter_quality_measures")}
 )
 
 SELECT
@@ -71,9 +75,17 @@ SELECT
   -- NTIS external linkage (Korea only)
   COALESCE(pat.pat_govfund_ntis_ctq, 0.0) AS pat_govfund_ntis_ctq,
 
+  -- Basic research by org category (patents)
+  COALESCE(pat.pat_total_basic_ctq, 0.0) AS pat_total_basic_ctq,
+  COALESCE(pat.pat_gov_owned_basic_ctq, 0.0) AS pat_gov_owned_basic_ctq,
+  COALESCE(pat.pat_private_basic_ctq, 0.0) AS pat_private_basic_ctq,
+  COALESCE(pat.pat_govfund_basic_ctq, 0.0) AS pat_govfund_basic_ctq,
+
   -- University decomposition (patents)
   COALESCE(pat.pat_uni_total_ctq, 0.0) AS pat_uni_total_ctq,
+  COALESCE(pat.pat_uni_basic_ctq, 0.0) AS pat_uni_basic_ctq,
   COALESCE(pat.pat_uni_govfund_ctq, 0.0) AS pat_uni_govfund_ctq,
+  COALESCE(pat.pat_uni_basic_govfund_ctq, 0.0) AS pat_uni_basic_govfund_ctq,
 
   -- Science linkage (patents)
   COALESCE(pat.pat_citepub_ctq, 0.0) AS pat_citepub_ctq,
@@ -124,12 +136,44 @@ SELECT
   COALESCE(pub.pub_govfund_external_ctq, 0.0) AS pub_govfund_external_ctq,
   COALESCE(pub.pub_gov_owned_external_ctq, 0.0) AS pub_gov_owned_external_ctq,
 
+  -- Basic research by org category (publications)
+  COALESCE(pub.pub_total_basic_ctq, 0.0) AS pub_total_basic_ctq,
+  COALESCE(pub.pub_gov_owned_basic_ctq, 0.0) AS pub_gov_owned_basic_ctq,
+  COALESCE(pub.pub_private_basic_ctq, 0.0) AS pub_private_basic_ctq,
+  COALESCE(pub.pub_govfund_basic_ctq, 0.0) AS pub_govfund_basic_ctq,
+
+  -- International collaboration (publications)
+  COALESCE(pub.pub_intl_collab_ctq, 0.0) AS pub_intl_collab_ctq,
+
   -- University decomposition (publications)
   COALESCE(pub.pub_uni_total_ctq, 0.0) AS pub_uni_total_ctq,
-  COALESCE(pub.pub_uni_govfund_ctq, 0.0) AS pub_uni_govfund_ctq
+  COALESCE(pub.pub_uni_basic_ctq, 0.0) AS pub_uni_basic_ctq,
+  COALESCE(pub.pub_uni_govfund_ctq, 0.0) AS pub_uni_govfund_ctq,
+  COALESCE(pub.pub_uni_basic_govfund_ctq, 0.0) AS pub_uni_basic_govfund_ctq,
+
+  -- -----------------------------
+  -- Quality-filtered publications (top 5% journals + top 0.1% breakthrough)
+  -- -----------------------------
+  COALESCE(pub_qual.pub_total_top5j_ctq, 0.0) AS pub_total_top5j_ctq,
+  COALESCE(pub_qual.pub_gov_owned_top5j_ctq, 0.0) AS pub_gov_owned_top5j_ctq,
+  COALESCE(pub_qual.pub_private_total_top5j_ctq, 0.0) AS pub_private_total_top5j_ctq,
+  COALESCE(pub_qual.pub_uni_total_top5j_ctq, 0.0) AS pub_uni_total_top5j_ctq,
+  COALESCE(pub_qual.pub_uni_basic_top5j_ctq, 0.0) AS pub_uni_basic_top5j_ctq,
+  COALESCE(pub_qual.pub_govfund_any_excl_top5j_ctq, 0.0) AS pub_govfund_any_excl_top5j_ctq,
+  COALESCE(pub_qual.pub_uni_govfund_top5j_ctq, 0.0) AS pub_uni_govfund_top5j_ctq,
+
+  COALESCE(pub_qual.pub_total_top01_ctq, 0.0) AS pub_total_top01_ctq,
+  COALESCE(pub_qual.pub_gov_owned_top01_ctq, 0.0) AS pub_gov_owned_top01_ctq,
+  COALESCE(pub_qual.pub_private_total_top01_ctq, 0.0) AS pub_private_total_top01_ctq,
+  COALESCE(pub_qual.pub_uni_total_top01_ctq, 0.0) AS pub_uni_total_top01_ctq,
+  COALESCE(pub_qual.pub_uni_basic_top01_ctq, 0.0) AS pub_uni_basic_top01_ctq,
+  COALESCE(pub_qual.pub_govfund_any_excl_top01_ctq, 0.0) AS pub_govfund_any_excl_top01_ctq,
+  COALESCE(pub_qual.pub_uni_govfund_top01_ctq, 0.0) AS pub_uni_govfund_top01_ctq
 
 FROM grid
 LEFT JOIN pat
   ON pat.country_code = grid.country_code AND pat.quarter = grid.quarter
 LEFT JOIN pub
   ON pub.country_code = grid.country_code AND pub.quarter = grid.quarter
+LEFT JOIN pub_qual
+  ON pub_qual.country_code = grid.country_code AND pub_qual.quarter = grid.quarter

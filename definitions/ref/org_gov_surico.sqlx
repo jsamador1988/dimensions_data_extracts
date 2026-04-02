@@ -3,7 +3,7 @@ config {
   schema: "rd_ref",
   name: "org_gov_surico",
   tags: ["ref"],
-  description: "Organization-level government flag consistent with Surico: TRUE if Dimensions org types include 'Government' OR the org appears in rd_ref.gov_org_whitelist for its country (with optional start/end validity). Universities are NOT government unless explicitly whitelisted. Orgs whose Government type derives from a foreign government parent (foreign SOE subsidiaries, intergovernmental branch offices) are excluded unless whitelisted."
+  description: "Organization-level government and education flags. Government (is_gov_surico): TRUE if (a) on whitelist, OR (b) Dimensions type includes 'Government' AND not on blacklist AND no foreign government parent, OR (c) parent org is classified as government AND own type is Facility or Nonprofit (parent-child cascade). Education (is_edu): TRUE if Dimensions type includes 'Education', OR type is 'Healthcare' with an Education-type parent (university hospital cascade). Intergovernmental orgs (EU, UN, WHO, etc.) are excluded via blacklist."
 }
 
 WITH orgs AS (
@@ -33,6 +33,13 @@ foreign_gov_parent AS (
      != (CASE WHEN po.legal_country_code = 'UK' THEN 'GB' ELSE po.legal_country_code END)
 ),
 
+-- Intergovernmental organizations that should never be classified as domestic government
+-- (EU Commission, UN agencies, WHO, World Bank, EMBL, etc.)
+bl AS (
+  SELECT org_id
+  FROM ${ref("rd_ref", "org_gov_blacklist")}
+),
+
 wl AS (
   SELECT
     country_code,
@@ -41,6 +48,46 @@ wl AS (
     start_date,
     end_date
   FROM ${ref("rd_ref", "gov_org_whitelist")}
+),
+
+-- Parent-child cascade: Facility or Nonprofit orgs whose DOMESTIC parent is
+-- Government-typed get classified as government. This catches national labs
+-- (typed Facility) and government-controlled nonprofits that Dimensions
+-- does not directly type as Government.
+-- Examples: CNRS lab units (FR), DOE national labs (US), Leibniz institutes (DE).
+gov_parent_cascade AS (
+  SELECT DISTINCT
+    o.id AS org_id
+  FROM `dimensions-ai.data_analytics.organizations` o
+  CROSS JOIN UNNEST(o.relationships) AS r
+  JOIN `dimensions-ai.data_analytics.organizations` po
+    ON po.id = r.id
+  WHERE r.type = 'Parent'
+    -- Only cascade for Facility and Nonprofit types (not Company — avoids SOEs)
+    AND (
+      'Facility' IN UNNEST(o.types)
+      OR 'Nonprofit' IN UNNEST(o.types)
+    )
+    -- Parent must be typed Government in Dimensions
+    AND 'Government' IN UNNEST(po.types)
+    -- Parent must be in the same country (domestic cascade only)
+    AND (CASE WHEN o.legal_country_code  = 'UK' THEN 'GB' ELSE o.legal_country_code  END)
+      = (CASE WHEN po.legal_country_code = 'UK' THEN 'GB' ELSE po.legal_country_code END)
+),
+
+-- Healthcare orgs with Education-type parent are university hospitals.
+-- They should be flagged as is_edu even though their own type is Healthcare.
+-- Examples: Charite (DE), Mayo Clinic affiliates, VA-university partnerships.
+edu_parent_healthcare AS (
+  SELECT DISTINCT
+    o.id AS org_id
+  FROM `dimensions-ai.data_analytics.organizations` o
+  CROSS JOIN UNNEST(o.relationships) AS r
+  JOIN `dimensions-ai.data_analytics.organizations` po
+    ON po.id = r.id
+  WHERE r.type = 'Parent'
+    AND 'Healthcare' IN UNNEST(o.types)
+    AND 'Education' IN UNNEST(po.types)
 ),
 
 joined AS (
@@ -58,14 +105,30 @@ joined AS (
       ELSE TRUE
     END AS is_whitelisted,
 
+    -- blacklist match (intergovernmental exclusion)
+    (bl.org_id IS NOT NULL) AS is_blacklisted,
+
     -- foreign government parent flag
-    (fgp.org_id IS NOT NULL) AS has_foreign_gov_parent
+    (fgp.org_id IS NOT NULL) AS has_foreign_gov_parent,
+
+    -- parent-child government cascade (Facility/Nonprofit with domestic Gov parent)
+    (gpc.org_id IS NOT NULL) AS has_gov_parent_cascade,
+
+    -- university hospital cascade (Healthcare with Education parent)
+    (eph.org_id IS NOT NULL) AS has_edu_parent_healthcare
+
   FROM orgs o
   LEFT JOIN wl
     ON wl.org_id = o.org_id
    AND wl.country_code = o.country_code
   LEFT JOIN foreign_gov_parent fgp
     ON fgp.org_id = o.org_id
+  LEFT JOIN bl
+    ON bl.org_id = o.org_id
+  LEFT JOIN gov_parent_cascade gpc
+    ON gpc.org_id = o.org_id
+  LEFT JOIN edu_parent_healthcare eph
+    ON eph.org_id = o.org_id
 )
 
 SELECT
@@ -74,10 +137,20 @@ SELECT
   country_code,
   types,
   CASE
+    -- Blacklist takes highest priority: intergovernmental orgs are NEVER domestic government
+    WHEN is_blacklisted THEN FALSE
+    -- Whitelist takes next priority
     WHEN is_whitelisted THEN TRUE
+    -- Direct Government type (excluding foreign SOE subsidiaries)
     WHEN 'Government' IN UNNEST(IFNULL(types, [])) AND NOT has_foreign_gov_parent THEN TRUE
+    -- Parent-child cascade: Facility/Nonprofit with domestic Government parent
+    WHEN has_gov_parent_cascade THEN TRUE
     ELSE FALSE
   END AS is_gov_surico,
-  'Education' IN UNNEST(IFNULL(types, [])) AS is_edu
+  -- Education flag: direct Education type OR Healthcare with Education parent
+  (
+    'Education' IN UNNEST(IFNULL(types, []))
+    OR has_edu_parent_healthcare
+  ) AS is_edu
 FROM joined
 WHERE country_code IS NOT NULL

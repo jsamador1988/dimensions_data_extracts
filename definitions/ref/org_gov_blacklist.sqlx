@@ -1,0 +1,145 @@
+config {
+  type: "table",
+  schema: "rd_ref",
+  name: "org_gov_blacklist",
+  tags: ["ref"],
+  description: "Intergovernmental organizations that should NOT be classified as domestic government for any country. These are supranational bodies (EU institutions, UN agencies, international financial institutions) typed Government in Dimensions but not representing any single nation''s government research. Each entry includes a justification URL. 45 entries as of 2026-04-02."
+}
+
+SELECT *
+FROM (
+  SELECT 'grid.1098717.31' AS org_id, 'European Atomic Energy Community Euratom' AS org_name, 'BE' AS host_country,
+         'EU nuclear energy community established by Treaty of Rome 1957, intergovernmental. https://en.wikipedia.org/wiki/Euratom' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.455279.8' AS org_id, 'European Commission' AS org_name, 'BE' AS host_country,
+         'EU executive body (Treaty on European Union), not domestic government of any member state. https://en.wikipedia.org/wiki/European_Commission' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.270680.b' AS org_id, 'European Commission' AS org_name, 'BE' AS host_country,
+         'EU executive body (Treaty on European Union), not domestic government of any member state. https://en.wikipedia.org/wiki/European_Commission' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.432991.4' AS org_id, 'European Commission' AS org_name, 'BE' AS host_country,
+         'EU executive body (Treaty on European Union), not domestic government of any member state. https://en.wikipedia.org/wiki/European_Commission' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.432980.4' AS org_id, 'European Commission' AS org_name, 'BE' AS host_country,
+         'EU executive body (Treaty on European Union), not domestic government of any member state. https://en.wikipedia.org/wiki/European_Commission' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.432979.2' AS org_id, 'European Commission' AS org_name, 'BE' AS host_country,
+         'EU executive body (Treaty on European Union), not domestic government of any member state. https://en.wikipedia.org/wiki/European_Commission' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.455323.6' AS org_id, 'European Commission' AS org_name, 'BE' AS host_country,
+         'EU executive body (Treaty on European Union), not domestic government of any member state. https://en.wikipedia.org/wiki/European_Commission' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.443865.8' AS org_id, 'European Commission' AS org_name, 'BE' AS host_country,
+         'EU executive body (Treaty on European Union), not domestic government of any member state. https://en.wikipedia.org/wiki/European_Commission' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.438359.0' AS org_id, 'European Commission' AS org_name, 'BE' AS host_country,
+         'EU executive body (Treaty on European Union), not domestic government of any member state. https://en.wikipedia.org/wiki/European_Commission' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.491896.b' AS org_id, 'European Council' AS org_name, 'BE' AS host_country,
+         'EU institution defining political direction (heads of state), not domestic government. https://en.wikipedia.org/wiki/European_Council' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.500383.d' AS org_id, 'European Molecular Biology Conference' AS org_name, 'DE' AS host_country,
+         'EMBC: intergovernmental org governing EMBL, 30 member states. https://en.wikipedia.org/wiki/European_Molecular_Biology_Conference' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.4709.a' AS org_id, 'European Molecular Biology Laboratory' AS org_name, 'DE' AS host_country,
+         'EMBL: intergovernmental research org with 29 member states, est. 1974. https://en.wikipedia.org/wiki/European_Molecular_Biology_Laboratory' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.475756.2' AS org_id, 'European Molecular Biology Laboratory' AS org_name, 'DE' AS host_country,
+         'EMBL: intergovernmental research org with 29 member states, est. 1974. https://en.wikipedia.org/wiki/European_Molecular_Biology_Laboratory' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.466652.5' AS org_id, 'European Parliament' AS org_name, 'BE' AS host_country,
+         'EU legislative body elected by EU citizens, not domestic government. https://en.wikipedia.org/wiki/European_Parliament' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.506498.6' AS org_id, 'Intergovernmental Oceanographic Commission of UNESCO' AS org_name, 'FR' AS host_country,
+         'IOC-UNESCO: intergovernmental body for ocean science cooperation. https://en.wikipedia.org/wiki/Intergovernmental_Oceanographic_Commission' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.482039.4' AS org_id, 'Intergovernmental Panel on Climate Change' AS org_name, 'CH' AS host_country,
+         'IPCC: UN intergovernmental body assessing climate science. https://en.wikipedia.org/wiki/Intergovernmental_Panel_on_Climate_Change' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.435620.6' AS org_id, 'International Atomic Energy Agency' AS org_name, 'IT' AS host_country,
+         'IAEA: international org for peaceful nuclear energy, 178 member states. HQ Vienna. https://en.wikipedia.org/wiki/International_Atomic_Energy_Agency' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.453811.a' AS org_id, 'International Monetary Fund' AS org_name, 'US' AS host_country,
+         'IMF: international financial institution, 190 member countries. https://en.wikipedia.org/wiki/International_Monetary_Fund' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.516411.6' AS org_id, 'The Intergovernmental Committee on Surveying and Mapping' AS org_name, 'AU' AS host_country,
+         'ICSM: intergovernmental committee for surveying standards (AU/NZ). https://www.icsm.gov.au' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.502391.c' AS org_id, 'United Nations' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.452939.0' AS org_id, 'United Nations' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.420318.c' AS org_id, 'United Nations Children''s Fund' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.506496.8' AS org_id, 'United Nations Department of Peacekeeping Operations' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.502324.2' AS org_id, 'United Nations Department of Peacekeeping Operations' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.475729.a' AS org_id, 'United Nations Development Programme' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.467096.a' AS org_id, 'United Nations Development Programme' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.467088.5' AS org_id, 'United Nations Development Programme' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.502320.6' AS org_id, 'United Nations Development Programme' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.487794.1' AS org_id, 'United Nations Economic and Social Council' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.510885.1' AS org_id, 'United Nations Institute for Disarmament Research' AS org_name, 'CH' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.507687.b' AS org_id, 'United Nations Office for the Coordination of Humanitarian Affairs' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.502323.5' AS org_id, 'United Nations Office on Drugs and Crime' AS org_name, 'AT' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.506499.7' AS org_id, 'United Nations Office on Drugs and Crime' AS org_name, 'AT' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.452898.a' AS org_id, 'United Nations Population Fund' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.430569.d' AS org_id, 'United Nations Population Fund' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.430572.7' AS org_id, 'United Nations Population Fund' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.502312.7' AS org_id, 'United Nations Population Fund' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.430567.3' AS org_id, 'United Nations Population Fund' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.430573.6' AS org_id, 'United Nations Population Fund' AS org_name, 'US' AS host_country,
+         'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.431778.e' AS org_id, 'World Bank' AS org_name, 'US' AS host_country,
+         'International financial institution owned by 189 member countries. https://en.wikipedia.org/wiki/World_Bank' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.3575.4' AS org_id, 'World Health Organization' AS org_name, 'CH' AS host_country,
+         'WHO: UN specialized agency for international public health, 194 member states. https://en.wikipedia.org/wiki/World_Health_Organization' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.463322.2' AS org_id, 'World Health Organization' AS org_name, 'CH' AS host_country,
+         'WHO: UN specialized agency for international public health, 194 member states. https://en.wikipedia.org/wiki/World_Health_Organization' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.483685.4' AS org_id, 'World Health Organization' AS org_name, 'CH' AS host_country,
+         'WHO: UN specialized agency for international public health, 194 member states. https://en.wikipedia.org/wiki/World_Health_Organization' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.417252.7' AS org_id, 'World Health Organization - Denmark' AS org_name, 'DK' AS host_country,
+         'WHO: UN specialized agency for international public health, 194 member states. https://en.wikipedia.org/wiki/World_Health_Organization' AS blacklist_reason
+  UNION ALL
+  SELECT 'grid.463021.2' AS org_id, 'World Trade Organization' AS org_name, 'CH' AS host_country,
+         'WTO: intergovernmental org regulating international trade, 164 members. https://en.wikipedia.org/wiki/World_Trade_Organization' AS blacklist_reason
+)
