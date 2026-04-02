@@ -26,7 +26,8 @@ org_dim AS (
 gov_dim AS (
   SELECT
     org_id,
-    is_gov_surico
+    is_gov_surico,
+    is_edu
   FROM ${ref("rd_ref", "org_gov_surico")}
 ),
 
@@ -57,6 +58,9 @@ author_aff_norm AS (
     -- Surico government flag
     IFNULL(gd.is_gov_surico, FALSE) AS is_gov,
 
+    -- Education (university) flag
+    IFNULL(gd.is_edu, FALSE) AS is_edu,
+
     -- Company flag (subcomponent of non-gov)
     ('Company' IN UNNEST(IFNULL(od.types, []))) AS is_company
 
@@ -80,6 +84,7 @@ dedup AS (
     country_code,
     org_id,
     is_gov,
+    is_edu,
     is_company
   FROM author_aff_norm
   WHERE country_code IS NOT NULL
@@ -95,6 +100,7 @@ author_country AS (
     COUNT(*) AS n_aff_units,
     SUM(CASE WHEN is_gov THEN 1 ELSE 0 END) AS n_gov_units,
     SUM(CASE WHEN NOT is_gov THEN 1 ELSE 0 END) AS n_nongov_units,
+    SUM(CASE WHEN is_edu THEN 1 ELSE 0 END) AS n_edu_units,
     SUM(CASE WHEN is_company THEN 1 ELSE 0 END) AS n_company_units
 
   FROM dedup
@@ -109,5 +115,6 @@ SELECT
   n_aff_units,
   n_gov_units,
   n_nongov_units,
+  n_edu_units,
   n_company_units
 FROM author_country

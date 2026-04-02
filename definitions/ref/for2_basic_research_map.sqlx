@@ -1,0 +1,33 @@
+config {
+  type: "table",
+  schema: "rd_ref",
+  name: "for2_basic_research_map",
+  tags: ["ref"],
+  description: "Maps FoR 2-digit divisions to basic vs applied research categories (Frascati-inspired). Divisions 01-06 (natural/physical/life sciences) are classified as basic research; 07-22 (applied/engineering/social/humanities) are classified as applied."
+}
+
+SELECT *
+FROM UNNEST([
+  STRUCT("01" AS for2_code, "Mathematical Sciences" AS for2_name, TRUE AS is_basic_science),
+  STRUCT("02", "Physical Sciences", TRUE),
+  STRUCT("03", "Chemical Sciences", TRUE),
+  STRUCT("04", "Earth Sciences", TRUE),
+  STRUCT("05", "Environmental Sciences", TRUE),
+  STRUCT("06", "Biological Sciences", TRUE),
+  STRUCT("07", "Agricultural and Veterinary Sciences", FALSE),
+  STRUCT("08", "Information and Computing Sciences", FALSE),
+  STRUCT("09", "Engineering", FALSE),
+  STRUCT("10", "Technology", FALSE),
+  STRUCT("11", "Medical and Health Sciences", FALSE),
+  STRUCT("12", "Built Environment and Design", FALSE),
+  STRUCT("13", "Education", FALSE),
+  STRUCT("14", "Economics", FALSE),
+  STRUCT("15", "Commerce, Management, Tourism and Services", FALSE),
+  STRUCT("16", "Studies in Human Society", FALSE),
+  STRUCT("17", "Psychology and Cognitive Sciences", FALSE),
+  STRUCT("18", "Law and Legal Studies", FALSE),
+  STRUCT("19", "Studies in Creative Arts and Writing", FALSE),
+  STRUCT("20", "Language, Communication and Culture", FALSE),
+  STRUCT("21", "History and Archaeology", FALSE),
+  STRUCT("22", "Philosophy and Religious Studies", FALSE)
+])

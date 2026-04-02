@@ -77,6 +77,7 @@ SELECT
     WHEN is_whitelisted THEN TRUE
     WHEN 'Government' IN UNNEST(IFNULL(types, [])) AND NOT has_foreign_gov_parent THEN TRUE
     ELSE FALSE
-  END AS is_gov_surico
+  END AS is_gov_surico,
+  'Education' IN UNNEST(IFNULL(types, [])) AS is_edu
 FROM joined
 WHERE country_code IS NOT NULL

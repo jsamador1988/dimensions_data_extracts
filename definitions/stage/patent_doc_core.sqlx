@@ -67,3 +67,9 @@ SELECT
 FROM `dimensions-ai.data_analytics.patents` p
 WHERE p.family_id IS NOT NULL
   AND p.id IS NOT NULL
+  -- Exclude Chinese utility models (U, Y) and designs (S, D) for international comparability.
+  -- Invention patents (A, B, C) and their sub-variants are retained.
+  AND NOT (
+    p.jurisdiction = 'CN'
+    AND REGEXP_EXTRACT(p.id, r'-([A-Z])\d?$') IN ('U', 'Y', 'S', 'D')
+  )

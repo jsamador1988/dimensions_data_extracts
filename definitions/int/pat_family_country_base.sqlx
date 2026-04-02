@@ -25,7 +25,7 @@ w_assg AS (
 ),
 
 flags AS (
-  SELECT family_id, country_code, dom_gov_assg_flag
+  SELECT family_id, country_code, dom_gov_assg_flag, dom_edu_assg_flag
   FROM ${ref("rd_stage", "patent_family_assignee_flags")}
 ),
 
@@ -70,7 +70,11 @@ SELECT
   -- Government ownership share within domestic assignees (Surico government definition)
   (i.w_inv * s.w_assg * COALESCE(s.w_assg_gov_surico, 0.0)) AS w_gov_owned,
 
+  -- Education (university) ownership share within domestic assignees
+  (i.w_inv * s.w_assg * COALESCE(s.w_assg_edu, 0.0)) AS w_edu_owned,
+
   COALESCE(f.dom_gov_assg_flag, 0) AS dom_gov_assg_flag,
+  COALESCE(f.dom_edu_assg_flag, 0) AS dom_edu_assg_flag,
 
   -- Research codes (FoR)
   COALESCE(f4.for4_codes, CAST([] AS ARRAY<STRING>)) AS for4_codes,

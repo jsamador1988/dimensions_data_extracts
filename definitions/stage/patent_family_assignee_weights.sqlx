@@ -17,7 +17,7 @@ WITH assg_flat AS (
 ),
 
 org_dim AS (
-  SELECT org_id, country_code, is_gov_surico
+  SELECT org_id, country_code, is_gov_surico, is_edu
   FROM ${ref("rd_ref", "org_gov_surico")}
 ),
 
@@ -26,6 +26,7 @@ assg_enriched AS (
     a.family_id,
     od.country_code,
     od.is_gov_surico,
+    od.is_edu,
     a.org_id
   FROM assg_flat a
   JOIN org_dim od
@@ -40,7 +41,8 @@ counts AS (
     family_id,
     country_code,
     COUNT(DISTINCT org_id) AS n_assg_country,
-    COUNT(DISTINCT IF(is_gov_surico, org_id, NULL)) AS n_gov_assg_country
+    COUNT(DISTINCT IF(is_gov_surico, org_id, NULL)) AS n_gov_assg_country,
+    COUNT(DISTINCT IF(is_edu, org_id, NULL)) AS n_edu_assg_country
   FROM assg_enriched
   GROUP BY family_id, country_code
 ),
@@ -58,8 +60,10 @@ SELECT
   c.country_code,
   SAFE_DIVIDE(c.n_assg_country, t.n_assg_total) AS w_assg,
   SAFE_DIVIDE(c.n_gov_assg_country, c.n_assg_country) AS w_assg_gov_surico,
+  SAFE_DIVIDE(c.n_edu_assg_country, c.n_assg_country) AS w_assg_edu,
   c.n_assg_country,
   c.n_gov_assg_country,
+  c.n_edu_assg_country,
   t.n_assg_total
 FROM counts c
 JOIN totals t

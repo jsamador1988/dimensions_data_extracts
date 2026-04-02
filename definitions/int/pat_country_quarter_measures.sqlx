@@ -91,6 +91,81 @@ cite AS (
     pat_private_cite_gov_norm_ctq,
     pat_private_with_cites_ctq
   FROM ${ref("rd_int", "pat_private_cite_gov_ctq")}
+),
+
+-- University totals and science linkage flags
+uni_and_cite AS (
+  SELECT
+    b.country_code,
+    b.quarter,
+    -- University patent total
+    SUM(IF(b.dom_edu_assg_flag = 1, b.w_domestic, 0.0)) AS pat_uni_total_ctq,
+
+    -- Science linkage: patents citing publications
+    SUM(IF(IFNULL(cf.has_cited_pub, FALSE), b.w_domestic, 0.0)) AS pat_citepub_ctq,
+    SUM(IF(IFNULL(cf.has_cited_basic_pub, FALSE), b.w_domestic, 0.0)) AS pat_citepub_basic_ctq,
+    SUM(IF(IFNULL(cf.has_cited_govfund_pub, FALSE), b.w_domestic, 0.0)) AS pat_citepub_govfund_ctq,
+    SUM(IF(IFNULL(cf.has_cited_govfund_basic_pub, FALSE), b.w_domestic, 0.0)) AS pat_citepub_govfund_basic_ctq,
+    SUM(IF(IFNULL(cf.has_cited_uni_pub, FALSE), b.w_domestic, 0.0)) AS pat_citepub_uni_ctq,
+
+    -- University x science linkage cross-combinations
+    SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(cf.has_cited_pub, FALSE), b.w_domestic, 0.0)) AS pat_uni_citepub_ctq,
+    SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(cf.has_cited_basic_pub, FALSE), b.w_domestic, 0.0)) AS pat_uni_citepub_basic_ctq,
+    SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(cf.has_cited_govfund_basic_pub, FALSE), b.w_domestic, 0.0)) AS pat_uni_citepub_govfund_basic_ctq
+
+  FROM ${ref("rd_int", "pat_family_country_base")} b
+  LEFT JOIN ${ref("rd_int", "pat_family_citepub_flags")} cf
+    ON cf.family_id = b.family_id
+  GROUP BY b.country_code, b.quarter
+),
+
+-- Families with any government funding (union of all tiers)
+govfund_any_families AS (
+  SELECT DISTINCT family_id, country_code
+  FROM ${ref("rd_int", "pat_govfund_direct_fc")}
+  UNION DISTINCT
+  SELECT DISTINCT family_id, country_code
+  FROM ${ref("rd_int", "pat_govfund_rid_fc")}
+  UNION DISTINCT
+  SELECT DISTINCT family_id, country_code
+  FROM ${ref("rd_int", "pat_govfund_inst_fc")}
+),
+
+-- University patents that are government-funded (any tier, private-only by construction)
+uni_govfund AS (
+  SELECT
+    b.country_code,
+    b.quarter,
+    SUM(b.w_domestic) AS pat_uni_govfund_ctq
+  FROM ${ref("rd_int", "pat_family_country_base")} b
+  JOIN govfund_any_families gf
+    ON gf.family_id = b.family_id AND gf.country_code = b.country_code
+  WHERE b.dom_edu_assg_flag = 1
+  GROUP BY b.country_code, b.quarter
+),
+
+-- Government-funded patents citing science (private-only by construction)
+govfund_citepub AS (
+  SELECT
+    b.country_code,
+    b.quarter,
+    SUM(IF(IFNULL(cf.has_cited_pub, FALSE), b.w_domestic, 0.0)) AS pat_govfund_citepub_ctq
+  FROM ${ref("rd_int", "pat_family_country_base")} b
+  JOIN govfund_any_families gf
+    ON gf.family_id = b.family_id AND gf.country_code = b.country_code
+  LEFT JOIN ${ref("rd_int", "pat_family_citepub_flags")} cf
+    ON cf.family_id = b.family_id
+  GROUP BY b.country_code, b.quarter
+),
+
+-- Private patents citing university-produced research
+cite_uni AS (
+  SELECT
+    country_code,
+    quarter,
+    pat_private_cite_uni_raw_ctq,
+    pat_private_cite_uni_norm_ctq
+  FROM ${ref("rd_int", "pat_private_cite_uni_ctq")}
 )
 
 SELECT
@@ -132,7 +207,28 @@ SELECT
   COALESCE(c.pat_private_cite_gov_norm_ctq, 0.0) AS pat_private_cite_gov_norm_ctq,
 
   -- NTIS external linkage (Korea only, zero for all other countries)
-  COALESCE(gn.pat_govfund_ntis_ctq, 0.0) AS pat_govfund_ntis_ctq
+  COALESCE(gn.pat_govfund_ntis_ctq, 0.0) AS pat_govfund_ntis_ctq,
+
+  -- University decomposition
+  COALESCE(uc.pat_uni_total_ctq, 0.0) AS pat_uni_total_ctq,
+  COALESCE(ug.pat_uni_govfund_ctq, 0.0) AS pat_uni_govfund_ctq,
+
+  -- Science linkage
+  COALESCE(uc.pat_citepub_ctq, 0.0) AS pat_citepub_ctq,
+  COALESCE(uc.pat_citepub_basic_ctq, 0.0) AS pat_citepub_basic_ctq,
+  COALESCE(uc.pat_citepub_govfund_ctq, 0.0) AS pat_citepub_govfund_ctq,
+  COALESCE(uc.pat_citepub_govfund_basic_ctq, 0.0) AS pat_citepub_govfund_basic_ctq,
+  COALESCE(uc.pat_citepub_uni_ctq, 0.0) AS pat_citepub_uni_ctq,
+
+  -- Cross-combinations
+  COALESCE(uc.pat_uni_citepub_ctq, 0.0) AS pat_uni_citepub_ctq,
+  COALESCE(uc.pat_uni_citepub_basic_ctq, 0.0) AS pat_uni_citepub_basic_ctq,
+  COALESCE(uc.pat_uni_citepub_govfund_basic_ctq, 0.0) AS pat_uni_citepub_govfund_basic_ctq,
+  COALESCE(gc.pat_govfund_citepub_ctq, 0.0) AS pat_govfund_citepub_ctq,
+
+  -- Private->university citation spillover
+  COALESCE(cu.pat_private_cite_uni_raw_ctq, 0.0) AS pat_private_cite_uni_raw_ctq,
+  COALESCE(cu.pat_private_cite_uni_norm_ctq, 0.0) AS pat_private_cite_uni_norm_ctq
 
 FROM base b
 LEFT JOIN gov_direct gd
@@ -161,4 +257,16 @@ LEFT JOIN cite c
 
 LEFT JOIN gov_ntis gn
   ON gn.country_code = b.country_code AND gn.quarter = b.quarter
+
+LEFT JOIN uni_and_cite uc
+  ON uc.country_code = b.country_code AND uc.quarter = b.quarter
+
+LEFT JOIN uni_govfund ug
+  ON ug.country_code = b.country_code AND ug.quarter = b.quarter
+
+LEFT JOIN govfund_citepub gc
+  ON gc.country_code = b.country_code AND gc.quarter = b.quarter
+
+LEFT JOIN cite_uni cu
+  ON cu.country_code = b.country_code AND cu.quarter = b.quarter
 

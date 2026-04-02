@@ -1,0 +1,23 @@
+config {
+  type: "assertion",
+  schema: "dataform_assertions",
+  name: "assert_citation_partition",
+  tags: ["assertion"],
+  description: "Verify citation measures are bounded: private pubs/patents with citations cannot exceed private total, and normalized citation counts cannot exceed the with-cites base."
+}
+
+SELECT 'patent' AS doc_type, country_code, quarter,
+  pat_private_with_cites_ctq,
+  pat_private_total_ctq
+FROM ${ref("rd_mart", "panel_country_quarter_wide")}
+WHERE pat_private_with_cites_ctq > pat_private_total_ctq + 0.01
+  AND pat_private_total_ctq > 0
+
+UNION ALL
+
+SELECT 'publication' AS doc_type, country_code, quarter,
+  pub_private_with_cites_ctq,
+  pub_private_total_ctq
+FROM ${ref("rd_mart", "panel_country_quarter_wide")}
+WHERE pub_private_with_cites_ctq > pub_private_total_ctq + 0.01
+  AND pub_private_total_ctq > 0

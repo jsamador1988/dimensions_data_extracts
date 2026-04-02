@@ -26,7 +26,8 @@ w AS (
     country_code,
     w_aff,
     w_public_prod,
-    w_private_prod
+    w_private_prod,
+    w_edu_prod
   FROM ${ref("rd_stage", "pub_country_weights")}
 )
 
@@ -38,6 +39,7 @@ SELECT
   w.w_aff,
   w.w_public_prod,
   w.w_private_prod,
+  w.w_edu_prod,
 
   COALESCE(c.for4_codes, CAST([] AS ARRAY<STRING>)) AS for4_codes,
   ARRAY(

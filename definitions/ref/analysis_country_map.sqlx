@@ -44,6 +44,7 @@ FROM UNNEST([
   STRUCT("SE", "Sweden"),
   STRUCT("CH", "Switzerland"),
   STRUCT("TR", "Turkiye"),
+  STRUCT("CN", "China"),
   STRUCT("GB", "United Kingdom"),
   STRUCT("US", "United States")
 ])

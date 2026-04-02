@@ -3,7 +3,7 @@ config {
   schema: "rd_mart",
   name: "panel_country_quarter_wide",
   tags: ["mart"],
-  description: "Balanced country x quarter panel combining patent and publication innovation decompositions (domestic totals, ownership, overlapping and mutually-exclusive funding proxies for government and non-government domestic funders, and private->government citation-based measures).",
+  description: "Balanced country x quarter panel combining patent and publication innovation decompositions (domestic totals, ownership, overlapping and mutually-exclusive funding proxies for government and non-government domestic funders, private->government and private->university citation-based measures, university decomposition, and science linkage variables).",
   bigquery: {
     partitionBy: "quarter",
     clusterBy: ["country_code"]
@@ -71,6 +71,27 @@ SELECT
   -- NTIS external linkage (Korea only)
   COALESCE(pat.pat_govfund_ntis_ctq, 0.0) AS pat_govfund_ntis_ctq,
 
+  -- University decomposition (patents)
+  COALESCE(pat.pat_uni_total_ctq, 0.0) AS pat_uni_total_ctq,
+  COALESCE(pat.pat_uni_govfund_ctq, 0.0) AS pat_uni_govfund_ctq,
+
+  -- Science linkage (patents)
+  COALESCE(pat.pat_citepub_ctq, 0.0) AS pat_citepub_ctq,
+  COALESCE(pat.pat_citepub_basic_ctq, 0.0) AS pat_citepub_basic_ctq,
+  COALESCE(pat.pat_citepub_govfund_ctq, 0.0) AS pat_citepub_govfund_ctq,
+  COALESCE(pat.pat_citepub_govfund_basic_ctq, 0.0) AS pat_citepub_govfund_basic_ctq,
+  COALESCE(pat.pat_citepub_uni_ctq, 0.0) AS pat_citepub_uni_ctq,
+
+  -- Cross-combinations (patents)
+  COALESCE(pat.pat_uni_citepub_ctq, 0.0) AS pat_uni_citepub_ctq,
+  COALESCE(pat.pat_uni_citepub_basic_ctq, 0.0) AS pat_uni_citepub_basic_ctq,
+  COALESCE(pat.pat_uni_citepub_govfund_basic_ctq, 0.0) AS pat_uni_citepub_govfund_basic_ctq,
+  COALESCE(pat.pat_govfund_citepub_ctq, 0.0) AS pat_govfund_citepub_ctq,
+
+  -- Private->university citation spillover
+  COALESCE(pat.pat_private_cite_uni_raw_ctq, 0.0) AS pat_private_cite_uni_raw_ctq,
+  COALESCE(pat.pat_private_cite_uni_norm_ctq, 0.0) AS pat_private_cite_uni_norm_ctq,
+
   -- -----------------------------
   -- Publications
   -- -----------------------------
@@ -101,7 +122,11 @@ SELECT
 
   -- External national source linkage (non-zero for NO, JP, NL only)
   COALESCE(pub.pub_govfund_external_ctq, 0.0) AS pub_govfund_external_ctq,
-  COALESCE(pub.pub_gov_owned_external_ctq, 0.0) AS pub_gov_owned_external_ctq
+  COALESCE(pub.pub_gov_owned_external_ctq, 0.0) AS pub_gov_owned_external_ctq,
+
+  -- University decomposition (publications)
+  COALESCE(pub.pub_uni_total_ctq, 0.0) AS pub_uni_total_ctq,
+  COALESCE(pub.pub_uni_govfund_ctq, 0.0) AS pub_uni_govfund_ctq
 
 FROM grid
 LEFT JOIN pat

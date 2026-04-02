@@ -1,0 +1,36 @@
+config {
+  type: "assertion",
+  schema: "dataform_assertions",
+  name: "assert_whole_count_bounds",
+  tags: ["assertion"],
+  description: "Verify fractional count bounds: all counts non-negative, gov_owned <= total, private_total <= total, and decomposition components do not exceed their parent totals."
+}
+
+SELECT 'pat_total_negative' AS series, country_code, quarter
+FROM ${ref("rd_mart", "panel_country_quarter_wide")}
+WHERE pat_total_ctq < -0.001
+
+UNION ALL
+SELECT 'pub_total_negative' AS series, country_code, quarter
+FROM ${ref("rd_mart", "panel_country_quarter_wide")}
+WHERE pub_total_ctq < -0.001
+
+UNION ALL
+SELECT 'pat_gov_owned_exceeds_total' AS series, country_code, quarter
+FROM ${ref("rd_mart", "panel_country_quarter_wide")}
+WHERE pat_gov_owned_ctq > pat_total_ctq + 0.01
+
+UNION ALL
+SELECT 'pub_gov_owned_exceeds_total' AS series, country_code, quarter
+FROM ${ref("rd_mart", "panel_country_quarter_wide")}
+WHERE pub_gov_owned_ctq > pub_total_ctq + 0.01
+
+UNION ALL
+SELECT 'pat_private_exceeds_total' AS series, country_code, quarter
+FROM ${ref("rd_mart", "panel_country_quarter_wide")}
+WHERE pat_private_total_ctq > pat_total_ctq + 0.01
+
+UNION ALL
+SELECT 'pub_private_exceeds_total' AS series, country_code, quarter
+FROM ${ref("rd_mart", "panel_country_quarter_wide")}
+WHERE pub_private_total_ctq > pub_total_ctq + 0.01

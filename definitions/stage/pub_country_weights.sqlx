@@ -15,6 +15,7 @@ WITH ac AS (
     n_aff_units,
     n_gov_units,
     n_nongov_units,
+    n_edu_units,
     n_company_units
   FROM ${ref("pub_author_country_stats")}
 ),
@@ -40,6 +41,7 @@ author_country_shares AS (
 
     SAFE_DIVIDE(ac.n_gov_units, NULLIF(ac.n_aff_units, 0))     AS gov_within_author_country,
     SAFE_DIVIDE(ac.n_nongov_units, NULLIF(ac.n_aff_units, 0))  AS nongov_within_author_country,
+    SAFE_DIVIDE(ac.n_edu_units, NULLIF(ac.n_aff_units, 0))     AS edu_within_author_country,
     SAFE_DIVIDE(ac.n_company_units, NULLIF(ac.n_aff_units, 0)) AS company_within_author_country
 
   FROM ac
@@ -67,6 +69,7 @@ country_sums AS (
 
     SUM(author_country_share * gov_within_author_country)     AS sum_author_gov_share,
     SUM(author_country_share * nongov_within_author_country)  AS sum_author_nongov_share,
+    SUM(author_country_share * edu_within_author_country)     AS sum_author_edu_share,
     SUM(author_country_share * company_within_author_country) AS sum_author_company_share
 
   FROM author_country_shares
@@ -84,6 +87,9 @@ SELECT
 
   -- IMPORTANT CHANGE: "private" now means NON-GOVERNMENT (Surico-consistent)
   SAFE_DIVIDE(cs.sum_author_nongov_share, pa.n_authors_with_country) AS w_private_prod,
+
+  -- Education (university) affiliation share
+  SAFE_DIVIDE(cs.sum_author_edu_share, pa.n_authors_with_country) AS w_edu_prod,
 
   -- extra optional series (company subset)
   SAFE_DIVIDE(cs.sum_author_company_share, pa.n_authors_with_country) AS w_company_prod
