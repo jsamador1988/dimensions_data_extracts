@@ -70,6 +70,8 @@ gov_parent_cascade AS (
     )
     -- Parent must be typed Government in Dimensions
     AND 'Government' IN UNNEST(po.types)
+    -- Parent must not be on the intergovernmental blacklist
+    AND po.id NOT IN (SELECT org_id FROM bl)
     -- Parent must be in the same country (domestic cascade only)
     AND (CASE WHEN o.legal_country_code  = 'UK' THEN 'GB' ELSE o.legal_country_code  END)
       = (CASE WHEN po.legal_country_code = 'UK' THEN 'GB' ELSE po.legal_country_code END)
@@ -88,6 +90,9 @@ edu_parent_healthcare AS (
   WHERE r.type = 'Parent'
     AND 'Healthcare' IN UNNEST(o.types)
     AND 'Education' IN UNNEST(po.types)
+    -- Domestic only: university hospital must be in same country as parent university
+    AND (CASE WHEN o.legal_country_code  = 'UK' THEN 'GB' ELSE o.legal_country_code  END)
+      = (CASE WHEN po.legal_country_code = 'UK' THEN 'GB' ELSE po.legal_country_code END)
 ),
 
 joined AS (

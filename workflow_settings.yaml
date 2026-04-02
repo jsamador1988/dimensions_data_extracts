@@ -10,6 +10,7 @@ vars:
   breakthrough_window_years: "5"
   journal_elig_min_articles: "1000"
   top_journal_pct: "0.05"
+  breakthrough_min_cell_pubs: "100"
   min_for4_overlap: "1"
   min_jaccard: "0.5"
   grant_match_window_years: "10"

@@ -3,7 +3,7 @@ config {
   schema: "rd_ref",
   name: "org_gov_blacklist",
   tags: ["ref"],
-  description: "Intergovernmental organizations that should NOT be classified as domestic government for any country. These are supranational bodies (EU institutions, UN agencies, international financial institutions) typed Government in Dimensions but not representing any single nation''s government research. Each entry includes a justification URL. 45 entries as of 2026-04-02."
+  description: "Intergovernmental organizations that should NOT be classified as domestic government for any country. These are supranational bodies (EU institutions, UN agencies, international financial institutions) typed Government in Dimensions but not representing any single nation's government research. Each entry includes a justification URL. 45 entries as of 2026-04-02."
 }
 
 SELECT *
@@ -71,7 +71,7 @@ FROM (
   SELECT 'grid.452939.0' AS org_id, 'United Nations' AS org_name, 'US' AS host_country,
          'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
   UNION ALL
-  SELECT 'grid.420318.c' AS org_id, 'United Nations Children''s Fund' AS org_name, 'US' AS host_country,
+  SELECT 'grid.420318.c' AS org_id, 'United Nations Children\'s Fund' AS org_name, 'US' AS host_country,
          'UN system organization, intergovernmental (193 member states). https://en.wikipedia.org/wiki/United_Nations' AS blacklist_reason
   UNION ALL
   SELECT 'grid.506496.8' AS org_id, 'United Nations Department of Peacekeeping Operations' AS org_name, 'US' AS host_country,

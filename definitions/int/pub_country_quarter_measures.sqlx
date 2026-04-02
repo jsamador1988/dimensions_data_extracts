@@ -8,20 +8,29 @@ config {
 
 -- Classify publications as basic research based on their own FoR codes
 -- (>50% of FoR2 codes in divisions 01-06). One row per pub_id.
-pub_basic_flag AS (
+WITH pub_for2 AS (
   SELECT
     pub_id,
-    CASE
-      WHEN ARRAY_LENGTH(ANY_VALUE(for2_codes)) = 0 THEN FALSE
-      ELSE (
-        SELECT SAFE_DIVIDE(COUNTIF(bm.is_basic_science), COUNT(*)) > 0.5
-        FROM UNNEST(ANY_VALUE(for2_codes)) AS code
-        LEFT JOIN ${ref("rd_ref", "for2_basic_research_map")} bm
-          ON bm.for2_code = code
-      )
-    END AS is_basic_pub
+    COALESCE(ANY_VALUE(for2_codes), CAST([] AS ARRAY<STRING>)) AS for2_codes
   FROM ${ref("rd_int", "pub_pub_country_base")}
   GROUP BY pub_id
+),
+
+pub_basic_flag AS (
+  SELECT
+    pf.pub_id,
+    COALESCE(
+      SAFE_DIVIDE(
+        COUNTIF(code IS NOT NULL AND bm.is_basic_science),
+        NULLIF(COUNTIF(code IS NOT NULL), 0)
+      ) > 0.5,
+      FALSE
+    ) AS is_basic_pub
+  FROM pub_for2 pf
+  LEFT JOIN UNNEST(pf.for2_codes) AS code
+  LEFT JOIN ${ref("rd_ref", "for2_basic_research_map")} bm
+    ON bm.for2_code = code
+  GROUP BY pf.pub_id
 ),
 
 base AS (
@@ -269,4 +278,3 @@ LEFT JOIN pub_govfund_basic pgb
 
 LEFT JOIN pub_uni_govfund pug
   ON pug.country_code = b.country_code AND pug.quarter = b.quarter
-

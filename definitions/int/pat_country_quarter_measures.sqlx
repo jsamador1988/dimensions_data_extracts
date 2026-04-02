@@ -95,20 +95,29 @@ cite AS (
 
 -- Classify patent families as basic research based on their own FoR codes
 -- (>50% of FoR2 codes in divisions 01-06). One row per family_id.
-pat_family_basic AS (
+pat_family_for2 AS (
   SELECT
     family_id,
-    CASE
-      WHEN ARRAY_LENGTH(ANY_VALUE(for2_codes)) = 0 THEN FALSE
-      ELSE (
-        SELECT SAFE_DIVIDE(COUNTIF(bm.is_basic_science), COUNT(*)) > 0.5
-        FROM UNNEST(ANY_VALUE(for2_codes)) AS code
-        LEFT JOIN ${ref("rd_ref", "for2_basic_research_map")} bm
-          ON bm.for2_code = code
-      )
-    END AS is_basic_patent
+    COALESCE(ANY_VALUE(for2_codes), CAST([] AS ARRAY<STRING>)) AS for2_codes
   FROM ${ref("rd_int", "pat_family_country_base")}
   GROUP BY family_id
+),
+
+pat_family_basic AS (
+  SELECT
+    pf.family_id,
+    COALESCE(
+      SAFE_DIVIDE(
+        COUNTIF(code IS NOT NULL AND bm.is_basic_science),
+        NULLIF(COUNTIF(code IS NOT NULL), 0)
+      ) > 0.5,
+      FALSE
+    ) AS is_basic_patent
+  FROM pat_family_for2 pf
+  LEFT JOIN UNNEST(pf.for2_codes) AS code
+  LEFT JOIN ${ref("rd_ref", "for2_basic_research_map")} bm
+    ON bm.for2_code = code
+  GROUP BY pf.family_id
 ),
 
 -- University totals, own-FoR basic research, and science linkage flags
@@ -174,7 +183,7 @@ uni_govfund AS (
   GROUP BY b.country_code, b.quarter
 ),
 
--- Government-funded patents that are basic research (any tier, all assignee types)
+-- Government-funded patents that are basic research (any tier, private-only by construction)
 govfund_basic AS (
   SELECT
     b.country_code,
@@ -325,4 +334,3 @@ LEFT JOIN govfund_citepub gc
 
 LEFT JOIN cite_uni cu
   ON cu.country_code = b.country_code AND cu.quarter = b.quarter
-

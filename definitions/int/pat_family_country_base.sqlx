@@ -20,7 +20,7 @@ w_inv AS (
 ),
 
 w_assg AS (
-  SELECT family_id, country_code, w_assg, w_assg_gov_surico
+  SELECT family_id, country_code, w_assg, w_assg_gov_surico, w_assg_edu
   FROM ${ref("rd_stage", "patent_family_assignee_weights")}
 ),
 

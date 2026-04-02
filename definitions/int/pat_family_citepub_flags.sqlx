@@ -38,49 +38,77 @@ org_dim AS (
   FROM ${ref("rd_ref", "org_gov_surico")}
 ),
 
--- Single scan of publications table: compute all three characteristics per cited publication
-cited_pub_features AS (
+pub_base AS (
   SELECT
     cf.family_id,
     cf.pub_id,
-
-    -- Basic research: >50% of FoR2 codes are basic science
-    CASE
-      WHEN ARRAY_LENGTH(IFNULL(pub.category_for.second_level.codes, CAST([] AS ARRAY<STRING>))) = 0 THEN FALSE
-      ELSE (
-        SELECT SAFE_DIVIDE(
-          COUNTIF(bm.is_basic_science),
-          COUNT(*)
-        ) > 0.5
-        FROM UNNEST(pub.category_for.second_level.codes) AS code
-        LEFT JOIN basic_map bm
-          ON bm.for2_code = SUBSTR(LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0'), 1, 2)
-        WHERE code IS NOT NULL
-      )
-    END AS is_basic,
-
-    -- Government-funded: any funder_org is a Surico-government org
-    EXISTS(
-      SELECT 1
-      FROM UNNEST(IFNULL(pub.funder_orgs, CAST([] AS ARRAY<STRING>))) AS funder_org_id
-      JOIN org_dim od
-        ON od.org_id = funder_org_id
-      WHERE od.is_gov_surico
-    ) AS is_govfund,
-
-    -- University-authored: any author affiliation is an Education-type org
-    EXISTS(
-      SELECT 1
-      FROM UNNEST(IFNULL(pub.authors, [])) AS a
-      CROSS JOIN UNNEST(IFNULL(a.affiliations_address, [])) AS aff
-      JOIN org_dim od
-        ON od.org_id = aff.grid_id
-      WHERE od.is_edu
-    ) AS is_uni
-
+    pub.category_for.second_level.codes AS for2_codes,
+    pub.funder_orgs,
+    pub.authors
   FROM cited_flat cf
   JOIN `dimensions-ai.data_analytics.publications` pub
     ON pub.id = cf.pub_id
+),
+
+basic_flags AS (
+  SELECT
+    pb.family_id,
+    pb.pub_id,
+    COALESCE(
+      SAFE_DIVIDE(
+        COUNTIF(code IS NOT NULL AND bm.is_basic_science),
+        NULLIF(COUNTIF(code IS NOT NULL), 0)
+      ) > 0.5,
+      FALSE
+    ) AS is_basic
+  FROM pub_base pb
+  LEFT JOIN UNNEST(IFNULL(pb.for2_codes, CAST([] AS ARRAY<STRING>))) AS code
+  LEFT JOIN basic_map bm
+    ON bm.for2_code = SUBSTR(LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0'), 1, 2)
+  GROUP BY pb.family_id, pb.pub_id
+),
+
+govfund_flags AS (
+  SELECT
+    pb.family_id,
+    pb.pub_id,
+    COUNTIF(od.is_gov_surico) > 0 AS is_govfund
+  FROM pub_base pb
+  LEFT JOIN UNNEST(IFNULL(pb.funder_orgs, CAST([] AS ARRAY<STRING>))) AS funder_org_id
+  LEFT JOIN org_dim od
+    ON od.org_id = funder_org_id
+  GROUP BY pb.family_id, pb.pub_id
+),
+
+uni_flags AS (
+  SELECT
+    pb.family_id,
+    pb.pub_id,
+    COUNTIF(od.is_edu) > 0 AS is_uni
+  FROM pub_base pb
+  LEFT JOIN UNNEST(IFNULL(pb.authors, [])) AS a
+  LEFT JOIN UNNEST(IFNULL(a.affiliations_address, [])) AS aff
+  LEFT JOIN org_dim od
+    ON od.org_id = aff.grid_id
+  GROUP BY pb.family_id, pb.pub_id
+),
+
+-- Pre-aggregate each repeated field separately so BigQuery can plan this
+-- without unsupported correlated subqueries.
+cited_pub_features AS (
+  SELECT
+    pb.family_id,
+    pb.pub_id,
+    COALESCE(bf.is_basic, FALSE) AS is_basic,
+    COALESCE(gf.is_govfund, FALSE) AS is_govfund,
+    COALESCE(uf.is_uni, FALSE) AS is_uni
+  FROM pub_base pb
+  LEFT JOIN basic_flags bf
+    USING (family_id, pub_id)
+  LEFT JOIN govfund_flags gf
+    USING (family_id, pub_id)
+  LEFT JOIN uni_flags uf
+    USING (family_id, pub_id)
 )
 
 -- Aggregate to family level: all single, pairwise, and triple combination flags
