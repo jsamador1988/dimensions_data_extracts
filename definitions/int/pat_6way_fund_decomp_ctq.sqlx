@@ -1,0 +1,68 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_6way_fund_decomp_ctq",
+  tags: ["int", "patents"],
+  description: "Patent 6-way mutually exclusive decomposition by ownership x funding: gov_owned, uni_govfund, uni_no_govfund, private_govfund, private_no_govfund, unclassified. Priority classification (gov > uni > private > unclassified). 2 inventor variants (w_domestic binary, w_dom_with_inv inventor-weighted) = 12 columns."
+}
+
+-- Priority classification at patent family x country level:
+--   1. gov_owned:           dom_gov_assg_flag = 1
+--   2. uni_govfund:         dom_edu_assg_flag = 1 AND government-funded (any tier)
+--   3. uni_no_govfund:      dom_edu_assg_flag = 1 (not gov-funded)
+--   4. private_govfund:     government-funded (any tier, not gov/uni)
+--   5. private_no_govfund:  not gov-owned, not uni, not gov-funded
+--   6. unclassified:        fallback (should be ~0)
+
+WITH govfund_families AS (
+  SELECT DISTINCT family_id, country_code
+  FROM ${ref("rd_int", "pat_govfund_direct_fc")}
+  UNION DISTINCT
+  SELECT DISTINCT family_id, country_code
+  FROM ${ref("rd_int", "pat_govfund_rid_fc")}
+  UNION DISTINCT
+  SELECT DISTINCT family_id, country_code
+  FROM ${ref("rd_int", "pat_govfund_inst_fc")}
+),
+
+classified AS (
+  SELECT
+    b.country_code,
+    b.quarter,
+    b.w_domestic,
+    b.w_dom_with_inv,
+    CASE
+      WHEN b.dom_gov_assg_flag = 1                                THEN 'gov_owned'
+      WHEN b.dom_edu_assg_flag = 1 AND gf.family_id IS NOT NULL   THEN 'uni_govfund'
+      WHEN b.dom_edu_assg_flag = 1                                THEN 'uni_no_govfund'
+      WHEN gf.family_id IS NOT NULL                               THEN 'private_govfund'
+      WHEN b.dom_gov_assg_flag = 0 AND b.dom_edu_assg_flag = 0    THEN 'private_no_govfund'
+      ELSE                                                         'unclassified'
+    END AS bucket
+  FROM ${ref("rd_int", "pat_family_country_base")} b
+  LEFT JOIN govfund_families gf
+    ON gf.family_id = b.family_id AND gf.country_code = b.country_code
+)
+
+SELECT
+  country_code,
+  quarter,
+
+  -- Binary assignee-based w_domestic (primary)
+  SUM(IF(bucket = 'gov_owned',          w_domestic, 0.0)) AS pat_6w_gov_owned_ctq,
+  SUM(IF(bucket = 'uni_govfund',        w_domestic, 0.0)) AS pat_6w_uni_govfund_ctq,
+  SUM(IF(bucket = 'uni_no_govfund',     w_domestic, 0.0)) AS pat_6w_uni_no_govfund_ctq,
+  SUM(IF(bucket = 'private_govfund',    w_domestic, 0.0)) AS pat_6w_private_govfund_ctq,
+  SUM(IF(bucket = 'private_no_govfund', w_domestic, 0.0)) AS pat_6w_private_no_govfund_ctq,
+  SUM(IF(bucket = 'unclassified',       w_domestic, 0.0)) AS pat_6w_unclassified_ctq,
+
+  -- Inventor-weighted w_dom_with_inv (secondary)
+  SUM(IF(bucket = 'gov_owned',          w_dom_with_inv, 0.0)) AS pat_6w_gov_owned_inv_ctq,
+  SUM(IF(bucket = 'uni_govfund',        w_dom_with_inv, 0.0)) AS pat_6w_uni_govfund_inv_ctq,
+  SUM(IF(bucket = 'uni_no_govfund',     w_dom_with_inv, 0.0)) AS pat_6w_uni_no_govfund_inv_ctq,
+  SUM(IF(bucket = 'private_govfund',    w_dom_with_inv, 0.0)) AS pat_6w_private_govfund_inv_ctq,
+  SUM(IF(bucket = 'private_no_govfund', w_dom_with_inv, 0.0)) AS pat_6w_private_no_govfund_inv_ctq,
+  SUM(IF(bucket = 'unclassified',       w_dom_with_inv, 0.0)) AS pat_6w_unclassified_inv_ctq
+
+FROM classified
+GROUP BY country_code, quarter

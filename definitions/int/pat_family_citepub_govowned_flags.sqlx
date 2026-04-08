@@ -1,0 +1,129 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_family_citepub_govowned_flags",
+  tags: ["int", "patents"],
+  description: "Per family_id x country_code citation flags with DOMESTIC government authorship awareness. Extends pat_family_citepub_flags by checking whether cited publications have government affiliations in the SAME country as the citing patent. Includes basic research and publication quality (top5j, top01) cross-variants for 8-way citation decomposition."
+}
+
+-- Country-aware citation flags: for each patent family in each country,
+-- check cited publications for domestic government affiliation (same country
+-- as the citing patent's assignee country). Quality variants (top5j, top01)
+-- restrict which cited publications are considered.
+
+WITH base AS (
+  SELECT DISTINCT family_id, country_code
+  FROM ${ref("rd_int", "pat_family_country_base")}
+),
+
+meta AS (
+  SELECT family_id, cited_pub_ids
+  FROM ${ref("rd_stage", "patent_rep_doc_meta")}
+  WHERE ARRAY_LENGTH(cited_pub_ids) > 0
+),
+
+cited_flat AS (
+  SELECT DISTINCT
+    b.family_id,
+    b.country_code,
+    pub_id
+  FROM base b
+  JOIN meta m ON m.family_id = b.family_id
+  CROSS JOIN UNNEST(m.cited_pub_ids) AS pub_id
+  WHERE pub_id IS NOT NULL
+),
+
+basic_map AS (
+  SELECT for2_code, is_basic_science
+  FROM ${ref("rd_ref", "for2_basic_research_map")}
+),
+
+org_dim AS (
+  SELECT org_id, country_code, is_gov_surico
+  FROM ${ref("rd_ref", "org_gov_surico")}
+),
+
+-- Per cited publication: basic research flag
+pub_basic AS (
+  SELECT
+    cf.family_id,
+    cf.country_code,
+    cf.pub_id,
+    COALESCE(
+      SAFE_DIVIDE(
+        COUNTIF(code IS NOT NULL AND bm.is_basic_science),
+        NULLIF(COUNTIF(code IS NOT NULL), 0)
+      ) > 0.5,
+      FALSE
+    ) AS is_basic
+  FROM cited_flat cf
+  JOIN `dimensions-ai.data_analytics.publications` pub ON pub.id = cf.pub_id
+  LEFT JOIN UNNEST(IFNULL(pub.category_for.second_level.codes,
+                          CAST([] AS ARRAY<STRING>))) AS code
+  LEFT JOIN basic_map bm
+    ON bm.for2_code = SUBSTR(LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0'), 1, 2)
+  GROUP BY cf.family_id, cf.country_code, cf.pub_id
+),
+
+-- Per cited publication: domestic government affiliation (same country as citing patent)
+pub_govowned AS (
+  SELECT
+    cf.family_id,
+    cf.country_code,
+    cf.pub_id,
+    MAX(CASE
+      WHEN od.is_gov_surico
+       AND COALESCE(
+             CASE WHEN aff.country_code = 'UK' THEN 'GB'
+                  ELSE aff.country_code END,
+             od.country_code
+           ) = cf.country_code
+      THEN 1 ELSE 0
+    END) AS is_govowned
+  FROM cited_flat cf
+  JOIN `dimensions-ai.data_analytics.publications` pub ON pub.id = cf.pub_id
+  LEFT JOIN UNNEST(IFNULL(pub.authors, [])) AS a
+  LEFT JOIN UNNEST(IFNULL(a.affiliations_address, [])) AS aff
+  LEFT JOIN org_dim od ON od.org_id = aff.grid_id
+  GROUP BY cf.family_id, cf.country_code, cf.pub_id
+),
+
+-- Assemble per-cited-pub features including quality flags
+cited_features AS (
+  SELECT
+    cf.family_id,
+    cf.country_code,
+    cf.pub_id,
+    COALESCE(pb.is_basic, FALSE) AS is_basic,
+    COALESCE(pg.is_govowned, 0) = 1 AS is_govowned,
+    COALESCE(qf.is_top5j, FALSE) AS is_top5j,
+    COALESCE(qf.is_breakthrough, FALSE) AS is_top01
+  FROM cited_flat cf
+  LEFT JOIN pub_basic pb USING (family_id, country_code, pub_id)
+  LEFT JOIN pub_govowned pg USING (family_id, country_code, pub_id)
+  LEFT JOIN ${ref("rd_int", "pub_quality_flags")} qf ON qf.pub_id = cf.pub_id
+)
+
+SELECT
+  family_id,
+  country_code,
+
+  -- All cited publications (no quality filter)
+  TRUE AS has_cited_pub,
+  MAX(IF(is_govowned, 1, 0)) = 1 AS has_cited_govowned_pub,
+  MAX(IF(is_basic, 1, 0)) = 1 AS has_cited_basic_pub,
+  MAX(IF(is_govowned AND is_basic, 1, 0)) = 1 AS has_cited_govowned_basic_pub,
+  MAX(IF(is_govowned AND NOT is_basic, 1, 0)) = 1 AS has_cited_govowned_nonbasic_pub,
+
+  -- Top 5% journal cited publications only
+  MAX(IF(is_top5j, 1, 0)) = 1 AS has_cited_pub_top5j,
+  MAX(IF(is_top5j AND is_govowned, 1, 0)) = 1 AS has_cited_govowned_pub_top5j,
+  MAX(IF(is_top5j AND is_govowned AND is_basic, 1, 0)) = 1 AS has_cited_govowned_basic_pub_top5j,
+
+  -- Top 0.1% breakthrough cited publications only
+  MAX(IF(is_top01, 1, 0)) = 1 AS has_cited_pub_top01,
+  MAX(IF(is_top01 AND is_govowned, 1, 0)) = 1 AS has_cited_govowned_pub_top01,
+  MAX(IF(is_top01 AND is_govowned AND is_basic, 1, 0)) = 1 AS has_cited_govowned_basic_pub_top01
+
+FROM cited_features
+GROUP BY family_id, country_code

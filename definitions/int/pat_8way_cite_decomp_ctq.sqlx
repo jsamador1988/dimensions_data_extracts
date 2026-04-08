@@ -1,0 +1,183 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_8way_cite_decomp_ctq",
+  tags: ["int", "patents"],
+  description: "Patent 8-way citation-based decomposition: ownership (gov/private) x citation target (gov-basic/gov-nonbasic/nongov/none). Priority cascade with basic-takes-priority for tie-breaking. Includes 3 cited-pub quality variants (all, top5j, top01) x 2 inventor variants (w_domestic binary, w_dom_with_inv inventor-weighted) = 48 columns."
+}
+
+-- 8-way citation decomposition:
+--   Government-owned patents (dom_gov_assg_flag = 1):
+--     1. gov_cite_gov_basic:    cites domestic-gov basic-research pub
+--     2. gov_cite_gov_nonbasic: cites domestic-gov pub (not basic)
+--     3. gov_cite_nongov:       cites pub (not domestic-gov)
+--     4. gov_no_cite:           no cited publications
+--   Private patents (dom_gov_assg_flag = 0):
+--     5. priv_cite_gov_basic:   cites domestic-gov basic-research pub
+--     6. priv_cite_gov_nonbasic:cites domestic-gov pub (not basic)
+--     7. priv_cite_nongov:      cites pub (not domestic-gov)
+--     8. priv_no_cite:          no cited publications
+
+WITH family_flags AS (
+  SELECT DISTINCT family_id
+  FROM ${ref("rd_int", "pat_family_citepub_flags")}
+  WHERE has_cited_pub
+),
+
+classified AS (
+  SELECT
+    b.country_code,
+    b.quarter,
+    b.w_domestic,
+    b.w_dom_with_inv,
+    b.dom_gov_assg_flag,
+
+    -- Citation flags (country-aware domestic gov)
+    ff.family_id IS NOT NULL AS has_any_cited_pub,
+    COALESCE(cf.has_cited_govowned_basic_pub, FALSE) AS cite_gov_basic,
+    COALESCE(cf.has_cited_govowned_pub, FALSE) AS cite_gov_any,
+
+    -- Top 5% journal quality variants
+    COALESCE(cf.has_cited_pub_top5j, FALSE) AS has_cite_top5j,
+    COALESCE(cf.has_cited_govowned_basic_pub_top5j, FALSE) AS cite_gov_basic_top5j,
+    COALESCE(cf.has_cited_govowned_pub_top5j, FALSE) AS cite_gov_any_top5j,
+
+    -- Top 0.1% breakthrough quality variants
+    COALESCE(cf.has_cited_pub_top01, FALSE) AS has_cite_top01,
+    COALESCE(cf.has_cited_govowned_basic_pub_top01, FALSE) AS cite_gov_basic_top01,
+    COALESCE(cf.has_cited_govowned_pub_top01, FALSE) AS cite_gov_any_top01
+
+  FROM ${ref("rd_int", "pat_family_country_base")} b
+  LEFT JOIN family_flags ff ON ff.family_id = b.family_id
+  LEFT JOIN ${ref("rd_int", "pat_family_citepub_govowned_flags")} cf
+    ON cf.family_id = b.family_id AND cf.country_code = b.country_code
+)
+
+SELECT
+  country_code,
+  quarter,
+
+  -- ================================================================
+  -- All cited publications (no quality filter) x binary w_domestic
+  -- ================================================================
+  -- Government-owned
+  SUM(IF(dom_gov_assg_flag = 1 AND cite_gov_basic,
+         w_domestic, 0.0)) AS pat_8wc_gov_cite_gov_basic_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND cite_gov_any AND NOT cite_gov_basic,
+         w_domestic, 0.0)) AS pat_8wc_gov_cite_gov_nonbasic_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND has_any_cited_pub AND NOT cite_gov_any,
+         w_domestic, 0.0)) AS pat_8wc_gov_cite_nongov_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND NOT has_any_cited_pub,
+         w_domestic, 0.0)) AS pat_8wc_gov_no_cite_ctq,
+  -- Private
+  SUM(IF(dom_gov_assg_flag = 0 AND cite_gov_basic,
+         w_domestic, 0.0)) AS pat_8wc_priv_cite_gov_basic_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND cite_gov_any AND NOT cite_gov_basic,
+         w_domestic, 0.0)) AS pat_8wc_priv_cite_gov_nonbasic_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND has_any_cited_pub AND NOT cite_gov_any,
+         w_domestic, 0.0)) AS pat_8wc_priv_cite_nongov_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND NOT has_any_cited_pub,
+         w_domestic, 0.0)) AS pat_8wc_priv_no_cite_ctq,
+
+  -- ================================================================
+  -- All cited publications x inventor-weighted w_dom_with_inv
+  -- ================================================================
+  SUM(IF(dom_gov_assg_flag = 1 AND cite_gov_basic,
+         w_dom_with_inv, 0.0)) AS pat_8wc_gov_cite_gov_basic_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND cite_gov_any AND NOT cite_gov_basic,
+         w_dom_with_inv, 0.0)) AS pat_8wc_gov_cite_gov_nonbasic_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND has_any_cited_pub AND NOT cite_gov_any,
+         w_dom_with_inv, 0.0)) AS pat_8wc_gov_cite_nongov_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND NOT has_any_cited_pub,
+         w_dom_with_inv, 0.0)) AS pat_8wc_gov_no_cite_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND cite_gov_basic,
+         w_dom_with_inv, 0.0)) AS pat_8wc_priv_cite_gov_basic_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND cite_gov_any AND NOT cite_gov_basic,
+         w_dom_with_inv, 0.0)) AS pat_8wc_priv_cite_gov_nonbasic_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND has_any_cited_pub AND NOT cite_gov_any,
+         w_dom_with_inv, 0.0)) AS pat_8wc_priv_cite_nongov_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND NOT has_any_cited_pub,
+         w_dom_with_inv, 0.0)) AS pat_8wc_priv_no_cite_inv_ctq,
+
+  -- ================================================================
+  -- Top 5% journal cited publications x binary w_domestic
+  -- ================================================================
+  SUM(IF(dom_gov_assg_flag = 1 AND cite_gov_basic_top5j,
+         w_domestic, 0.0)) AS pat_8wc_gov_cite_gov_basic_top5j_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND cite_gov_any_top5j AND NOT cite_gov_basic_top5j,
+         w_domestic, 0.0)) AS pat_8wc_gov_cite_gov_nonbasic_top5j_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND has_cite_top5j AND NOT cite_gov_any_top5j,
+         w_domestic, 0.0)) AS pat_8wc_gov_cite_nongov_top5j_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND NOT has_cite_top5j,
+         w_domestic, 0.0)) AS pat_8wc_gov_no_cite_top5j_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND cite_gov_basic_top5j,
+         w_domestic, 0.0)) AS pat_8wc_priv_cite_gov_basic_top5j_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND cite_gov_any_top5j AND NOT cite_gov_basic_top5j,
+         w_domestic, 0.0)) AS pat_8wc_priv_cite_gov_nonbasic_top5j_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND has_cite_top5j AND NOT cite_gov_any_top5j,
+         w_domestic, 0.0)) AS pat_8wc_priv_cite_nongov_top5j_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND NOT has_cite_top5j,
+         w_domestic, 0.0)) AS pat_8wc_priv_no_cite_top5j_ctq,
+
+  -- ================================================================
+  -- Top 5% journal x inventor-weighted
+  -- ================================================================
+  SUM(IF(dom_gov_assg_flag = 1 AND cite_gov_basic_top5j,
+         w_dom_with_inv, 0.0)) AS pat_8wc_gov_cite_gov_basic_top5j_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND cite_gov_any_top5j AND NOT cite_gov_basic_top5j,
+         w_dom_with_inv, 0.0)) AS pat_8wc_gov_cite_gov_nonbasic_top5j_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND has_cite_top5j AND NOT cite_gov_any_top5j,
+         w_dom_with_inv, 0.0)) AS pat_8wc_gov_cite_nongov_top5j_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND NOT has_cite_top5j,
+         w_dom_with_inv, 0.0)) AS pat_8wc_gov_no_cite_top5j_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND cite_gov_basic_top5j,
+         w_dom_with_inv, 0.0)) AS pat_8wc_priv_cite_gov_basic_top5j_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND cite_gov_any_top5j AND NOT cite_gov_basic_top5j,
+         w_dom_with_inv, 0.0)) AS pat_8wc_priv_cite_gov_nonbasic_top5j_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND has_cite_top5j AND NOT cite_gov_any_top5j,
+         w_dom_with_inv, 0.0)) AS pat_8wc_priv_cite_nongov_top5j_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND NOT has_cite_top5j,
+         w_dom_with_inv, 0.0)) AS pat_8wc_priv_no_cite_top5j_inv_ctq,
+
+  -- ================================================================
+  -- Top 0.1% breakthrough cited publications x binary w_domestic
+  -- ================================================================
+  SUM(IF(dom_gov_assg_flag = 1 AND cite_gov_basic_top01,
+         w_domestic, 0.0)) AS pat_8wc_gov_cite_gov_basic_top01_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND cite_gov_any_top01 AND NOT cite_gov_basic_top01,
+         w_domestic, 0.0)) AS pat_8wc_gov_cite_gov_nonbasic_top01_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND has_cite_top01 AND NOT cite_gov_any_top01,
+         w_domestic, 0.0)) AS pat_8wc_gov_cite_nongov_top01_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND NOT has_cite_top01,
+         w_domestic, 0.0)) AS pat_8wc_gov_no_cite_top01_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND cite_gov_basic_top01,
+         w_domestic, 0.0)) AS pat_8wc_priv_cite_gov_basic_top01_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND cite_gov_any_top01 AND NOT cite_gov_basic_top01,
+         w_domestic, 0.0)) AS pat_8wc_priv_cite_gov_nonbasic_top01_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND has_cite_top01 AND NOT cite_gov_any_top01,
+         w_domestic, 0.0)) AS pat_8wc_priv_cite_nongov_top01_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND NOT has_cite_top01,
+         w_domestic, 0.0)) AS pat_8wc_priv_no_cite_top01_ctq,
+
+  -- ================================================================
+  -- Top 0.1% breakthrough x inventor-weighted
+  -- ================================================================
+  SUM(IF(dom_gov_assg_flag = 1 AND cite_gov_basic_top01,
+         w_dom_with_inv, 0.0)) AS pat_8wc_gov_cite_gov_basic_top01_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND cite_gov_any_top01 AND NOT cite_gov_basic_top01,
+         w_dom_with_inv, 0.0)) AS pat_8wc_gov_cite_gov_nonbasic_top01_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND has_cite_top01 AND NOT cite_gov_any_top01,
+         w_dom_with_inv, 0.0)) AS pat_8wc_gov_cite_nongov_top01_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 1 AND NOT has_cite_top01,
+         w_dom_with_inv, 0.0)) AS pat_8wc_gov_no_cite_top01_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND cite_gov_basic_top01,
+         w_dom_with_inv, 0.0)) AS pat_8wc_priv_cite_gov_basic_top01_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND cite_gov_any_top01 AND NOT cite_gov_basic_top01,
+         w_dom_with_inv, 0.0)) AS pat_8wc_priv_cite_gov_nonbasic_top01_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND has_cite_top01 AND NOT cite_gov_any_top01,
+         w_dom_with_inv, 0.0)) AS pat_8wc_priv_cite_nongov_top01_inv_ctq,
+  SUM(IF(dom_gov_assg_flag = 0 AND NOT has_cite_top01,
+         w_dom_with_inv, 0.0)) AS pat_8wc_priv_no_cite_top01_inv_ctq
+
+FROM classified
+GROUP BY country_code, quarter

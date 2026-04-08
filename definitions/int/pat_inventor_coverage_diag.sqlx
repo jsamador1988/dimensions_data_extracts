@@ -1,0 +1,19 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_inventor_coverage_diag",
+  tags: ["int", "patents", "diagnostic"],
+  description: "Per country x quarter diagnostic: total patents (binary assignee-based), patents without inventor geocoding, and the percentage missing. Quantifies the inventor geocoding gap (particularly severe for China pre-2019 due to IFI Claims data source transition)."
+}
+
+SELECT
+  country_code,
+  quarter,
+  COUNT(*) AS pat_total_ctq,
+  COUNTIF(has_dom_inventor = 0) AS pat_no_inventor_ctq,
+  SAFE_DIVIDE(
+    COUNTIF(has_dom_inventor = 0),
+    COUNT(*)
+  ) AS pct_no_inventor
+FROM ${ref("rd_int", "pat_family_country_base")}
+GROUP BY country_code, quarter

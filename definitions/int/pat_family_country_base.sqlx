@@ -3,7 +3,7 @@ config {
   schema: "rd_int",
   name: "pat_family_country_base",
   tags: ["int", "patents"],
-  description: "Patent family × country analytic base for domestic innovation: anchored to earliest application quarter. Includes inventor and assignee fractional weights, government assignee share, FoR codes, and linked grant IDs."
+  description: "Patent family × country analytic base for domestic innovation: anchored to earliest application quarter. Uses binary assignee-based attribution (w_domestic = 1.0 if ANY domestic assignee). Inventor weights retained as secondary variants (w_dom_with_inv, has_dom_inventor). Government and university ownership use binary flags."
 }
 
 WITH anchor AS (
@@ -60,18 +60,28 @@ SELECT
   a.quarter,
   a.family_app_dt,
 
-  i.country_code,
+  s.country_code,
 
-  -- Fractional weights (requested: share of domestic inventors × share of domestic assignees)
-  i.w_inv,
+  -- Binary whole-counting: 1.0 if any domestic assignee (primary attribution)
+  1.0 AS w_domestic,
+
+  -- Assignee fractional weight (retained for reference)
   s.w_assg,
-  (i.w_inv * s.w_assg) AS w_domestic,
 
-  -- Government ownership share within domestic assignees (Surico government definition)
-  (i.w_inv * s.w_assg * COALESCE(s.w_assg_gov_surico, 0.0)) AS w_gov_owned,
+  -- Inventor fractional weight (NULL if no inventor geocoding for this country)
+  i.w_inv,
 
-  -- Education (university) ownership share within domestic assignees
-  (i.w_inv * s.w_assg * COALESCE(s.w_assg_edu, 0.0)) AS w_edu_owned,
+  -- Secondary inventor-weighted variant: w_inv * w_assg (0.0 when inventor missing)
+  COALESCE(i.w_inv, 0.0) * s.w_assg AS w_dom_with_inv,
+
+  -- Whether this family has any geocoded domestic inventor in this country
+  IF(i.w_inv IS NOT NULL AND i.w_inv > 0, 1, 0) AS has_dom_inventor,
+
+  -- Government ownership: binary (1.0 if any domestic gov assignee)
+  IF(COALESCE(f.dom_gov_assg_flag, 0) = 1, 1.0, 0.0) AS w_gov_owned,
+
+  -- Education (university) ownership: binary (1.0 if any domestic edu assignee)
+  IF(COALESCE(f.dom_edu_assg_flag, 0) = 1, 1.0, 0.0) AS w_edu_owned,
 
   COALESCE(f.dom_gov_assg_flag, 0) AS dom_gov_assg_flag,
   COALESCE(f.dom_edu_assg_flag, 0) AS dom_edu_assg_flag,
@@ -87,22 +97,19 @@ SELECT
   COALESCE(g.all_grant_ids, CAST([] AS ARRAY<STRING>)) AS all_grant_ids
 
 FROM anchor a
-JOIN w_inv i
-  ON i.family_id = a.family_id
 JOIN w_assg s
   ON s.family_id = a.family_id
- AND s.country_code = i.country_code
+LEFT JOIN w_inv i
+  ON i.family_id = a.family_id
+ AND i.country_code = s.country_code
 LEFT JOIN flags f
   ON f.family_id = a.family_id
- AND f.country_code = i.country_code
+ AND f.country_code = s.country_code
 LEFT JOIN for4 f4
   ON f4.family_id = a.family_id
 LEFT JOIN family_grants g
   ON g.family_id = a.family_id
 
-WHERE i.country_code IS NOT NULL
+WHERE s.country_code IS NOT NULL
   AND s.w_assg IS NOT NULL
-  AND i.w_inv IS NOT NULL
-  AND i.w_inv > 0
   AND s.w_assg > 0
-  AND (i.w_inv * s.w_assg) > 0

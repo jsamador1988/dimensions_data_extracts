@@ -1,0 +1,86 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "global_quarter_totals",
+  tags: ["int", "world"],
+  description: "Global (world) quarterly totals for patents and publications. NOT filtered by country — aggregates across the entire Dimensions universe. Used as denominators for country share tables. Patent families exclude CN utility models/designs (via patent_doc_core). Publication quality flags use global rankings (pub_breakthrough_flags + top_journal_ranking)."
+}
+
+-- ===================================================================
+-- PATENTS: count distinct families per quarter (global)
+-- patent_family_anchor has one row per family_id, already excludes
+-- CN utility models via its dependency on patent_doc_core.
+-- ===================================================================
+WITH pat_global AS (
+  SELECT
+    family_app_qtr AS quarter,
+    COUNT(DISTINCT family_id) AS pat_world_families
+  FROM ${ref("rd_stage", "patent_family_anchor")}
+  GROUP BY family_app_qtr
+),
+
+-- ===================================================================
+-- PUBLICATIONS: count distinct pub_ids per quarter (global)
+-- pub_core is date-filtered (sample_start to sample_end) and
+-- restricted to RESEARCH_ARTICLE + is_citable. One row per pub_id.
+-- ===================================================================
+pub_base AS (
+  SELECT pub_id, quarter
+  FROM ${ref("rd_stage", "pub_core")}
+),
+
+-- Journal mapping (global, no date filter)
+journal_map AS (
+  SELECT pub_id, journal_id
+  FROM ${ref("rd_stage", "pub_quality_features")}
+  WHERE journal_id IS NOT NULL
+),
+
+-- Top 5% journal flag (global ranking)
+journal_rank AS (
+  SELECT journal_id, is_top5_journal
+  FROM ${ref("rd_ref", "top_journal_ranking")}
+),
+
+-- Top 0.1% breakthrough flag (global, FoR2 x year percentile)
+breakthrough AS (
+  SELECT pub_id, is_breakthrough
+  FROM ${ref("rd_int", "pub_breakthrough_flags")}
+),
+
+-- Enrich each publication with quality flags
+pub_enriched AS (
+  SELECT
+    pb.quarter,
+    IFNULL(jr.is_top5_journal, FALSE) AS is_top5j,
+    IFNULL(bt.is_breakthrough, FALSE) AS is_breakthrough
+  FROM pub_base pb
+  LEFT JOIN journal_map jm ON jm.pub_id = pb.pub_id
+  LEFT JOIN journal_rank jr ON jr.journal_id = jm.journal_id
+  LEFT JOIN breakthrough bt ON bt.pub_id = pb.pub_id
+),
+
+pub_global AS (
+  SELECT
+    quarter,
+    COUNT(*) AS pub_world_total,
+    COUNTIF(is_top5j) AS pub_world_top5j,
+    COUNTIF(is_breakthrough) AS pub_world_top01
+  FROM pub_enriched
+  GROUP BY quarter
+)
+
+-- ===================================================================
+-- Final join: one row per quarter with both patent and publication
+-- world totals. FULL OUTER JOIN ensures quarters that exist in only
+-- one domain are still included.
+-- ===================================================================
+SELECT
+  COALESCE(pat.quarter, pub.quarter) AS quarter,
+  IFNULL(pat.pat_world_families, 0) AS pat_world_families,
+  IFNULL(pub.pub_world_total, 0) AS pub_world_total,
+  IFNULL(pub.pub_world_top5j, 0) AS pub_world_top5j,
+  IFNULL(pub.pub_world_top01, 0) AS pub_world_top01
+FROM pat_global pat
+FULL OUTER JOIN pub_global pub ON pub.quarter = pat.quarter
+ORDER BY quarter

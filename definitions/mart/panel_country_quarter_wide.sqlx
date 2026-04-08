@@ -3,7 +3,7 @@ config {
   schema: "rd_mart",
   name: "panel_country_quarter_wide",
   tags: ["mart"],
-  description: "Balanced country x quarter panel combining patent and publication innovation decompositions (domestic totals, ownership, overlapping and mutually-exclusive funding proxies for government and non-government domestic funders, private->government and private->university citation-based measures, university decomposition, and science linkage variables).",
+  description: "Balanced country x quarter panel combining patent and publication innovation decompositions: domestic totals, ownership, funding proxies, citation-based measures, university decomposition, science linkage, 6-way ownership x funding decompositions, 8-way citation-based decomposition, quality-filtered variants, inventor-weighted secondary variants, and diagnostic columns.",
   bigquery: {
     partitionBy: "quarter",
     clusterBy: ["country_code"]
@@ -37,6 +37,26 @@ pub AS (
 
 pub_qual AS (
   SELECT * FROM ${ref("rd_int", "pub_country_quarter_quality_measures")}
+),
+
+pub_6w AS (
+  SELECT * FROM ${ref("rd_int", "pub_6way_decomp_ctq")}
+),
+
+pub_6wq AS (
+  SELECT * FROM ${ref("rd_int", "pub_6way_decomp_quality_ctq")}
+),
+
+pat_8wc AS (
+  SELECT * FROM ${ref("rd_int", "pat_8way_cite_decomp_ctq")}
+),
+
+pat_6w AS (
+  SELECT * FROM ${ref("rd_int", "pat_6way_fund_decomp_ctq")}
+),
+
+pat_inv_diag AS (
+  SELECT * FROM ${ref("rd_int", "pat_inventor_coverage_diag")}
 )
 
 SELECT
@@ -104,6 +124,73 @@ SELECT
   COALESCE(pat.pat_private_cite_uni_raw_ctq, 0.0) AS pat_private_cite_uni_raw_ctq,
   COALESCE(pat.pat_private_cite_uni_norm_ctq, 0.0) AS pat_private_cite_uni_norm_ctq,
 
+  -- Inventor-weighted secondary variants (patents)
+  COALESCE(pat.pat_total_inv_ctq, 0.0) AS pat_total_inv_ctq,
+  COALESCE(pat.pat_gov_owned_inv_ctq, 0.0) AS pat_gov_owned_inv_ctq,
+  COALESCE(pat.pat_private_total_inv_ctq, 0.0) AS pat_private_total_inv_ctq,
+  COALESCE(pat.pat_uni_total_inv_ctq, 0.0) AS pat_uni_total_inv_ctq,
+  COALESCE(pat.pat_total_basic_inv_ctq, 0.0) AS pat_total_basic_inv_ctq,
+
+  -- Inventor coverage diagnostic
+  COALESCE(pat_inv_diag.pat_no_inventor_ctq, 0) AS pat_no_inventor_ctq,
+  COALESCE(pat_inv_diag.pct_no_inventor, 0.0) AS pat_pct_no_inventor,
+
+  -- Patent 6-way ownership x funding decomposition (binary)
+  COALESCE(pat_6w.pat_6w_gov_owned_ctq, 0.0) AS pat_6w_gov_owned_ctq,
+  COALESCE(pat_6w.pat_6w_uni_govfund_ctq, 0.0) AS pat_6w_uni_govfund_ctq,
+  COALESCE(pat_6w.pat_6w_uni_no_govfund_ctq, 0.0) AS pat_6w_uni_no_govfund_ctq,
+  COALESCE(pat_6w.pat_6w_private_govfund_ctq, 0.0) AS pat_6w_private_govfund_ctq,
+  COALESCE(pat_6w.pat_6w_private_no_govfund_ctq, 0.0) AS pat_6w_private_no_govfund_ctq,
+  COALESCE(pat_6w.pat_6w_unclassified_ctq, 0.0) AS pat_6w_unclassified_ctq,
+
+  -- Patent 6-way (inventor-weighted)
+  COALESCE(pat_6w.pat_6w_gov_owned_inv_ctq, 0.0) AS pat_6w_gov_owned_inv_ctq,
+  COALESCE(pat_6w.pat_6w_uni_govfund_inv_ctq, 0.0) AS pat_6w_uni_govfund_inv_ctq,
+  COALESCE(pat_6w.pat_6w_uni_no_govfund_inv_ctq, 0.0) AS pat_6w_uni_no_govfund_inv_ctq,
+  COALESCE(pat_6w.pat_6w_private_govfund_inv_ctq, 0.0) AS pat_6w_private_govfund_inv_ctq,
+  COALESCE(pat_6w.pat_6w_private_no_govfund_inv_ctq, 0.0) AS pat_6w_private_no_govfund_inv_ctq,
+  COALESCE(pat_6w.pat_6w_unclassified_inv_ctq, 0.0) AS pat_6w_unclassified_inv_ctq,
+
+  -- Patent 8-way citation-based decomposition (binary, all cited pubs)
+  COALESCE(pat_8wc.pat_8wc_gov_cite_gov_basic_ctq, 0.0) AS pat_8wc_gov_cite_gov_basic_ctq,
+  COALESCE(pat_8wc.pat_8wc_gov_cite_gov_nonbasic_ctq, 0.0) AS pat_8wc_gov_cite_gov_nonbasic_ctq,
+  COALESCE(pat_8wc.pat_8wc_gov_cite_nongov_ctq, 0.0) AS pat_8wc_gov_cite_nongov_ctq,
+  COALESCE(pat_8wc.pat_8wc_gov_no_cite_ctq, 0.0) AS pat_8wc_gov_no_cite_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_cite_gov_basic_ctq, 0.0) AS pat_8wc_priv_cite_gov_basic_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_cite_gov_nonbasic_ctq, 0.0) AS pat_8wc_priv_cite_gov_nonbasic_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_cite_nongov_ctq, 0.0) AS pat_8wc_priv_cite_nongov_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_no_cite_ctq, 0.0) AS pat_8wc_priv_no_cite_ctq,
+
+  -- Patent 8-way (inventor-weighted, all cited pubs)
+  COALESCE(pat_8wc.pat_8wc_gov_cite_gov_basic_inv_ctq, 0.0) AS pat_8wc_gov_cite_gov_basic_inv_ctq,
+  COALESCE(pat_8wc.pat_8wc_gov_cite_gov_nonbasic_inv_ctq, 0.0) AS pat_8wc_gov_cite_gov_nonbasic_inv_ctq,
+  COALESCE(pat_8wc.pat_8wc_gov_cite_nongov_inv_ctq, 0.0) AS pat_8wc_gov_cite_nongov_inv_ctq,
+  COALESCE(pat_8wc.pat_8wc_gov_no_cite_inv_ctq, 0.0) AS pat_8wc_gov_no_cite_inv_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_cite_gov_basic_inv_ctq, 0.0) AS pat_8wc_priv_cite_gov_basic_inv_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_cite_gov_nonbasic_inv_ctq, 0.0) AS pat_8wc_priv_cite_gov_nonbasic_inv_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_cite_nongov_inv_ctq, 0.0) AS pat_8wc_priv_cite_nongov_inv_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_no_cite_inv_ctq, 0.0) AS pat_8wc_priv_no_cite_inv_ctq,
+
+  -- Patent 8-way (binary, top5j cited pubs)
+  COALESCE(pat_8wc.pat_8wc_gov_cite_gov_basic_top5j_ctq, 0.0) AS pat_8wc_gov_cite_gov_basic_top5j_ctq,
+  COALESCE(pat_8wc.pat_8wc_gov_cite_gov_nonbasic_top5j_ctq, 0.0) AS pat_8wc_gov_cite_gov_nonbasic_top5j_ctq,
+  COALESCE(pat_8wc.pat_8wc_gov_cite_nongov_top5j_ctq, 0.0) AS pat_8wc_gov_cite_nongov_top5j_ctq,
+  COALESCE(pat_8wc.pat_8wc_gov_no_cite_top5j_ctq, 0.0) AS pat_8wc_gov_no_cite_top5j_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_cite_gov_basic_top5j_ctq, 0.0) AS pat_8wc_priv_cite_gov_basic_top5j_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_cite_gov_nonbasic_top5j_ctq, 0.0) AS pat_8wc_priv_cite_gov_nonbasic_top5j_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_cite_nongov_top5j_ctq, 0.0) AS pat_8wc_priv_cite_nongov_top5j_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_no_cite_top5j_ctq, 0.0) AS pat_8wc_priv_no_cite_top5j_ctq,
+
+  -- Patent 8-way (binary, top01 cited pubs)
+  COALESCE(pat_8wc.pat_8wc_gov_cite_gov_basic_top01_ctq, 0.0) AS pat_8wc_gov_cite_gov_basic_top01_ctq,
+  COALESCE(pat_8wc.pat_8wc_gov_cite_gov_nonbasic_top01_ctq, 0.0) AS pat_8wc_gov_cite_gov_nonbasic_top01_ctq,
+  COALESCE(pat_8wc.pat_8wc_gov_cite_nongov_top01_ctq, 0.0) AS pat_8wc_gov_cite_nongov_top01_ctq,
+  COALESCE(pat_8wc.pat_8wc_gov_no_cite_top01_ctq, 0.0) AS pat_8wc_gov_no_cite_top01_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_cite_gov_basic_top01_ctq, 0.0) AS pat_8wc_priv_cite_gov_basic_top01_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_cite_gov_nonbasic_top01_ctq, 0.0) AS pat_8wc_priv_cite_gov_nonbasic_top01_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_cite_nongov_top01_ctq, 0.0) AS pat_8wc_priv_cite_nongov_top01_ctq,
+  COALESCE(pat_8wc.pat_8wc_priv_no_cite_top01_ctq, 0.0) AS pat_8wc_priv_no_cite_top01_ctq,
+
   -- -----------------------------
   -- Publications
   -- -----------------------------
@@ -168,7 +255,41 @@ SELECT
   COALESCE(pub_qual.pub_uni_total_top01_ctq, 0.0) AS pub_uni_total_top01_ctq,
   COALESCE(pub_qual.pub_uni_basic_top01_ctq, 0.0) AS pub_uni_basic_top01_ctq,
   COALESCE(pub_qual.pub_govfund_any_excl_top01_ctq, 0.0) AS pub_govfund_any_excl_top01_ctq,
-  COALESCE(pub_qual.pub_uni_govfund_top01_ctq, 0.0) AS pub_uni_govfund_top01_ctq
+  COALESCE(pub_qual.pub_uni_govfund_top01_ctq, 0.0) AS pub_uni_govfund_top01_ctq,
+
+  -- -----------------------------
+  -- Publication 6-way decomposition
+  -- -----------------------------
+  COALESCE(pub_6w.pub_6w_gov_owned_ctq, 0.0) AS pub_6w_gov_owned_ctq,
+  COALESCE(pub_6w.pub_6w_uni_govfund_ctq, 0.0) AS pub_6w_uni_govfund_ctq,
+  COALESCE(pub_6w.pub_6w_uni_no_govfund_ctq, 0.0) AS pub_6w_uni_no_govfund_ctq,
+  COALESCE(pub_6w.pub_6w_private_govfund_ctq, 0.0) AS pub_6w_private_govfund_ctq,
+  COALESCE(pub_6w.pub_6w_private_no_govfund_ctq, 0.0) AS pub_6w_private_no_govfund_ctq,
+  COALESCE(pub_6w.pub_6w_unclassified_ctq, 0.0) AS pub_6w_unclassified_ctq,
+
+  -- Publication 6-way (basic research subset)
+  COALESCE(pub_6w.pub_6w_gov_owned_basic_ctq, 0.0) AS pub_6w_gov_owned_basic_ctq,
+  COALESCE(pub_6w.pub_6w_uni_govfund_basic_ctq, 0.0) AS pub_6w_uni_govfund_basic_ctq,
+  COALESCE(pub_6w.pub_6w_uni_no_govfund_basic_ctq, 0.0) AS pub_6w_uni_no_govfund_basic_ctq,
+  COALESCE(pub_6w.pub_6w_private_govfund_basic_ctq, 0.0) AS pub_6w_private_govfund_basic_ctq,
+  COALESCE(pub_6w.pub_6w_private_no_govfund_basic_ctq, 0.0) AS pub_6w_private_no_govfund_basic_ctq,
+  COALESCE(pub_6w.pub_6w_unclassified_basic_ctq, 0.0) AS pub_6w_unclassified_basic_ctq,
+
+  -- Publication 6-way quality: top 5% journal
+  COALESCE(pub_6wq.pub_6wq_gov_owned_top5j_ctq, 0.0) AS pub_6wq_gov_owned_top5j_ctq,
+  COALESCE(pub_6wq.pub_6wq_uni_govfund_top5j_ctq, 0.0) AS pub_6wq_uni_govfund_top5j_ctq,
+  COALESCE(pub_6wq.pub_6wq_uni_no_govfund_top5j_ctq, 0.0) AS pub_6wq_uni_no_govfund_top5j_ctq,
+  COALESCE(pub_6wq.pub_6wq_private_govfund_top5j_ctq, 0.0) AS pub_6wq_private_govfund_top5j_ctq,
+  COALESCE(pub_6wq.pub_6wq_private_no_govfund_top5j_ctq, 0.0) AS pub_6wq_private_no_govfund_top5j_ctq,
+  COALESCE(pub_6wq.pub_6wq_unclassified_top5j_ctq, 0.0) AS pub_6wq_unclassified_top5j_ctq,
+
+  -- Publication 6-way quality: top 0.1% breakthrough
+  COALESCE(pub_6wq.pub_6wq_gov_owned_top01_ctq, 0.0) AS pub_6wq_gov_owned_top01_ctq,
+  COALESCE(pub_6wq.pub_6wq_uni_govfund_top01_ctq, 0.0) AS pub_6wq_uni_govfund_top01_ctq,
+  COALESCE(pub_6wq.pub_6wq_uni_no_govfund_top01_ctq, 0.0) AS pub_6wq_uni_no_govfund_top01_ctq,
+  COALESCE(pub_6wq.pub_6wq_private_govfund_top01_ctq, 0.0) AS pub_6wq_private_govfund_top01_ctq,
+  COALESCE(pub_6wq.pub_6wq_private_no_govfund_top01_ctq, 0.0) AS pub_6wq_private_no_govfund_top01_ctq,
+  COALESCE(pub_6wq.pub_6wq_unclassified_top01_ctq, 0.0) AS pub_6wq_unclassified_top01_ctq
 
 FROM grid
 LEFT JOIN pat
@@ -177,3 +298,13 @@ LEFT JOIN pub
   ON pub.country_code = grid.country_code AND pub.quarter = grid.quarter
 LEFT JOIN pub_qual
   ON pub_qual.country_code = grid.country_code AND pub_qual.quarter = grid.quarter
+LEFT JOIN pub_6w
+  ON pub_6w.country_code = grid.country_code AND pub_6w.quarter = grid.quarter
+LEFT JOIN pub_6wq
+  ON pub_6wq.country_code = grid.country_code AND pub_6wq.quarter = grid.quarter
+LEFT JOIN pat_8wc
+  ON pat_8wc.country_code = grid.country_code AND pat_8wc.quarter = grid.quarter
+LEFT JOIN pat_6w
+  ON pat_6w.country_code = grid.country_code AND pat_6w.quarter = grid.quarter
+LEFT JOIN pat_inv_diag
+  ON pat_inv_diag.country_code = grid.country_code AND pat_inv_diag.quarter = grid.quarter

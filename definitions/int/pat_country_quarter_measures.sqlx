@@ -10,10 +10,14 @@ WITH base AS (
   SELECT
     country_code,
     quarter,
+    -- Binary assignee-based counts (primary)
     SUM(w_domestic) AS pat_total_ctq,
     SUM(w_gov_owned) AS pat_gov_owned_ctq,
-    -- Private-only denominator (no domestic government assignee on the family)
-    SUM(IF(dom_gov_assg_flag = 0, w_domestic, 0.0)) AS pat_private_total_ctq
+    SUM(IF(dom_gov_assg_flag = 0, w_domestic, 0.0)) AS pat_private_total_ctq,
+    -- Inventor-weighted counts (secondary)
+    SUM(w_dom_with_inv) AS pat_total_inv_ctq,
+    SUM(IF(dom_gov_assg_flag = 1, w_dom_with_inv, 0.0)) AS pat_gov_owned_inv_ctq,
+    SUM(IF(dom_gov_assg_flag = 0, w_dom_with_inv, 0.0)) AS pat_private_total_inv_ctq
   FROM ${ref("rd_int", "pat_family_country_base")}
   GROUP BY country_code, quarter
 ),
@@ -129,9 +133,10 @@ uni_and_cite AS (
     SUM(IF(b.dom_edu_assg_flag = 1, b.w_domestic, 0.0)) AS pat_uni_total_ctq,
 
     -- Patent's own basic research classification (by FoR codes)
+    -- Uses w_gov_owned (fractional) to match base CTE's pat_gov_owned_ctq definition
     SUM(IF(IFNULL(bf.is_basic_patent, FALSE), b.w_domestic, 0.0)) AS pat_total_basic_ctq,
-    SUM(IF(b.dom_gov_assg_flag = 1 AND IFNULL(bf.is_basic_patent, FALSE), b.w_domestic, 0.0)) AS pat_gov_owned_basic_ctq,
-    SUM(IF(b.dom_gov_assg_flag = 0 AND IFNULL(bf.is_basic_patent, FALSE), b.w_domestic, 0.0)) AS pat_private_basic_ctq,
+    SUM(IF(IFNULL(bf.is_basic_patent, FALSE), b.w_gov_owned, 0.0)) AS pat_gov_owned_basic_ctq,
+    SUM(IF(IFNULL(bf.is_basic_patent, FALSE) AND b.dom_gov_assg_flag = 0, b.w_domestic, 0.0)) AS pat_private_basic_ctq,
     SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(bf.is_basic_patent, FALSE), b.w_domestic, 0.0)) AS pat_uni_basic_ctq,
 
     -- Science linkage: patents citing publications
@@ -144,7 +149,11 @@ uni_and_cite AS (
     -- University x science linkage cross-combinations
     SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(cf.has_cited_pub, FALSE), b.w_domestic, 0.0)) AS pat_uni_citepub_ctq,
     SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(cf.has_cited_basic_pub, FALSE), b.w_domestic, 0.0)) AS pat_uni_citepub_basic_ctq,
-    SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(cf.has_cited_govfund_basic_pub, FALSE), b.w_domestic, 0.0)) AS pat_uni_citepub_govfund_basic_ctq
+    SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(cf.has_cited_govfund_basic_pub, FALSE), b.w_domestic, 0.0)) AS pat_uni_citepub_govfund_basic_ctq,
+
+    -- Inventor-weighted secondary variants
+    SUM(IF(b.dom_edu_assg_flag = 1, b.w_dom_with_inv, 0.0)) AS pat_uni_total_inv_ctq,
+    SUM(IF(IFNULL(bf.is_basic_patent, FALSE), b.w_dom_with_inv, 0.0)) AS pat_total_basic_inv_ctq
 
   FROM ${ref("rd_int", "pat_family_country_base")} b
   LEFT JOIN ${ref("rd_int", "pat_family_citepub_flags")} cf
@@ -290,7 +299,14 @@ SELECT
 
   -- Private->university citation spillover
   COALESCE(cu.pat_private_cite_uni_raw_ctq, 0.0) AS pat_private_cite_uni_raw_ctq,
-  COALESCE(cu.pat_private_cite_uni_norm_ctq, 0.0) AS pat_private_cite_uni_norm_ctq
+  COALESCE(cu.pat_private_cite_uni_norm_ctq, 0.0) AS pat_private_cite_uni_norm_ctq,
+
+  -- Inventor-weighted secondary variants
+  b.pat_total_inv_ctq,
+  b.pat_gov_owned_inv_ctq,
+  b.pat_private_total_inv_ctq,
+  COALESCE(uc.pat_uni_total_inv_ctq, 0.0) AS pat_uni_total_inv_ctq,
+  COALESCE(uc.pat_total_basic_inv_ctq, 0.0) AS pat_total_basic_inv_ctq
 
 FROM base b
 LEFT JOIN gov_direct gd
