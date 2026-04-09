@@ -44,3 +44,7 @@ vars:
 
   # --- Tier 2 RID Top-K filtering ---
   rid_topk: "3"
+
+  # --- Stage-level options (not matching parameters) ---
+  ipcr_prefix_len: "0"
+  pub_allow_year_only_dates: "false"
