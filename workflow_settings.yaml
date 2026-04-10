@@ -11,8 +11,8 @@ vars:
   journal_elig_min_articles: "1000"
   top_journal_pct: "0.05"
   breakthrough_min_cell_pubs: "100"
-  min_for4_overlap: "0"
-  min_jaccard: "0.0"
+  min_for4_overlap: "1"
+  min_jaccard: "0.2"
   grant_match_window_years: "15"
   # ------------------------------------------------------------
   # Tier-3 fuzzy hardening (institution matching)
@@ -21,12 +21,12 @@ vars:
   inst_fuzzy_max_concepts_pub: "20"
   inst_fuzzy_max_concepts_patent: "20"
 
-  inst_fuzzy_min_concept_jaccard: "0.02"
-  inst_fuzzy_min_title_jaccard: "0.10"
+  inst_fuzzy_min_concept_jaccard: "0.10"
+  inst_fuzzy_min_title_jaccard: "0.20"
 
   # When FoR Jaccard fails or FoR is missing, allow concept overlap to override (safer than title-only).
-  inst_fuzzy_min_concept_jaccard_nofield: "0.02"
-  inst_fuzzy_min_concept_overlap_nofield: "1"
+  inst_fuzzy_min_concept_jaccard_nofield: "0.05"
+  inst_fuzzy_min_concept_overlap_nofield: "2"
 
   # keep only top-K scored grant matches per output (performance guardrail)
   inst_fuzzy_topk: "5"
