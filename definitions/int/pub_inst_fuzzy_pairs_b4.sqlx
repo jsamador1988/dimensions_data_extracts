@@ -1,0 +1,326 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_inst_fuzzy_pairs_b4",
+  tags: ["int", "publications", "grants", "performance"],
+  bigquery: {
+    partitionBy: "quarter",
+    clusterBy: ["country_code", "is_gov_surico", "pub_id", "grant_id"]
+  },
+  description: "Batch b4 (all other countries) of pub_inst_fuzzy_pairs. Split to avoid BQ shuffle limits."
+}
+
+WITH base AS (
+  SELECT
+    pub_id,
+    country_code,
+    quarter,
+    pub_dt_best,
+    w_aff,
+    w_public_prod,
+    for4_codes,
+    for2_codes,
+    ARRAY_LENGTH(COALESCE(for4_codes, CAST([] AS ARRAY<STRING>))) AS len_for4,
+    ARRAY_LENGTH(COALESCE(for2_codes, CAST([] AS ARRAY<STRING>))) AS len_for2
+  FROM ${ref("rd_int", "pub_pub_country_base")}
+  WHERE w_public_prod = 0
+    AND country_code NOT IN ('US', 'CN', 'GB', 'JP', 'DE', 'CA', 'IT', 'AU', 'FR', 'KR', 'IN', 'BR', 'ES')
+),
+
+pub_orgs AS (
+  SELECT DISTINCT pub_id, country_code, org_id
+  FROM ${ref("rd_stage", "pub_country_orgs")}
+  WHERE org_id IS NOT NULL
+),
+
+grant_orgs AS (
+  SELECT country_code, is_gov_surico, grant_id, start_dt, org_id
+  FROM ${ref("rd_stage", "grant_orgs_flat")}
+  WHERE org_id IS NOT NULL AND start_dt IS NOT NULL
+),
+
+-- B1: Lean join first -- no wide arrays, just IDs + date filter
+pairs_base AS (
+  SELECT
+    b.pub_id,
+    b.country_code,
+    b.quarter,
+    b.w_aff,
+    go.is_gov_surico,
+    go.grant_id,
+    go.start_dt AS grant_start_dt,
+    b.for4_codes,
+    b.for2_codes,
+    b.len_for4,
+    b.len_for2
+  FROM base b
+  JOIN pub_orgs po
+    ON po.pub_id = b.pub_id
+   AND po.country_code = b.country_code
+  JOIN grant_orgs go
+    ON go.org_id = po.org_id
+   AND go.country_code = b.country_code
+  WHERE b.pub_dt_best >= go.start_dt
+    AND b.pub_dt_best < DATE_ADD(
+      go.start_dt,
+      INTERVAL CAST(${(dataform.projectConfig.vars.grant_match_window_years || 10)} AS INT64) YEAR
+    )
+),
+
+grants AS (
+  SELECT
+    country_code,
+    is_gov_surico,
+    grant_id,
+    start_dt,
+    grant_for4,
+    grant_for2,
+    grant_title_tokens,
+    grant_concepts,
+    grant_abstract_tokens,
+    ARRAY_LENGTH(COALESCE(grant_for4, CAST([] AS ARRAY<STRING>))) AS len_grant_for4,
+    ARRAY_LENGTH(COALESCE(grant_for2, CAST([] AS ARRAY<STRING>))) AS len_grant_for2
+  FROM ${ref("rd_stage", "grants_domestic_core")}
+  WHERE start_dt IS NOT NULL
+),
+
+-- B1 continued: Attach grant arrays + compute FoR overlap on surviving pairs only
+pairs0 AS (
+  SELECT
+    pb.pub_id,
+    pb.country_code,
+    pb.quarter,
+    pb.w_aff,
+    pb.is_gov_surico,
+    g.grant_id,
+    pb.grant_start_dt,
+    g.grant_for4,
+    g.grant_for2,
+    g.grant_title_tokens,
+    g.grant_concepts,
+    g.grant_abstract_tokens,
+    pb.len_for4,
+    pb.len_for2,
+    g.len_grant_for4,
+    g.len_grant_for2,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(pb.for4_codes, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(g.grant_for4, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_for4,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(pb.for2_codes, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(g.grant_for2, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_for2
+
+  FROM pairs_base pb
+  JOIN grants g
+    ON g.grant_id = pb.grant_id
+   AND g.country_code = pb.country_code
+   AND g.is_gov_surico = pb.is_gov_surico
+),
+
+pairs_prefilter AS (
+  SELECT
+    *,
+    -- B3: Arithmetic FoR unions (FoR codes are guaranteed distinct upstream)
+    (len_for4 + len_grant_for4 - overlap_for4) AS union_for4,
+    (len_for2 + len_grant_for2 - overlap_for2) AS union_for2,
+    SAFE_DIVIDE(overlap_for4, NULLIF(len_for4 + len_grant_for4 - overlap_for4, 0)) AS jaccard_for4,
+    SAFE_DIVIDE(overlap_for2, NULLIF(len_for2 + len_grant_for2 - overlap_for2, 0)) AS jaccard_for2,
+
+    (
+      (overlap_for4 >= CAST(${(dataform.projectConfig.vars.min_for4_overlap || 1)} AS INT64)
+       AND SAFE_DIVIDE(overlap_for4, NULLIF(len_for4 + len_grant_for4 - overlap_for4, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
+      OR
+      (overlap_for2 >= 1
+       AND SAFE_DIVIDE(overlap_for2, NULLIF(len_for2 + len_grant_for2 - overlap_for2, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
+    ) AS field_pass
+  FROM pairs0
+  WHERE (overlap_for4 >= 1 OR overlap_for2 >= 1
+         OR ((len_for4 + len_grant_for4) = 0 AND (len_for2 + len_grant_for2) = 0))
+),
+
+-- B2: Conditional candidate cap (0 = disabled, >0 = limit per pub x country)
+pairs_limited AS (
+  SELECT * EXCEPT(rn_cap)
+  FROM (
+    SELECT
+      *,
+      CASE
+        WHEN CAST(${(dataform.projectConfig.vars.inst_max_candidates_per_pub || 0)} AS INT64) = 0 THEN 1
+        ELSE ROW_NUMBER() OVER (
+          PARTITION BY pub_id, country_code, is_gov_surico
+          ORDER BY field_pass DESC, jaccard_for4 DESC, jaccard_for2 DESC
+        )
+      END AS rn_cap
+    FROM pairs_prefilter
+  )
+  WHERE rn_cap <= GREATEST(
+    CAST(${(dataform.projectConfig.vars.inst_max_candidates_per_pub || 0)} AS INT64),
+    1
+  )
+),
+
+pub_feat AS (
+  SELECT
+    pub_id,
+    pub_title_tokens,
+    pub_concepts,
+    pub_abstract_tokens,
+    ARRAY_LENGTH(COALESCE(pub_title_tokens, CAST([] AS ARRAY<STRING>))) AS len_pub_title,
+    ARRAY_LENGTH(COALESCE(pub_concepts, CAST([] AS ARRAY<STRING>))) AS len_pub_concepts
+  FROM ${ref("rd_stage", "pub_text_features")}
+),
+
+pairs_scored AS (
+  SELECT
+    p.*,
+    pf.pub_title_tokens,
+    pf.pub_concepts,
+
+    -- Concept overlap + union: ARRAY_CONCAT + DISTINCT (concepts NOT guaranteed distinct upstream)
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(pf.pub_concepts, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(p.grant_concepts, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_concepts,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT z
+      FROM UNNEST(ARRAY_CONCAT(
+        COALESCE(pf.pub_concepts, CAST([] AS ARRAY<STRING>)),
+        COALESCE(p.grant_concepts, CAST([] AS ARRAY<STRING>))
+      )) z
+      WHERE z IS NOT NULL
+    )) AS union_concepts,
+
+    -- Title overlap: intersection
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(pf.pub_title_tokens, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(p.grant_title_tokens, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_title,
+
+    -- B3: Title union -- arithmetic (title tokens are guaranteed distinct upstream)
+    pf.len_pub_title,
+    ARRAY_LENGTH(COALESCE(p.grant_title_tokens, CAST([] AS ARRAY<STRING>))) AS len_grant_title,
+
+    -- Abstract overlap + union (for enhanced fuzzy scoring)
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT x
+      FROM UNNEST(COALESCE(pf.pub_abstract_tokens, CAST([] AS ARRAY<STRING>))) x
+      INTERSECT DISTINCT
+      SELECT DISTINCT y
+      FROM UNNEST(COALESCE(p.grant_abstract_tokens, CAST([] AS ARRAY<STRING>))) y
+    )) AS overlap_abstract,
+
+    ARRAY_LENGTH(ARRAY(
+      SELECT DISTINCT z
+      FROM UNNEST(ARRAY_CONCAT(
+        COALESCE(pf.pub_abstract_tokens, CAST([] AS ARRAY<STRING>)),
+        COALESCE(p.grant_abstract_tokens, CAST([] AS ARRAY<STRING>))
+      )) z
+      WHERE z IS NOT NULL
+    )) AS union_abstract
+
+  FROM pairs_limited p
+  LEFT JOIN pub_feat pf
+    ON pf.pub_id = p.pub_id
+),
+
+pairs_scored2 AS (
+  SELECT
+    *,
+    SAFE_DIVIDE(overlap_concepts, NULLIF(union_concepts, 0)) AS jaccard_concepts,
+    -- B3: Arithmetic title union
+    SAFE_DIVIDE(overlap_title, NULLIF(len_pub_title + len_grant_title - overlap_title, 0)) AS jaccard_title,
+    -- Abstract Jaccard (NULL when either side has no abstract tokens)
+    SAFE_DIVIDE(overlap_abstract, NULLIF(union_abstract, 0)) AS jaccard_abstract
+  FROM pairs_scored
+),
+
+-- Enhanced fuzzy score: blend abstract Jaccard when available, else fallback to original
+pairs_enhanced AS (
+  SELECT
+    *,
+    CASE
+      WHEN jaccard_abstract IS NOT NULL THEN
+        CAST(${(dataform.projectConfig.vars.inst_fuzzy_base_weight || "0.7")} AS FLOAT64)
+          * (0.7 * COALESCE(jaccard_concepts, 0.0) + 0.3 * COALESCE(jaccard_title, 0.0))
+        + CAST(${(dataform.projectConfig.vars.inst_fuzzy_abstract_weight || "0.3")} AS FLOAT64)
+          * jaccard_abstract
+      ELSE
+        0.7 * COALESCE(jaccard_concepts, 0.0) + 0.3 * COALESCE(jaccard_title, 0.0)
+    END AS fuzzy_score
+  FROM pairs_scored2
+  WHERE (
+    (
+      field_pass
+      AND (
+        COALESCE(jaccard_concepts, 0.0) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_concept_jaccard || 0.10)} AS FLOAT64)
+        OR COALESCE(jaccard_title, 0.0) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_jaccard || 0.20)} AS FLOAT64)
+      )
+    )
+    OR
+    (
+      NOT field_pass
+      AND COALESCE(jaccard_concepts, 0.0) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_concept_jaccard_nofield || 0.05)} AS FLOAT64)
+      AND overlap_concepts >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_concept_overlap_nofield || 2)} AS INT64)
+    )
+  )
+),
+
+pairs_ranked AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (
+      PARTITION BY pub_id, country_code
+      ORDER BY fuzzy_score DESC
+    ) AS rn_fuzzy_all,
+    ROW_NUMBER() OVER (
+      PARTITION BY pub_id, country_code, is_gov_surico
+      ORDER BY fuzzy_score DESC
+    ) AS rn_fuzzy_by_funder
+  FROM pairs_enhanced
+),
+
+pairs_kept AS (
+  SELECT *
+  FROM pairs_ranked
+  WHERE rn_fuzzy_all <= CAST(${(dataform.projectConfig.vars.inst_fuzzy_topk || 3)} AS INT64)
+     OR rn_fuzzy_by_funder <= CAST(${(dataform.projectConfig.vars.inst_fuzzy_topk || 3)} AS INT64)
+)
+
+SELECT
+  pub_id,
+  country_code,
+  quarter,
+  w_aff,
+  is_gov_surico,
+  grant_id,
+  grant_start_dt,
+
+  field_pass,
+  jaccard_for4,
+  jaccard_for2,
+  COALESCE(jaccard_concepts, 0.0) AS jaccard_concepts,
+  COALESCE(jaccard_title, 0.0) AS jaccard_title,
+  COALESCE(jaccard_abstract, 0.0) AS jaccard_abstract,
+  COALESCE(fuzzy_score, 0.0) AS fuzzy_score,
+  IF(NOT field_pass, 1, 0) AS used_concept_override,
+  rn_fuzzy_all,
+  rn_fuzzy_by_funder
+
+FROM pairs_kept
