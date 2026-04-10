@@ -11,9 +11,9 @@ vars:
   journal_elig_min_articles: "1000"
   top_journal_pct: "0.05"
   breakthrough_min_cell_pubs: "100"
-  min_for4_overlap: "1"
-  min_jaccard: "0.5"
-  grant_match_window_years: "10"
+  min_for4_overlap: "0"
+  min_jaccard: "0.0"
+  grant_match_window_years: "15"
   # ------------------------------------------------------------
   # Tier-3 fuzzy hardening (institution matching)
   # ------------------------------------------------------------
@@ -21,15 +21,15 @@ vars:
   inst_fuzzy_max_concepts_pub: "20"
   inst_fuzzy_max_concepts_patent: "20"
 
-  inst_fuzzy_min_concept_jaccard: "0.10"
-  inst_fuzzy_min_title_jaccard: "0.20"
+  inst_fuzzy_min_concept_jaccard: "0.02"
+  inst_fuzzy_min_title_jaccard: "0.10"
 
   # When FoR Jaccard fails or FoR is missing, allow concept overlap to override (safer than title-only).
-  inst_fuzzy_min_concept_jaccard_nofield: "0.05"
-  inst_fuzzy_min_concept_overlap_nofield: "2"
+  inst_fuzzy_min_concept_jaccard_nofield: "0.02"
+  inst_fuzzy_min_concept_overlap_nofield: "1"
 
   # keep only top-K scored grant matches per output (performance guardrail)
-  inst_fuzzy_topk: "3"
+  inst_fuzzy_topk: "5"
 
   # max candidate pairs per pub/patent before concept/title scoring (performance guardrail)
   inst_max_candidates_per_pub: "100"
@@ -40,10 +40,10 @@ vars:
   # --- Enhanced fuzzy scoring (abstract Jaccard blend) ---
   inst_fuzzy_base_weight: "0.7"
   inst_fuzzy_abstract_weight: "0.3"
-  inst_fuzzy_max_abstract_tokens: "200"
+  inst_fuzzy_max_abstract_tokens: "300"
 
   # --- Tier 2 RID Top-K filtering ---
-  rid_topk: "3"
+  rid_topk: "5"
 
   # --- Stage-level options (not matching parameters) ---
   ipcr_prefix_len: "0"

@@ -45,12 +45,25 @@ SELECT
       AND LENGTH(tok) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_token_len || 3)} AS INT64)
       AND NOT REGEXP_CONTAINS(tok, r"^\d+$")
       AND tok NOT IN UNNEST([
-        "a","an","and","are","as","at","be","been","being","by","for","from","has","have","had",
-        "in","into","is","it","its","of","on","or","that","the","their","this","to","was","were",
-        "with","without","via","using","use","used","based","approach","approaches","method","methods",
+        -- English function words
+        "a","an","and","are","as","at","be","been","being","but","by","can","could","did","do",
+        "does","each","few","for","from","get","got","has","have","had","her","him","his","how",
+        "if","in","into","is","it","its","just","may","might","more","most","much","must","my",
+        "not","now","of","on","only","or","other","our","out","over","own","per","same","she",
+        "should","so","some","such","than","that","the","their","them","then","there","these",
+        "they","this","those","through","to","too","under","until","upon","very","was","we",
+        "were","what","when","where","which","while","who","will","with","without","would","you","your",
+        -- Academic/research generic terms
+        "about","above","after","again","all","also","among","any","because","before","between",
+        "both","during","further","here","no","nor","not","once","rather","since","still",
+        "via","using","use","used","based","approach","approaches","method","methods",
         "study","analysis","data","model","models","system","systems","development","design","project",
         "research","program","programme","grant","funded","funding","proposal","investigation",
-        "patent","invention","inventor","inventors"
+        "results","result","conclusion","conclusions","introduction","discussion","paper","article",
+        "journal","abstract","respectively","significantly","however","therefore","although",
+        "moreover","furthermore","thus","hence","nevertheless","whereas","whereby",
+        -- Patent-specific generic terms
+        "patent","invention","inventor","inventors","embodiment","embodiments","apparatus","device","devices"
       ])
   ) AS pat_title_tokens,
 
@@ -85,12 +98,25 @@ SELECT
       AND LENGTH(tok) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_token_len || 3)} AS INT64)
       AND NOT REGEXP_CONTAINS(tok, r"^\d+$")
       AND tok NOT IN UNNEST([
-        "a","an","and","are","as","at","be","been","being","by","for","from","has","have","had",
-        "in","into","is","it","its","of","on","or","that","the","their","this","to","was","were",
-        "with","without","via","using","use","used","based","approach","approaches","method","methods",
+        -- English function words
+        "a","an","and","are","as","at","be","been","being","but","by","can","could","did","do",
+        "does","each","few","for","from","get","got","has","have","had","her","him","his","how",
+        "if","in","into","is","it","its","just","may","might","more","most","much","must","my",
+        "not","now","of","on","only","or","other","our","out","over","own","per","same","she",
+        "should","so","some","such","than","that","the","their","them","then","there","these",
+        "they","this","those","through","to","too","under","until","upon","very","was","we",
+        "were","what","when","where","which","while","who","will","with","without","would","you","your",
+        -- Academic/research generic terms
+        "about","above","after","again","all","also","among","any","because","before","between",
+        "both","during","further","here","no","nor","not","once","rather","since","still",
+        "via","using","use","used","based","approach","approaches","method","methods",
         "study","analysis","data","model","models","system","systems","development","design","project",
         "research","program","programme","grant","funded","funding","proposal","investigation",
-        "patent","invention","inventor","inventors"
+        "results","result","conclusion","conclusions","introduction","discussion","paper","article",
+        "journal","abstract","respectively","significantly","however","therefore","although",
+        "moreover","furthermore","thus","hence","nevertheless","whereas","whereby",
+        -- Patent-specific generic terms
+        "patent","invention","inventor","inventors","embodiment","embodiments","apparatus","device","devices"
       ])
     LIMIT CAST(${(dataform.projectConfig.vars.inst_fuzzy_max_abstract_tokens || 200)} AS INT64)
   ) AS pat_abstract_tokens
