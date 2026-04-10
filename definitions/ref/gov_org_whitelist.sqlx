@@ -1618,9 +1618,9 @@ UNION ALL
 SELECT 'IT', 'grid.11852.3c', 'Fondazione Bruno Kessler',
        'Italy: Province of Trento government research foundation. Nonprofit in Dimensions; 97 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
+UNION ALL
 
 -- JP: Japan
-UNION ALL
 SELECT 'JP', 'grid.471031.2', 'NICT (National Institute of Information and Communications Technology)',
        'Japan: National institute under Min. of Internal Affairs and Communications. Facility in Dimensions; 3,487 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
