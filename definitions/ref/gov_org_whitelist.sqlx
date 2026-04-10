@@ -1587,7 +1587,7 @@ SELECT 'FR', 'grid.457340.1', 'IFP Energies nouvelles',
        'France: Public EPIC under Min. of Ecology, 100% state-owned. Facility in Dimensions; 9,774 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
 UNION ALL
-SELECT 'FR', 'grid.5398.7', 'ONERA (Office National d''Etudes et de Recherches Aerospatiales)',
+SELECT 'FR', 'grid.5398.7', 'ONERA (Office National des Etudes et de Recherches Aerospatiales)',
        'France: National aerospace research center, under Min. of Armed Forces. Facility in Dimensions; 1,675 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
 UNION ALL
