@@ -45,6 +45,19 @@ vars:
   # --- Tier 2 RID Top-K filtering ---
   rid_topk: "5"
 
+  # ------------------------------------------------------------
+  # Patent-specific overrides (stricter than shared pub params)
+  # Patents have higher false positive rates from institution matching,
+  # so they need the FoR gate and stricter concept/title thresholds.
+  # See grant_calibration/outputs/CALIBRATION_REPORT.md for justification.
+  # ------------------------------------------------------------
+  pat_min_for4_overlap: "1"
+  pat_min_jaccard: "0.2"
+  pat_inst_fuzzy_min_concept_jaccard: "0.10"
+  pat_inst_fuzzy_min_title_jaccard: "0.20"
+  pat_inst_fuzzy_min_concept_jaccard_nofield: "0.05"
+  pat_inst_fuzzy_min_concept_overlap_nofield: "2"
+
   # --- Stage-level options (not matching parameters) ---
   ipcr_prefix_len: "0"
   pub_allow_year_only_dates: "false"

@@ -128,11 +128,11 @@ pairs_filtered AS (
   SELECT *
   FROM pairs
   WHERE (
-    (overlap_for4 >= CAST(${(dataform.projectConfig.vars.min_for4_overlap || 1)} AS INT64)
-     AND SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
+    (overlap_for4 >= CAST(${(dataform.projectConfig.vars.pat_min_for4_overlap || 1)} AS INT64)
+     AND SAFE_DIVIDE(overlap_for4, NULLIF(union_for4, 0)) >= CAST(${(dataform.projectConfig.vars.pat_min_jaccard || 0.2)} AS FLOAT64))
     OR
     (overlap_for2 >= 1
-     AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${(dataform.projectConfig.vars.min_jaccard || 0.5)} AS FLOAT64))
+     AND SAFE_DIVIDE(overlap_for2, NULLIF(union_for2, 0)) >= CAST(${(dataform.projectConfig.vars.pat_min_jaccard || 0.2)} AS FLOAT64))
   )
 ),
 
