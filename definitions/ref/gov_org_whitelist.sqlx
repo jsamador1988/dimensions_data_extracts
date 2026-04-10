@@ -1551,20 +1551,14 @@ SELECT 'BE', 'grid.6717.7', 'VITO (Flemish Institute for Technological Research)
        'Belgium: Flemish government institute, est. 1991. Facility in Dimensions; 186 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
 UNION ALL
-
--- CA: Canada
 SELECT 'CA', 'grid.119476.9', 'Communications Research Centre Canada',
        'Canada: Government of Canada research lab under Innovation, Science and Economic Development. Facility in Dimensions; 119 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
 UNION ALL
-
--- DK: Denmark
 SELECT 'DK', 'grid.460027.7', 'Danish Technological Institute',
        'Denmark: Self-governing institution with government mandate, partially gov-funded. Nonprofit in Dimensions; 460 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
 UNION ALL
-
--- ES: Spain
 SELECT 'ES', 'grid.425902.8', 'ICREA (Institucio Catalana de Recerca i Estudis Avancats)',
        'Spain: Catalan government research foundation, est. 2001. Nonprofit in Dimensions; 443 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
@@ -1589,8 +1583,6 @@ SELECT 'ES', 'grid.13822.3a', 'CEIT (Centro de Estudios e Investigaciones Tecnic
        'Spain: Basque government R&D center. Nonprofit in Dimensions; 80 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
 UNION ALL
-
--- FR: France
 SELECT 'FR', 'grid.457340.1', 'IFP Energies nouvelles',
        'France: Public EPIC under Min. of Ecology, 100% state-owned. Facility in Dimensions; 9,774 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
@@ -1599,8 +1591,6 @@ SELECT 'FR', 'grid.5398.7', 'ONERA (Office National d''Etudes et de Recherches A
        'France: National aerospace research center, under Min. of Armed Forces. Facility in Dimensions; 1,675 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
 UNION ALL
-
--- GR: Greece
 SELECT 'GR', 'grid.4834.b', 'FORTH (Foundation for Research and Technology Hellas)',
        'Greece: Under Greek Ministry of Education, est. 1983. Facility in Dimensions; 56 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
@@ -1609,8 +1599,6 @@ SELECT 'GR', 'grid.423747.1', 'CERTH (Centre for Research and Technology Hellas)
        'Greece: Under Greek Ministry of Development, est. 2000. Facility in Dimensions; 23 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
 UNION ALL
-
--- IT: Italy
 SELECT 'IT', 'grid.460789.4', 'Italian Institute of Technology',
        'Italy: Founded by Italian Ministry of Education + Economy, 2003. Facility in Dimensions; 500 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
@@ -1619,20 +1607,14 @@ SELECT 'IT', 'grid.11852.3c', 'Fondazione Bruno Kessler',
        'Italy: Province of Trento government research foundation. Nonprofit in Dimensions; 97 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
 UNION ALL
-
--- JP: Japan
 SELECT 'JP', 'grid.471031.2', 'NICT (National Institute of Information and Communications Technology)',
        'Japan: National institute under Min. of Internal Affairs and Communications. Facility in Dimensions; 3,487 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
 UNION ALL
-
--- NO: Norway
 SELECT 'NO', 'grid.424027.7', 'Christian Michelsen Research',
        'Norway: NORCE subsidiary, Norwegian government research. Nonprofit in Dimensions; 28 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
 UNION ALL
-
--- PL: Poland
 SELECT 'PL', 'grid.435866.f', 'Lukasiewicz Research Network',
        'Poland: Polish government research network, est. 2019 under Min. of Science. Facility in Dimensions; 787 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
@@ -1649,8 +1631,6 @@ SELECT 'PL', 'grid.432024.0', 'Instytut Techniki Budowlanej',
        'Poland: Polish government Building Research Institute. Facility in Dimensions; 286 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
 UNION ALL
-
--- PT: Portugal
 SELECT 'PT', 'grid.421174.5', 'Instituto de Telecomunicacoes',
        'Portugal: Portuguese government research lab (FCT associated). Nonprofit in Dimensions; 89 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
@@ -1659,8 +1639,6 @@ SELECT 'PT', 'grid.20384.3d', 'INESC TEC',
        'Portugal: Portuguese government R&D institute (INESC system). Nonprofit in Dimensions; 81 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
 UNION ALL
-
--- SK: Slovakia
 SELECT 'SK', 'grid.437636.0', 'National Agricultural and Food Centre',
        'Slovakia: Slovak government research center under Min. of Agriculture. Facility in Dimensions; 33 patent families. Whitelist expansion 2026-04-02.',
        CAST(NULL AS DATE), CAST(NULL AS DATE)
