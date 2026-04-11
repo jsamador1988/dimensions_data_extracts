@@ -28,6 +28,9 @@ vars:
   inst_fuzzy_min_concept_jaccard_nofield: "0.05"
   inst_fuzzy_min_concept_overlap_nofield: "2"
 
+  # Minimum fuzzy score to keep a pair (compensates for stopword-induced score inflation)
+  inst_fuzzy_min_score: "0.08"
+
   # keep only top-K scored grant matches per output (performance guardrail)
   inst_fuzzy_topk: "5"
 

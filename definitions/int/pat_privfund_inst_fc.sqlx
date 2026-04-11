@@ -234,6 +234,7 @@ pairs_enhanced AS (
 pairs_fuzzy_pass AS (
   SELECT *
   FROM pairs_enhanced
+  WHERE fuzzy_score >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_score || 0.08)} AS FLOAT64)
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY family_id, country_code
     ORDER BY fuzzy_score DESC

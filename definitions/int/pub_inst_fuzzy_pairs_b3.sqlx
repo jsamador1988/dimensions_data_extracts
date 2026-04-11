@@ -294,6 +294,7 @@ pairs_ranked AS (
       ORDER BY fuzzy_score DESC
     ) AS rn_fuzzy_by_funder
   FROM pairs_enhanced
+  WHERE fuzzy_score >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_score || 0.08)} AS FLOAT64)
 ),
 
 pairs_kept AS (
