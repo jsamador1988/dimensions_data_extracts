@@ -2,14 +2,15 @@ defaultProject: dimensionsdataextracts
 defaultDataset: rd_stage
 defaultAssertionDataset: rd_assert
 defaultLocation: US
-dataformCoreVersion: 3.0.37
+dataformCoreVersion: 3.0.48
 
-# Isolate the paper_first_draft fork from production warehouse. All Dataform-
-# resolved schemas get "_apr16" appended at runtime, so this fork writes to
-# rd_ref_apr16, rd_stage_apr16, rd_int_apr16, rd_mart_apr16, rd_assert_apr16
-# instead of the production rd_* datasets. External references
-# (e.g. `dimensions-ai.data_analytics.*`) are unaffected.
-schemaSuffix: _apr16
+# NOTE: Dataform Core WorkflowSettings does not accept schemaSuffix as a top-level
+# field (confirmed in 3.0.37 and 3.0.48). To isolate this fork from production,
+# every `dataform compile` and `dataform run` invocation MUST include the CLI flag:
+#     --schema-suffix=_apr16
+# Outputs then land in rd_ref_apr16, rd_stage_apr16, rd_int_apr16, rd_mart_apr16,
+# rd_assert_apr16. External references (`dimensions-ai.data_analytics.*`) unaffected.
+# Wrapper scripts (sync_from_empirics.py, cost_estimator.py) pass this flag automatically.
 
 vars:
   sample_start: "1950-01-01"
