@@ -143,10 +143,12 @@ grants_raw AS (
     id                              AS grant_id,
     COALESCE(
       SAFE.PARSE_DATE('%Y-%m-%d', start_date),
-      DATE(CAST(start_year AS INT64), 1, 1)
+      SAFE.PARSE_DATE('%Y-%m', start_date),
+      IF(start_year IS NOT NULL, DATE(CAST(start_year AS INT64), 1, 1), NULL)
     )                               AS start_dt,
     funder_org,
-    (SELECT ARRAY_AGG(DISTINCT f4) FROM UNNEST(for_ids) AS f4) AS for4_codes
+    -- FoR 4-digit codes live at category_for.second_level.codes (ARRAY<STRING>)
+    (SELECT ARRAY_AGG(DISTINCT f4) FROM UNNEST(category_for.second_level.codes) AS f4) AS for4_codes
   FROM `dimensions-ai.data_analytics.grants`
 ),
 
