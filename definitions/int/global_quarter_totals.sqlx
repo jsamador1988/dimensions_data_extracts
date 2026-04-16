@@ -3,10 +3,7 @@ config {
   schema: "rd_int",
   name: "global_quarter_totals",
   tags: ["int", "world"],
-  description: "Global (world) quarterly totals for patents, publications, grants, and clinical trials. NOT filtered by country - aggregates across the entire Dimensions universe. Used as denominators for country/region share tables. Patent families exclude CN utility models/designs (via patent_doc_core). Publication quality flags use global rankings. apr16 extension: adds basic-research totals, patent top-5% forward-cite totals, worldwide grant totals (with basic + gov-funder splits), and worldwide clinical trial totals.",
-  bigquery: {
-    partitionBy: "quarter"
-  }
+  description: "Global (world) quarterly totals for patents, publications, grants, and clinical trials. NOT filtered by country - aggregates across the entire Dimensions universe. Used as denominators for country/region share tables. Patent families exclude CN utility models/designs (via patent_doc_core). Publication quality flags use global rankings. apr16 extension: adds basic-research totals, patent top-5% forward-cite totals, worldwide grant totals (with basic + gov-funder splits), and worldwide clinical trial totals. Deliberately NOT partitioned: the table is ~280 rows (one per quarter), partitioning by day would add metadata overhead without query-time benefit."
 }
 
 -- ===================================================================
