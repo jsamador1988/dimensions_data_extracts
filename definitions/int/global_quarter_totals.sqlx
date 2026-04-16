@@ -236,4 +236,4 @@ FROM pat_global pat
 FULL OUTER JOIN pub_global pub    ON pub.quarter = pat.quarter
 FULL OUTER JOIN grants_global gr  ON gr.quarter  = COALESCE(pat.quarter, pub.quarter)
 FULL OUTER JOIN trials_global tr  ON tr.quarter  = COALESCE(pat.quarter, pub.quarter, gr.quarter)
-ORDER BY quarter
+-- NOTE: no ORDER BY here -- BigQuery rejects CREATE TABLE ... PARTITION BY quarter AS SELECT ... ORDER BY. Partitioning handles layout.
