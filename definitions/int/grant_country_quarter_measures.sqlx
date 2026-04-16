@@ -14,7 +14,7 @@ WITH grants AS (
   SELECT
     grant_id,
     DATE_TRUNC(start_dt, QUARTER) AS quarter,
-    funder_org,
+    funder_org_id,
     research_orgs,
     grant_for2
   FROM ${ref("rd_stage", "grants_domestic_core")}
@@ -42,7 +42,7 @@ grants_flagged AS (
      FROM UNNEST(g.grant_for2) AS for2
     ) AS is_basic
   FROM grants g
-  LEFT JOIN funder_gov fg ON fg.org_id = g.funder_org
+  LEFT JOIN funder_gov fg ON fg.org_id = g.funder_org_id
 ),
 
 -- Derive research_org countries from grant_orgs_flat
