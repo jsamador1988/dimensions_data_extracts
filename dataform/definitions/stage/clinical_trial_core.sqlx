@@ -1,0 +1,66 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "clinical_trial_core",
+  tags: ["stage", "clinical_trials"],
+  description: "Extracted clinical trials from dimensions-ai.data_analytics.clinical_trials. Anchor quarter = DATE_TRUNC of start_date (or earliest phase_start_date if start_date missing). Sponsor organization GRIDs kept as ARRAY for fractional country attribution in ct_country_quarter_measures. is_gov_sponsor set when ANY sponsor GRID appears in gov_org_whitelist or has is_gov_surico=TRUE in org_gov_surico. Filtered to trials with at least one sponsor and at least one country code resolvable from sponsor GRIDs."
+}
+
+WITH raw AS (
+  SELECT
+    id                                   AS trial_id,
+    start_date,
+    -- Fallback to earliest phase start date
+    (SELECT MIN(phase.start_date) FROM UNNEST(phases) AS phase WHERE phase.start_date IS NOT NULL) AS phase_start_date_min,
+    (SELECT ARRAY_AGG(DISTINCT spon.id IGNORE NULLS)
+       FROM UNNEST(sponsors) AS spon) AS sponsor_orgs,
+    (SELECT ARRAY_AGG(DISTINCT fun.id IGNORE NULLS)
+       FROM UNNEST(funders) AS fun) AS funder_orgs,
+    (SELECT ARRAY_AGG(DISTINCT spon.country_code IGNORE NULLS)
+       FROM UNNEST(sponsors) AS spon
+       WHERE spon.country_code IS NOT NULL) AS research_org_countries
+  FROM `dimensions-ai.data_analytics.clinical_trials`
+),
+
+dated AS (
+  SELECT
+    trial_id,
+    -- Anchor quarter via start_date, falling back to phase_start_date_min
+    CASE
+      WHEN start_date IS NOT NULL THEN DATE_TRUNC(SAFE.PARSE_DATE('%Y-%m-%d', start_date), QUARTER)
+      WHEN phase_start_date_min IS NOT NULL THEN DATE_TRUNC(SAFE.PARSE_DATE('%Y-%m-%d', phase_start_date_min), QUARTER)
+      ELSE NULL
+    END AS trial_qtr,
+    sponsor_orgs,
+    funder_orgs,
+    research_org_countries
+  FROM raw
+),
+
+gov_orgs AS (
+  -- Union of whitelist and Surico gov classification
+  SELECT DISTINCT org_id FROM (
+    SELECT grid_id AS org_id FROM ${ref("rd_ref", "gov_org_whitelist")}
+    UNION DISTINCT
+    SELECT org_id FROM ${ref("rd_ref", "org_gov_surico")} WHERE is_gov_surico = TRUE
+  )
+),
+
+flagged AS (
+  SELECT
+    d.trial_id,
+    d.trial_qtr,
+    d.sponsor_orgs,
+    d.funder_orgs,
+    d.research_org_countries,
+    EXISTS(
+      SELECT 1 FROM UNNEST(d.sponsor_orgs) AS s
+      JOIN gov_orgs g ON g.org_id = s
+    ) AS is_gov_sponsor
+  FROM dated d
+  WHERE d.trial_qtr IS NOT NULL
+    AND ARRAY_LENGTH(d.research_org_countries) > 0
+    AND ARRAY_LENGTH(d.sponsor_orgs) > 0
+)
+
+SELECT * FROM flagged

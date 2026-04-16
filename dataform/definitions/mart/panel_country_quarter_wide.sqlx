@@ -57,6 +57,29 @@ pat_6w AS (
 
 pat_inv_diag AS (
   SELECT * FROM ${ref("rd_int", "pat_inventor_coverage_diag")}
+),
+
+-- apr16 additions: clinical trials, grants as country measures, patent forward-cite quantile flag
+ct AS (
+  SELECT * FROM ${ref("rd_int", "ct_country_quarter_measures")}
+),
+
+grant_cq AS (
+  SELECT * FROM ${ref("rd_int", "grant_country_quarter_measures")}
+),
+
+pat_top5c_cq AS (
+  -- Aggregate family-level quantile flags to country x quarter using pat_family_country_base for w_domestic
+  SELECT
+    b.country_code,
+    b.quarter,
+    SUM(IF(qf.is_top5c, b.w_domestic, 0.0)) AS pat_total_top5c_ctq,
+    SUM(IF(qf.is_top5c AND b.dom_gov_assg_flag = 1, b.w_domestic, 0.0)) AS pat_gov_owned_top5c_ctq,
+    SUM(IF(qf.is_top5c AND b.dom_edu_assg_flag = 1, b.w_domestic, 0.0)) AS pat_uni_total_top5c_ctq
+  FROM ${ref("rd_int", "pat_family_country_base")} b
+  LEFT JOIN ${ref("rd_int", "pat_family_citation_quantile_flags")} qf
+    ON qf.family_id = b.family_id
+  GROUP BY b.country_code, b.quarter
 )
 
 SELECT
@@ -295,7 +318,35 @@ SELECT
   COALESCE(pub_6wq.pub_6wq_total_top5j_ctq, 0.0) AS pub_6wq_total_top5j_ctq,
   COALESCE(pub_6wq.pub_6wq_total_top01_ctq, 0.0) AS pub_6wq_total_top01_ctq,
   COALESCE(pub_6wq.pub_6wq_total_basic_top5j_ctq, 0.0) AS pub_6wq_total_basic_top5j_ctq,
-  COALESCE(pub_6wq.pub_6wq_total_basic_top01_ctq, 0.0) AS pub_6wq_total_basic_top01_ctq
+  COALESCE(pub_6wq.pub_6wq_total_basic_top01_ctq, 0.0) AS pub_6wq_total_basic_top01_ctq,
+
+  -- -----------------------------
+  -- apr16 additions (paper_first_draft fork)
+  -- -----------------------------
+
+  -- Grants country x quarter measures (by research-org country, fractional)
+  COALESCE(grant_cq.grant_total_ctq, 0.0) AS grant_total_ctq,
+  COALESCE(grant_cq.grant_basic_ctq, 0.0) AS grant_basic_ctq,
+  COALESCE(grant_cq.grant_gov_funder_ctq, 0.0) AS grant_gov_funder_ctq,
+  COALESCE(grant_cq.grant_nongov_funder_ctq, 0.0) AS grant_nongov_funder_ctq,
+
+  -- Clinical trials country x quarter measures (by sponsor country, fractional)
+  COALESCE(ct.trial_total_ctq, 0.0) AS trial_total_ctq,
+  COALESCE(ct.trial_gov_ctq, 0.0) AS trial_gov_ctq,
+  COALESCE(ct.trial_basic_ctq, 0.0) AS trial_basic_ctq,
+
+  -- Patent top-5% by forward-cite quantile (IPC-4 x app-year x jurisdiction, 5y window)
+  COALESCE(pat_top5c_cq.pat_total_top5c_ctq, 0.0) AS pat_total_top5c_ctq,
+  COALESCE(pat_top5c_cq.pat_gov_owned_top5c_ctq, 0.0) AS pat_gov_owned_top5c_ctq,
+  COALESCE(pat_top5c_cq.pat_uni_total_top5c_ctq, 0.0) AS pat_uni_total_top5c_ctq,
+
+  -- Union-of-3-tier gov-funded pass-through (pub + pat)
+  COALESCE(pub_6w.pub_union3_govfund_ctq, 0.0) AS pub_union3_govfund_ctq,
+  COALESCE(pub_6w.pub_union3_govfund_basic_ctq, 0.0) AS pub_union3_govfund_basic_ctq,
+  COALESCE(pub_6w.pub_union3_govfund_top5j_ctq, 0.0) AS pub_union3_govfund_top5j_ctq,
+  COALESCE(pat_6w.pat_union3_govfund_ctq, 0.0) AS pat_union3_govfund_ctq,
+  COALESCE(pat_6w.pat_union3_govfund_basic_ctq, 0.0) AS pat_union3_govfund_basic_ctq,
+  COALESCE(pat_6w.pat_union3_govfund_top5c_ctq, 0.0) AS pat_union3_govfund_top5c_ctq
 
 FROM grid
 LEFT JOIN pat
@@ -314,3 +365,9 @@ LEFT JOIN pat_6w
   ON pat_6w.country_code = grid.country_code AND pat_6w.quarter = grid.quarter
 LEFT JOIN pat_inv_diag
   ON pat_inv_diag.country_code = grid.country_code AND pat_inv_diag.quarter = grid.quarter
+LEFT JOIN grant_cq
+  ON grant_cq.country_code = grid.country_code AND grant_cq.quarter = grid.quarter
+LEFT JOIN ct
+  ON ct.country_code = grid.country_code AND ct.quarter = grid.quarter
+LEFT JOIN pat_top5c_cq
+  ON pat_top5c_cq.country_code = grid.country_code AND pat_top5c_cq.quarter = grid.quarter

@@ -1,0 +1,22 @@
+config {
+  type: "assertion",
+  schema: "rd_assert",
+  name: "assert_world_totals_monotone",
+  tags: ["assertion", "world"],
+  description: "Verifies monotone inclusion on world totals: basic <= total, top5 <= total, gov subset <= total, for each of the four domains."
+}
+
+SELECT *
+FROM ${ref("rd_int", "global_quarter_totals")}
+WHERE
+     pat_world_basic > pat_world_families
+  OR pat_world_top5c > pat_world_families
+  OR pub_world_basic > pub_world_total
+  OR pub_world_top5j > pub_world_total
+  OR pub_world_top01 > pub_world_total
+  OR grant_world_basic > grant_world_total
+  OR grant_world_gov_funder > grant_world_total
+  OR grant_world_nongov_funder > grant_world_total
+  OR (grant_world_gov_funder + grant_world_nongov_funder) > grant_world_total + 1
+  OR trial_world_gov > trial_world_total
+  OR trial_world_basic > trial_world_total

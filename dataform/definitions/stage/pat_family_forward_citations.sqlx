@@ -1,0 +1,79 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "pat_family_forward_citations",
+  tags: ["stage", "patents", "citations"],
+  description: "Forward-citation counts for patent families, with 5-year (truncated) and lifetime windows. Anchor jurisdiction and IPC-4 are taken from the family's rep-doc so that one family has exactly one jurisdiction and one tech-class for quantile normalization. Used by pat_family_citation_quantile_flags to build the top-5% flag following Fleming et al. (Science 2019), Hall-Jaffe-Trajtenberg (NBER 2001) conventions.",
+  bigquery: {
+    partitionBy: "family_app_qtr",
+    clusterBy: ["anchor_jurisdiction", "anchor_ipc4"]
+  }
+}
+
+WITH anchor AS (
+  SELECT
+    family_id,
+    family_app_qtr,
+    EXTRACT(YEAR FROM family_app_qtr) AS family_app_year
+  FROM ${ref("rd_stage", "patent_family_anchor")}
+),
+
+rep_doc AS (
+  -- one representative document per family; gives anchor jurisdiction and IPC
+  SELECT
+    family_id,
+    jurisdiction       AS anchor_jurisdiction,
+    SUBSTR(ipc_primary, 1, 4) AS anchor_ipc4
+  FROM ${ref("rd_stage", "patent_rep_doc_meta")}
+),
+
+-- Raw forward citations from Dimensions: for each family, count all patents that cite any member
+fwd AS (
+  SELECT
+    citing.family_id                          AS family_id,
+    c.citation_date                           AS citation_date
+  FROM `dimensions-ai.data_analytics.patents` AS citing,
+  UNNEST(citing.cited_patents)                AS c
+  WHERE citing.family_id IS NOT NULL
+    AND c.family_id IS NOT NULL
+    AND c.citation_date IS NOT NULL
+),
+
+-- Lifetime total
+lifetime AS (
+  SELECT
+    cited.family_id,
+    COUNT(*) AS fwd_cites_lifetime
+  FROM `dimensions-ai.data_analytics.patents` AS cited,
+  UNNEST(cited.cited_patents)                AS c
+  JOIN `dimensions-ai.data_analytics.patents` AS citing
+       ON citing.id = cited.id
+  GROUP BY cited.family_id
+),
+
+-- 5-year window forward cites: cited_patents.citation_date within 5 years of cited patent's first filing
+truncated AS (
+  SELECT
+    fam.family_id,
+    COUNTIF(
+      fwd.citation_date IS NOT NULL
+      AND DATE_DIFF(fwd.citation_date, fam.family_app_qtr, DAY) <= 365*5
+      AND DATE_DIFF(fwd.citation_date, fam.family_app_qtr, DAY) >= 0
+    ) AS fwd_cites_5y
+  FROM anchor fam
+  LEFT JOIN fwd ON fwd.family_id = fam.family_id
+  GROUP BY fam.family_id
+)
+
+SELECT
+  a.family_id,
+  a.family_app_qtr,
+  a.family_app_year,
+  r.anchor_jurisdiction,
+  r.anchor_ipc4,
+  IFNULL(t.fwd_cites_5y, 0)       AS fwd_cites_5y,
+  IFNULL(l.fwd_cites_lifetime, 0) AS fwd_cites_lifetime
+FROM anchor a
+LEFT JOIN rep_doc r ON r.family_id = a.family_id
+LEFT JOIN truncated t ON t.family_id = a.family_id
+LEFT JOIN lifetime l ON l.family_id = a.family_id

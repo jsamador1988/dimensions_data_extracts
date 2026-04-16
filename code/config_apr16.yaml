@@ -1,0 +1,200 @@
+# Paper First Draft - figure generator configuration (apr16)
+# All paths relative to paper_first_draft/ unless absolute.
+
+# ----------------------------------------------------------------------
+# Data sources
+# ----------------------------------------------------------------------
+panel_csv:          data/panel_country_quarter_wide_apr16.csv
+world_totals_csv:   data/world_quarter_totals_apr16.csv
+
+# BigQuery project + datasets.
+# The fork uses schemaSuffix: "_apr16" in workflow_settings.yaml, so Dataform
+# materializes outputs to rd_*_apr16 datasets (isolated from production rd_*).
+# fetch_*.py scripts read from these suffixed datasets.
+bq_project:         dimensionsdataextracts
+bq_dataset_ref:     rd_ref_apr16
+bq_dataset_stage:   rd_stage_apr16
+bq_dataset_int:     rd_int_apr16
+bq_dataset_mart:    rd_mart_apr16
+bq_dataset_assert:  rd_assert_apr16
+bq_table_panel:     panel_country_quarter_wide
+bq_table_world:     global_quarter_totals
+bq_table_trials:    clinical_trial_core
+
+# ----------------------------------------------------------------------
+# Time windows
+# ----------------------------------------------------------------------
+sample_start:       "1980-01-01"
+sample_end:         "2022-12-31"
+chart_start_year:   1980
+chart_end_year:     2022
+# Figures 8 and 9 start at 2000
+post2000_start:     2000
+
+# ----------------------------------------------------------------------
+# Nagaraj-Yao (NBER w34694) regional mapping
+# REST_OF_WORLD = world_total - sum(4 regions), computed at plotting time
+# ----------------------------------------------------------------------
+regions:
+  US:       [US]
+  EU:       [AT, BE, CH, CZ, DE, DK, EE, ES, FI, FR, GB, GR, HU, IE, IS, IT, LT, LU, LV, NL, "NO", PL, PT, SE, SI, SK]
+  REST_HI:  [JP, KR, CA, AU, IL, NZ, CL]
+  CHINA:    [CN]
+  # Rest of world is computed residually at plotting time
+
+region_order:     [US, EU, REST_HI, CHINA, REST_OF_WORLD]
+region_labels:
+  US:             "United States"
+  EU:             "European Union (EU-27 + UK + EFTA, panel intersection)"
+  REST_HI:        "Rest High-Income"
+  CHINA:          "China"
+  REST_OF_WORLD:  "Rest of World"
+region_colors:
+  US:             "#1f77b4"
+  EU:             "#8c564b"
+  REST_HI:        "#2ca02c"
+  CHINA:          "#d62728"
+  REST_OF_WORLD:  "#7f7f7f"
+
+# ----------------------------------------------------------------------
+# Figure-specific country sets
+# ----------------------------------------------------------------------
+fig8_countries:   [US, EU, CHINA]   # regions, handled via regions map
+fig9_countries:   [AU, AT, BE, CA, CN, CZ, DE, IT, JP, PT, SI, CH, GB, US]
+
+us_only:          [US]
+
+# ----------------------------------------------------------------------
+# Figure registry (maps figure id to variables, shape, title)
+# Consumed by generate_all_figures.py and plot_helpers.py
+# ----------------------------------------------------------------------
+figures:
+
+  fig1:
+    title:        "World share of publications and patents: total, basic research, top 5%"
+    shape:        [2, 3]
+    year_range:   [1980, 2022]
+    rows:
+      - label:    "Publications"
+        cols:
+          - {numerator: pub_total_ctq,        denominator: pub_world_total,  title: "All publications"}
+          - {numerator: pub_total_basic_ctq,  denominator: pub_world_basic,  title: "Basic research"}
+          - {numerator: pub_total_top5j_ctq,  denominator: pub_world_top5j,  title: "Top 5% journals"}
+      - label:    "Patents"
+        cols:
+          - {numerator: pat_total_ctq,           denominator: pat_world_families, title: "All patents"}
+          - {numerator: pat_total_basic_ctq,     denominator: pat_world_basic,    title: "Basic research"}
+          - {numerator: pat_total_top5c_ctq,     denominator: pat_world_top5c,    title: "Top 5% (forward cites)"}
+
+  fig2:
+    title:        "World share, university-owned subset"
+    shape:        [2, 3]
+    year_range:   [1980, 2022]
+    rows:
+      - label:    "Publications"
+        cols:
+          - {numerator: pub_uni_total_ctq,       denominator: pub_world_total,  title: "All university pubs"}
+          - {numerator: pub_uni_basic_ctq,       denominator: pub_world_basic,  title: "Basic research, uni"}
+          - {numerator: pub_uni_total_top5j_ctq, denominator: pub_world_top5j,  title: "Top 5% journals, uni"}
+      - label:    "Patents"
+        cols:
+          - {numerator: pat_uni_total_ctq,        denominator: pat_world_families, title: "All university patents"}
+          - {numerator: pat_uni_basic_ctq,        denominator: pat_world_basic,    title: "Basic research, uni"}
+          - {numerator: pat_uni_total_top5c_ctq,  denominator: pat_world_top5c,    title: "Top 5%, uni"}
+
+  fig3:
+    title:        "World share, government-owned subset"
+    shape:        [2, 3]
+    year_range:   [1980, 2022]
+    rows:
+      - label:    "Publications"
+        cols:
+          - {numerator: pub_gov_owned_ctq,       denominator: pub_world_total,  title: "All gov-owned pubs"}
+          - {numerator: pub_gov_owned_basic_ctq, denominator: pub_world_basic,  title: "Basic research, gov"}
+          - {numerator: pub_gov_owned_top5j_ctq, denominator: pub_world_top5j,  title: "Top 5% journals, gov"}
+      - label:    "Patents"
+        cols:
+          - {numerator: pat_gov_owned_ctq,        denominator: pat_world_families, title: "All gov-owned patents"}
+          - {numerator: pat_gov_owned_basic_ctq,  denominator: pat_world_basic,    title: "Basic research, gov"}
+          - {numerator: pat_gov_owned_top5c_ctq,  denominator: pat_world_top5c,    title: "Top 5%, gov"}
+
+  fig4:
+    title:        "World share of grants"
+    shape:        [2, 2]
+    year_range:   [1980, 2022]
+    panels:
+      - {numerator: grant_total_ctq,         denominator: grant_world_total,         title: "All grants"}
+      - {numerator: grant_basic_ctq,         denominator: grant_world_basic,         title: "Basic research grants"}
+      - {numerator: grant_gov_funder_ctq,    denominator: grant_world_gov_funder,    title: "Gov-funder grants"}
+      - {numerator: grant_nongov_funder_ctq, denominator: grant_world_nongov_funder, title: "Non-gov-funder grants"}
+
+  fig5:
+    title:        "World share of clinical trials"
+    shape:        [1, 2]
+    year_range:   [1980, 2022]
+    panels:
+      - {numerator: trial_total_ctq, denominator: trial_world_total, title: "All clinical trials"}
+      - {numerator: trial_gov_ctq,   denominator: trial_world_gov,   title: "Gov-sponsored trials"}
+
+  fig6:
+    title:        "US patents: government ownership and direct gov-funding linkage"
+    shape:        [1, 2]
+    year_range:   [1980, 2022]
+    scope:        us_only
+    denominator:  pat_total_ctq
+    panels:
+      - {numerator: pat_gov_owned_ctq,      title: "Gov-owned share"}
+      - {numerator: pat_govfund_direct_ctq, title: "Privately owned, direct gov-funding link"}
+
+  fig7:
+    title:        "US patents: 3-tier government-funding linkage"
+    shape:        [2, 2]
+    year_range:   [1980, 2022]
+    scope:        us_only
+    denominator:  pat_total_ctq
+    panels:
+      - {numerator: pat_govfund_rid_ctq,       title: "Researcher-ID linked", position: [0, 0]}
+      - {numerator: pat_govfund_inst_ctq,      title: "Institution linked",   position: [0, 1]}
+      - {overlay:   {rid_inst: pat_govfund_rid_only_excl_ctq_plus_inst_only_excl_ctq,
+                     direct:   pat_govfund_direct_ctq},
+         title: "Validation: RID+INST vs. direct",
+         position: [1, 0]}
+      - {numerator: pat_union3_govfund_ctq,    title: "Union of direct + RID + INST (dedup)", position: [1, 1]}
+
+  fig8:
+    title:        "Publications privately owned with gov-funding as share of world, 2000-2022"
+    shape:        [1, 3]
+    year_range:   [2000, 2022]
+    scope:        fig8_regions
+    panels:
+      - {numerator: pub_union3_govfund_ctq,         denominator: pub_world_total,  title: "All"}
+      - {numerator: pub_union3_govfund_top5j_ctq,   denominator: pub_world_top5j,  title: "Top 5% journals"}
+      - {numerator: pub_union3_govfund_basic_ctq,   denominator: pub_world_basic,  title: "Basic research"}
+
+  fig9:
+    title:        "Patents privately owned with gov-funding as share of world, 2000-2022"
+    shape:        [1, 3]
+    year_range:   [2000, 2022]
+    scope:        fig9_14_countries
+    panels:
+      - {numerator: pat_union3_govfund_ctq,         denominator: pat_world_families,  title: "All"}
+      - {numerator: pat_union3_govfund_top5c_ctq,   denominator: pat_world_top5c,     title: "Top 5% (fwd cites)"}
+      - {numerator: pat_union3_govfund_basic_ctq,   denominator: pat_world_basic,     title: "Basic research"}
+
+# ----------------------------------------------------------------------
+# Plot styling
+# ----------------------------------------------------------------------
+plot:
+  dpi:              300
+  font_family:      "DejaVu Sans"
+  title_size:       11
+  axis_label_size:  9
+  legend_size:      8
+  tick_size:        8
+
+# ----------------------------------------------------------------------
+# Cost estimation
+# ----------------------------------------------------------------------
+cost:
+  threshold_usd:    10.0
+  price_per_tb:     5.0   # USD per TB scanned (BigQuery on-demand)

@@ -4,6 +4,13 @@ defaultAssertionDataset: rd_assert
 defaultLocation: US
 dataformCoreVersion: 3.0.37
 
+# Isolate the paper_first_draft fork from production warehouse. All Dataform-
+# resolved schemas get "_apr16" appended at runtime, so this fork writes to
+# rd_ref_apr16, rd_stage_apr16, rd_int_apr16, rd_mart_apr16, rd_assert_apr16
+# instead of the production rd_* datasets. External references
+# (e.g. `dimensions-ai.data_analytics.*`) are unaffected.
+schemaSuffix: _apr16
+
 vars:
   sample_start: "1950-01-01"
   sample_end: "2024-12-31"

@@ -1,0 +1,18 @@
+config {
+  type: "assertion",
+  schema: "rd_assert",
+  name: "assert_quantile_distribution",
+  tags: ["assertion", "patents", "quality"],
+  description: "Verifies the is_top5c flag distributes to roughly 5% of families per year at the global level. Acceptable band is [3%, 7%] to allow small-cell noise; deviations outside this band suggest the percent-rank logic or the fallback fired unexpectedly."
+}
+
+-- Fail if any year has a top-5c share outside [0.03, 0.07]
+SELECT
+  family_app_year,
+  COUNT(*) AS cell_n,
+  COUNTIF(is_top5c) AS cell_top5c,
+  SAFE_DIVIDE(COUNTIF(is_top5c), COUNT(*)) AS top5c_share
+FROM ${ref("rd_int", "pat_family_citation_quantile_flags")}
+WHERE family_app_year BETWEEN 1980 AND 2020
+GROUP BY family_app_year
+HAVING top5c_share < 0.03 OR top5c_share > 0.07

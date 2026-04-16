@@ -1,0 +1,15 @@
+config {
+  type: "assertion",
+  schema: "rd_assert",
+  name: "assert_trial_bounds",
+  tags: ["assertion", "clinical_trials"],
+  description: "Verifies that trial_gov_ctq <= trial_total_ctq per country-quarter row (the gov-sponsored subset cannot exceed the total)."
+}
+
+SELECT
+  country_code,
+  quarter,
+  trial_total_ctq,
+  trial_gov_ctq
+FROM ${ref("rd_int", "ct_country_quarter_measures")}
+WHERE trial_gov_ctq > trial_total_ctq + 1e-9

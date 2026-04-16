@@ -1,0 +1,98 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "grant_country_quarter_measures",
+  tags: ["int", "grants"],
+  description: "Country x quarter grant measures with fractional attribution by research organization country. Grants are attributed by where the research is performed (research_orgs), not by funder country. w_aff = 1 / number of distinct research_org countries per grant. grant_gov_funder_ctq uses funder_org joined to org_gov_surico (is_gov_surico=TRUE). grant_basic_ctq uses FoR2 majority via for2_basic_research_map. Companion to ct_country_quarter_measures (trials) and pub/pat country_quarter_measures.",
+  bigquery: {
+    partitionBy: "quarter",
+    clusterBy: ["country_code"]
+  }
+}
+
+WITH grants AS (
+  SELECT
+    grant_id,
+    DATE_TRUNC(start_dt, QUARTER) AS quarter,
+    funder_org,
+    research_orgs,
+    grant_for2
+  FROM ${ref("rd_stage", "grants_domestic_core")}
+  WHERE start_dt IS NOT NULL
+),
+
+-- Resolve funder gov status via Surico classification
+funder_gov AS (
+  SELECT org_id, is_gov_surico
+  FROM ${ref("rd_ref", "org_gov_surico")}
+),
+
+grants_flagged AS (
+  SELECT
+    g.grant_id,
+    g.quarter,
+    g.research_orgs,
+    COALESCE(fg.is_gov_surico, FALSE) AS is_gov_funder,
+    -- Basic research flag by FoR2 majority; if >= 50% of FoR2 codes are basic -> TRUE
+    (SELECT
+       SAFE_DIVIDE(
+         COUNTIF(for2 IN UNNEST((SELECT ARRAY_AGG(for2_code) FROM ${ref("rd_ref", "for2_basic_research_map")} WHERE is_basic_science = TRUE))),
+         COUNT(*)
+       ) >= 0.5
+     FROM UNNEST(g.grant_for2) AS for2
+    ) AS is_basic
+  FROM grants g
+  LEFT JOIN funder_gov fg ON fg.org_id = g.funder_org
+),
+
+-- Derive research_org countries from grant_orgs_flat
+grant_countries AS (
+  SELECT
+    grant_id,
+    ARRAY_AGG(DISTINCT country_code IGNORE NULLS) AS country_codes
+  FROM ${ref("rd_stage", "grant_orgs_flat")}
+  WHERE country_code IS NOT NULL
+  GROUP BY grant_id
+),
+
+expanded AS (
+  SELECT
+    gf.grant_id,
+    gf.quarter,
+    gf.is_gov_funder,
+    gf.is_basic,
+    country_code,
+    1.0 / ARRAY_LENGTH(gc.country_codes) AS w_aff
+  FROM grants_flagged gf
+  JOIN grant_countries gc ON gc.grant_id = gf.grant_id,
+  UNNEST(gc.country_codes) AS country_code
+),
+
+grid AS (
+  SELECT country_code, quarter
+  FROM ${ref("rd_stage", "analysis_country_quarter_grid")}
+),
+
+agg AS (
+  SELECT
+    country_code,
+    quarter,
+    SUM(w_aff)                                            AS grant_total_ctq,
+    SUM(IF(is_basic, w_aff, 0))                           AS grant_basic_ctq,
+    SUM(IF(is_gov_funder, w_aff, 0))                      AS grant_gov_funder_ctq,
+    SUM(IF(NOT is_gov_funder, w_aff, 0))                  AS grant_nongov_funder_ctq
+  FROM expanded
+  GROUP BY country_code, quarter
+)
+
+SELECT
+  g.country_code,
+  g.quarter,
+  IFNULL(a.grant_total_ctq, 0)         AS grant_total_ctq,
+  IFNULL(a.grant_basic_ctq, 0)         AS grant_basic_ctq,
+  IFNULL(a.grant_gov_funder_ctq, 0)    AS grant_gov_funder_ctq,
+  IFNULL(a.grant_nongov_funder_ctq, 0) AS grant_nongov_funder_ctq
+FROM grid g
+LEFT JOIN agg a
+  ON a.country_code = g.country_code
+ AND a.quarter = g.quarter

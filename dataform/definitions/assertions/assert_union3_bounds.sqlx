@@ -1,0 +1,36 @@
+config {
+  type: "assertion",
+  schema: "rd_assert",
+  name: "assert_union3_bounds",
+  tags: ["assertion", "publications", "patents"],
+  description: "Verifies union-of-3-tier gov-funded pass-through columns are sensible: (i) the union cannot exceed the sum of private+uni totals (ownership-capped upper bound), and (ii) the union must be at least as large as the direct-only tier (inclusion lower bound). Tolerances widened to 1 absolute count to cover floating-point edge cases in fractional attribution."
+}
+
+WITH pub AS (
+  SELECT
+    country_code, quarter,
+    pub_union3_govfund_ctq,
+    pub_private_total_ctq + pub_uni_total_ctq AS upper_bound,
+    pub_govfund_direct_ctq AS lower_bound
+  FROM ${ref("rd_mart", "panel_country_quarter_wide")}
+),
+pat AS (
+  SELECT
+    country_code, quarter,
+    pat_union3_govfund_ctq,
+    pat_private_total_ctq + pat_uni_total_ctq AS upper_bound,
+    pat_govfund_direct_ctq AS lower_bound
+  FROM ${ref("rd_mart", "panel_country_quarter_wide")}
+)
+
+SELECT 'pub' AS domain, country_code, quarter,
+       pub_union3_govfund_ctq AS union3, upper_bound, lower_bound
+FROM pub
+WHERE pub_union3_govfund_ctq > upper_bound + 1
+   OR pub_union3_govfund_ctq < lower_bound - 1
+UNION ALL
+SELECT 'pat' AS domain, country_code, quarter,
+       pat_union3_govfund_ctq AS union3, upper_bound, lower_bound
+FROM pat
+WHERE pat_union3_govfund_ctq > upper_bound + 1
+   OR pat_union3_govfund_ctq < lower_bound - 1
