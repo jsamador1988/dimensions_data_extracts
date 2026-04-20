@@ -1,0 +1,123 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "pub_text_features",
+  tags: ["stage", "publications"],
+  description: "Phase-1 fuzzy features for publications: title tokens + top concepts + abstract tokens (using concepts_relevant where available). Restricted to the pub_core universe."
+}
+
+WITH core AS (
+  SELECT DISTINCT pub_id
+  FROM ${ref("rd_stage", "pub_core")}
+),
+
+raw AS (
+  SELECT
+    p.id AS pub_id,
+    p.title.preferred AS pub_title,
+    p.abstract.preferred AS pub_abstract,
+
+    -- Use concepts_relevant when present; fallback to concepts
+    IFNULL(
+      p.concepts_relevant,
+      IFNULL(p.concepts, CAST([] AS ARRAY<STRUCT<concept STRING, relevance FLOAT64>>))
+    ) AS concept_src
+
+  FROM `dimensions-ai.data_analytics.publications` p
+  JOIN core c
+    ON c.pub_id = p.id
+  WHERE p.year IS NOT NULL
+    AND p.year >= EXTRACT(YEAR FROM DATE('${dataform.projectConfig.vars.sample_start}'))
+    AND p.year <= EXTRACT(YEAR FROM DATE('${dataform.projectConfig.vars.sample_end}'))
+)
+
+SELECT
+  pub_id,
+  pub_title,
+
+  ARRAY(
+    SELECT DISTINCT tok
+    FROM UNNEST(
+      SPLIT(
+        REGEXP_REPLACE(LOWER(IFNULL(pub_title, "")), r"[^\p{L}\p{N}]+", " "),
+        " "
+      )
+    ) AS tok
+    WHERE tok IS NOT NULL
+      AND tok != ""
+      AND LENGTH(tok) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_token_len || 3)} AS INT64)
+      AND NOT REGEXP_CONTAINS(tok, r"^\d+$")
+      AND tok NOT IN UNNEST([
+        -- English function words
+        "a","an","and","are","as","at","be","been","being","but","by","can","could","did","do",
+        "does","each","few","for","from","get","got","has","have","had","her","him","his","how",
+        "if","in","into","is","it","its","just","may","might","more","most","much","must","my",
+        "not","now","of","on","only","or","other","our","out","over","own","per","same","she",
+        "should","so","some","such","than","that","the","their","them","then","there","these",
+        "they","this","those","through","to","too","under","until","upon","very","was","we",
+        "were","what","when","where","which","while","who","will","with","without","would","you","your",
+        -- Academic/research generic terms
+        "about","above","after","again","all","also","among","any","because","before","between",
+        "both","during","further","here","no","nor","not","once","rather","since","still",
+        "via","using","use","used","based","approach","approaches","method","methods",
+        "study","analysis","data","model","models","system","systems","development","design","project",
+        "research","program","programme","grant","funded","funding","proposal","investigation",
+        "results","result","conclusion","conclusions","introduction","discussion","paper","article",
+        "journal","abstract","respectively","significantly","however","therefore","although",
+        "moreover","furthermore","thus","hence","nevertheless","whereas","whereby"
+      ])
+  ) AS pub_title_tokens,
+
+  ARRAY(
+    SELECT concept
+    FROM (
+      SELECT
+        LOWER(c.concept) AS concept,
+        SAFE_CAST(c.relevance AS FLOAT64) AS rel
+      FROM UNNEST(IFNULL(concept_src, CAST([] AS ARRAY<STRUCT<concept STRING, relevance FLOAT64>>))) AS c
+      WHERE c.concept IS NOT NULL
+        AND LOWER(c.concept) NOT IN UNNEST([
+          "present invention","invention","device","devices","method","methods","system","systems",
+          "apparatus","apparatuses","embodiment","embodiments"
+        ])
+    )
+    ORDER BY rel DESC
+    LIMIT CAST(${(dataform.projectConfig.vars.inst_fuzzy_max_concepts_pub || 20)} AS INT64)
+  ) AS pub_concepts,
+
+  -- Abstract tokens for enhanced fuzzy scoring (Phase 2)
+  ARRAY(
+    SELECT DISTINCT tok
+    FROM UNNEST(
+      SPLIT(
+        REGEXP_REPLACE(LOWER(IFNULL(pub_abstract, "")), r"[^\p{L}\p{N}]+", " "),
+        " "
+      )
+    ) AS tok
+    WHERE tok IS NOT NULL
+      AND tok != ""
+      AND LENGTH(tok) >= CAST(${(dataform.projectConfig.vars.inst_fuzzy_min_title_token_len || 3)} AS INT64)
+      AND NOT REGEXP_CONTAINS(tok, r"^\d+$")
+      AND tok NOT IN UNNEST([
+        -- English function words
+        "a","an","and","are","as","at","be","been","being","but","by","can","could","did","do",
+        "does","each","few","for","from","get","got","has","have","had","her","him","his","how",
+        "if","in","into","is","it","its","just","may","might","more","most","much","must","my",
+        "not","now","of","on","only","or","other","our","out","over","own","per","same","she",
+        "should","so","some","such","than","that","the","their","them","then","there","these",
+        "they","this","those","through","to","too","under","until","upon","very","was","we",
+        "were","what","when","where","which","while","who","will","with","without","would","you","your",
+        -- Academic/research generic terms
+        "about","above","after","again","all","also","among","any","because","before","between",
+        "both","during","further","here","no","nor","not","once","rather","since","still",
+        "via","using","use","used","based","approach","approaches","method","methods",
+        "study","analysis","data","model","models","system","systems","development","design","project",
+        "research","program","programme","grant","funded","funding","proposal","investigation",
+        "results","result","conclusion","conclusions","introduction","discussion","paper","article",
+        "journal","abstract","respectively","significantly","however","therefore","although",
+        "moreover","furthermore","thus","hence","nevertheless","whereas","whereby"
+      ])
+    LIMIT CAST(${(dataform.projectConfig.vars.inst_fuzzy_max_abstract_tokens || 200)} AS INT64)
+  ) AS pub_abstract_tokens
+
+FROM raw

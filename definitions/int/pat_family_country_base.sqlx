@@ -1,0 +1,115 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_family_country_base",
+  tags: ["int", "patents"],
+  description: "Patent family × country analytic base for domestic innovation: anchored to earliest application quarter. Uses binary assignee-based attribution (w_domestic = 1.0 if ANY domestic assignee). Inventor weights retained as secondary variants (w_dom_with_inv, has_dom_inventor). Government and university ownership use binary flags."
+}
+
+WITH anchor AS (
+  SELECT family_id, family_app_dt, family_app_qtr AS quarter
+  FROM ${ref("rd_stage", "patent_family_anchor")}
+  WHERE family_app_dt IS NOT NULL
+    AND family_app_dt >= DATE('${dataform.projectConfig.vars.sample_start}')
+    AND family_app_dt <= DATE('${dataform.projectConfig.vars.sample_end}')
+),
+
+w_inv AS (
+  SELECT family_id, country_code, w_inv
+  FROM ${ref("rd_stage", "patent_family_inventor_weights")}
+),
+
+w_assg AS (
+  SELECT family_id, country_code, w_assg, w_assg_gov_surico, w_assg_edu
+  FROM ${ref("rd_stage", "patent_family_assignee_weights")}
+),
+
+flags AS (
+  SELECT family_id, country_code, dom_gov_assg_flag, dom_edu_assg_flag
+  FROM ${ref("rd_stage", "patent_family_assignee_flags")}
+),
+
+for4 AS (
+  SELECT family_id, for4_codes
+  FROM ${ref("rd_stage", "patent_family_for4")}
+),
+
+family_grants AS (
+  -- Aggregate grant IDs across all documents in the family.
+  -- Fix: avoid UNNEST(ARRAY_CONCAT_AGG(...)) which BigQuery disallows.
+  SELECT
+    family_id,
+    ARRAY(
+      SELECT DISTINCT gid
+      FROM UNNEST(IFNULL(concat_grant_ids, [])) AS gid
+      WHERE gid IS NOT NULL
+    ) AS all_grant_ids
+  FROM (
+    SELECT
+      family_id,
+      ARRAY_CONCAT_AGG(
+        ARRAY_CONCAT(IFNULL(direct_grant_ids, []), IFNULL(associated_grant_ids, []))
+      ) AS concat_grant_ids
+    FROM ${ref("rd_stage", "patent_doc_core")}
+    GROUP BY family_id
+  )
+)
+
+SELECT
+  a.family_id,
+  a.quarter,
+  a.family_app_dt,
+
+  s.country_code,
+
+  -- Binary whole-counting: 1.0 if any domestic assignee (primary attribution)
+  1.0 AS w_domestic,
+
+  -- Assignee fractional weight (retained for reference)
+  s.w_assg,
+
+  -- Inventor fractional weight (NULL if no inventor geocoding for this country)
+  i.w_inv,
+
+  -- Secondary inventor-weighted variant: w_inv * w_assg (0.0 when inventor missing)
+  COALESCE(i.w_inv, 0.0) * s.w_assg AS w_dom_with_inv,
+
+  -- Whether this family has any geocoded domestic inventor in this country
+  IF(i.w_inv IS NOT NULL AND i.w_inv > 0, 1, 0) AS has_dom_inventor,
+
+  -- Government ownership: binary (1.0 if any domestic gov assignee)
+  IF(COALESCE(f.dom_gov_assg_flag, 0) = 1, 1.0, 0.0) AS w_gov_owned,
+
+  -- Education (university) ownership: binary (1.0 if any domestic edu assignee)
+  IF(COALESCE(f.dom_edu_assg_flag, 0) = 1, 1.0, 0.0) AS w_edu_owned,
+
+  COALESCE(f.dom_gov_assg_flag, 0) AS dom_gov_assg_flag,
+  COALESCE(f.dom_edu_assg_flag, 0) AS dom_edu_assg_flag,
+
+  -- Research codes (FoR)
+  COALESCE(f4.for4_codes, CAST([] AS ARRAY<STRING>)) AS for4_codes,
+  ARRAY(
+    SELECT DISTINCT SUBSTR(code, 1, 2)
+    FROM UNNEST(COALESCE(f4.for4_codes, CAST([] AS ARRAY<STRING>))) AS code
+    WHERE code IS NOT NULL
+  ) AS for2_codes,
+
+  COALESCE(g.all_grant_ids, CAST([] AS ARRAY<STRING>)) AS all_grant_ids
+
+FROM anchor a
+JOIN w_assg s
+  ON s.family_id = a.family_id
+LEFT JOIN w_inv i
+  ON i.family_id = a.family_id
+ AND i.country_code = s.country_code
+LEFT JOIN flags f
+  ON f.family_id = a.family_id
+ AND f.country_code = s.country_code
+LEFT JOIN for4 f4
+  ON f4.family_id = a.family_id
+LEFT JOIN family_grants g
+  ON g.family_id = a.family_id
+
+WHERE s.country_code IS NOT NULL
+  AND s.w_assg IS NOT NULL
+  AND s.w_assg > 0

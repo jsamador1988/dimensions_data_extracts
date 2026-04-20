@@ -1,0 +1,70 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "clinical_trial_core",
+  tags: ["stage", "clinical_trials"],
+  description: "Extracted clinical trials from dimensions-ai.data_analytics.clinical_trials. Date anchor priority: SAFE.PARSE_DATE(start_date) -> start_year (as YYYY-01-01) -> registration_date. sponsor_orgs are the DISTINCT grid_ids from organisation_details[]; research_org_countries are the DISTINCT countries_territories[] from the same array; funder_orgs is the flat ARRAY<STRING> field. is_gov_sponsor = TRUE when ANY sponsor grid_id is in gov_org_whitelist.org_id OR in org_gov_surico where is_gov_surico=TRUE. Filtered to trials with at least one sponsor and at least one country."
+}
+
+WITH raw AS (
+  SELECT
+    id AS trial_id,
+    -- Date anchor: parse start_date, fallback to start_year, then registration_date
+    COALESCE(
+      SAFE.PARSE_DATE('%Y-%m-%d', start_date),
+      SAFE.PARSE_DATE('%Y-%m', start_date),
+      IF(start_year IS NOT NULL, DATE(start_year, 1, 1), NULL),
+      DATE(registration_date)
+    ) AS start_dt,
+    -- Sponsor-side organisation GRIDs (all organisation_details with a grid_id)
+    (SELECT ARRAY_AGG(DISTINCT od.grid_id IGNORE NULLS)
+       FROM UNNEST(organisation_details) AS od
+       WHERE od.grid_id IS NOT NULL) AS sponsor_orgs,
+    -- Funder organisations (flat GRID array on the root record)
+    funder_orgs,
+    -- Country codes from organisation_details.countries_territories
+    (SELECT ARRAY_AGG(DISTINCT country IGNORE NULLS)
+       FROM UNNEST(organisation_details) AS od,
+            UNNEST(od.countries_territories) AS country
+       WHERE country IS NOT NULL) AS research_org_countries
+  FROM `dimensions-ai.data_analytics.clinical_trials`
+),
+
+dated AS (
+  SELECT
+    trial_id,
+    DATE_TRUNC(start_dt, QUARTER) AS trial_qtr,
+    sponsor_orgs,
+    funder_orgs,
+    research_org_countries
+  FROM raw
+  WHERE start_dt IS NOT NULL
+),
+
+gov_orgs AS (
+  -- Union of whitelist and Surico gov classification. gov_org_whitelist exposes org_id directly.
+  SELECT DISTINCT org_id FROM (
+    SELECT org_id FROM ${ref("rd_ref", "gov_org_whitelist")}
+    UNION DISTINCT
+    SELECT org_id FROM ${ref("rd_ref", "org_gov_surico")} WHERE is_gov_surico = TRUE
+  )
+),
+
+flagged AS (
+  SELECT
+    d.trial_id,
+    d.trial_qtr,
+    d.sponsor_orgs,
+    d.funder_orgs,
+    d.research_org_countries,
+    EXISTS(
+      SELECT 1 FROM UNNEST(d.sponsor_orgs) AS s
+      JOIN gov_orgs g ON g.org_id = s
+    ) AS is_gov_sponsor
+  FROM dated d
+  WHERE d.trial_qtr IS NOT NULL
+    AND ARRAY_LENGTH(d.research_org_countries) > 0
+    AND ARRAY_LENGTH(d.sponsor_orgs) > 0
+)
+
+SELECT * FROM flagged

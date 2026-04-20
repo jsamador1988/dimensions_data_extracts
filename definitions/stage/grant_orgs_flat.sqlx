@@ -1,0 +1,52 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "grant_orgs_flat",
+  tags: ["stage"],
+  description: "Flatten grant recipient organizations (GRID org_id) for institution matching. Built from rd_stage.grants_domestic_core and includes an is_gov_surico flag for the FUNDER (so the same table supports gov-funded and non-gov-funded matching). Uses both research_orgs and organisation_details.grid_id to maximize recipient coverage across countries."
+}
+
+WITH g AS (
+  SELECT
+    country_code,
+    is_gov_surico,
+    grant_id,
+    start_dt,
+    research_orgs,
+    organisation_details
+  FROM ${ref("rd_stage", "grants_domestic_core")}
+  WHERE start_dt IS NOT NULL
+)
+
+SELECT DISTINCT
+  country_code,
+  is_gov_surico,
+  grant_id,
+  start_dt,
+  org_id
+FROM (
+  -- Structured recipient org ids
+  SELECT
+    country_code,
+    is_gov_surico,
+    grant_id,
+    start_dt,
+    ro AS org_id
+  FROM g
+  CROSS JOIN UNNEST(IFNULL(research_orgs, CAST([] AS ARRAY<STRING>))) AS ro
+  WHERE ro IS NOT NULL
+
+  UNION ALL
+
+  -- Raw org detail records (often includes mapped GRID id even when research_orgs is empty)
+  SELECT
+    country_code,
+    is_gov_surico,
+    grant_id,
+    start_dt,
+    od.grid_id AS org_id
+  FROM g
+  CROSS JOIN UNNEST(IFNULL(organisation_details, [])) AS od
+  WHERE od.grid_id IS NOT NULL
+)
+WHERE org_id IS NOT NULL

@@ -1,0 +1,115 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_6way_decomp_ctq",
+  tags: ["int", "publications"],
+  description: "Publication 6-way mutually exclusive decomposition by ownership x funding: gov_owned, uni_govfund, uni_no_govfund, private_govfund, private_no_govfund, unclassified. Priority classification assigns entire publication to one bucket (gov > uni > private > unclassified). Includes basic research variants. All 6 buckets sum to pub_total_ctq. Also exposes three union-of-3-tier pass-through columns (pub_union3_govfund_{,_basic,_top5j}_ctq) for figures that need the de-duplicated gov-funded subset across direct + rid + inst without priority-classifying into uni/private buckets."
+}
+
+-- Priority classification at pub x country row level:
+--   1. gov_owned:           w_public_prod > 0
+--   2. uni_govfund:         w_edu_prod > 0 AND government-funded (any tier)
+--   3. uni_no_govfund:      w_edu_prod > 0 (not gov-funded)
+--   4. private_govfund:     government-funded (any tier, not gov/uni)
+--   5. private_no_govfund:  w_public_prod = 0 AND w_edu_prod = 0 (not gov-funded)
+--   6. unclassified:        fallback (should be ~0)
+
+WITH pub_basic_flag AS (
+  SELECT
+    pf.pub_id,
+    COALESCE(
+      SAFE_DIVIDE(
+        COUNTIF(code IS NOT NULL AND bm.is_basic_science),
+        NULLIF(COUNTIF(code IS NOT NULL), 0)
+      ) > 0.5,
+      FALSE
+    ) AS is_basic_pub
+  FROM (
+    SELECT pub_id,
+           COALESCE(ANY_VALUE(for2_codes), CAST([] AS ARRAY<STRING>)) AS for2_codes
+    FROM ${ref("rd_int", "pub_pub_country_base")}
+    GROUP BY pub_id
+  ) pf
+  LEFT JOIN UNNEST(pf.for2_codes) AS code
+  LEFT JOIN ${ref("rd_ref", "for2_basic_research_map")} bm
+    ON bm.for2_code = code
+  GROUP BY pf.pub_id
+),
+
+govfund_pubs AS (
+  SELECT DISTINCT pub_id, country_code
+  FROM ${ref("rd_int", "pub_govfund_direct_pc")}
+  UNION DISTINCT
+  SELECT DISTINCT pub_id, country_code
+  FROM ${ref("rd_int", "pub_govfund_rid_pc")}
+  UNION DISTINCT
+  SELECT DISTINCT pub_id, country_code
+  FROM ${ref("rd_int", "pub_govfund_inst_pc")}
+),
+
+pub_top5j_flag AS (
+  -- Top-5% journal flag per pub_id via existing journal ranking
+  SELECT
+    pqf.pub_id,
+    IFNULL(tr.is_top5_journal, FALSE) AS is_top5j
+  FROM (
+    SELECT DISTINCT pub_id, journal_id
+    FROM ${ref("rd_stage", "pub_quality_features")}
+    WHERE journal_id IS NOT NULL
+  ) pqf
+  LEFT JOIN ${ref("rd_ref", "top_journal_ranking")} tr
+    ON tr.journal_id = pqf.journal_id
+),
+
+classified AS (
+  SELECT
+    p.country_code,
+    p.quarter,
+    p.pub_id,
+    p.w_aff,
+    COALESCE(bf.is_basic_pub, FALSE) AS is_basic,
+    COALESCE(tj.is_top5j, FALSE)     AS is_top5j,
+    (gf.pub_id IS NOT NULL)          AS is_union3_govfund,
+    CASE
+      WHEN p.w_public_prod > 0                       THEN 'gov_owned'
+      WHEN p.w_edu_prod > 0 AND gf.pub_id IS NOT NULL THEN 'uni_govfund'
+      WHEN p.w_edu_prod > 0                           THEN 'uni_no_govfund'
+      WHEN gf.pub_id IS NOT NULL                      THEN 'private_govfund'
+      WHEN p.w_public_prod = 0 AND p.w_edu_prod = 0   THEN 'private_no_govfund'
+      ELSE                                             'unclassified'
+    END AS bucket
+  FROM ${ref("rd_int", "pub_pub_country_base")} p
+  LEFT JOIN pub_basic_flag bf ON bf.pub_id = p.pub_id
+  LEFT JOIN pub_top5j_flag tj ON tj.pub_id = p.pub_id
+  LEFT JOIN govfund_pubs gf
+    ON gf.pub_id = p.pub_id AND gf.country_code = p.country_code
+)
+
+SELECT
+  country_code,
+  quarter,
+
+  -- All publications: 6-way decomposition
+  SUM(IF(bucket = 'gov_owned',          w_aff, 0.0)) AS pub_6w_gov_owned_ctq,
+  SUM(IF(bucket = 'uni_govfund',        w_aff, 0.0)) AS pub_6w_uni_govfund_ctq,
+  SUM(IF(bucket = 'uni_no_govfund',     w_aff, 0.0)) AS pub_6w_uni_no_govfund_ctq,
+  SUM(IF(bucket = 'private_govfund',    w_aff, 0.0)) AS pub_6w_private_govfund_ctq,
+  SUM(IF(bucket = 'private_no_govfund', w_aff, 0.0)) AS pub_6w_private_no_govfund_ctq,
+  SUM(IF(bucket = 'unclassified',       w_aff, 0.0)) AS pub_6w_unclassified_ctq,
+
+  -- Basic research subset: 6-way decomposition
+  SUM(IF(bucket = 'gov_owned'          AND is_basic, w_aff, 0.0)) AS pub_6w_gov_owned_basic_ctq,
+  SUM(IF(bucket = 'uni_govfund'        AND is_basic, w_aff, 0.0)) AS pub_6w_uni_govfund_basic_ctq,
+  SUM(IF(bucket = 'uni_no_govfund'     AND is_basic, w_aff, 0.0)) AS pub_6w_uni_no_govfund_basic_ctq,
+  SUM(IF(bucket = 'private_govfund'    AND is_basic, w_aff, 0.0)) AS pub_6w_private_govfund_basic_ctq,
+  SUM(IF(bucket = 'private_no_govfund' AND is_basic, w_aff, 0.0)) AS pub_6w_private_no_govfund_basic_ctq,
+  SUM(IF(bucket = 'unclassified'       AND is_basic, w_aff, 0.0)) AS pub_6w_unclassified_basic_ctq,
+
+  -- Union-of-3-tier gov-funded pass-through (de-duplicated across direct/rid/inst)
+  -- Fractional attribution preserved via w_aff
+  SUM(IF(is_union3_govfund,                     w_aff, 0.0)) AS pub_union3_govfund_ctq,
+  SUM(IF(is_union3_govfund AND is_basic,        w_aff, 0.0)) AS pub_union3_govfund_basic_ctq,
+  SUM(IF(is_union3_govfund AND is_top5j,        w_aff, 0.0)) AS pub_union3_govfund_top5j_ctq
+
+FROM classified
+GROUP BY country_code, quarter

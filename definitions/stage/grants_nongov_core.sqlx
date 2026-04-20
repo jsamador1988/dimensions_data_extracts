@@ -1,0 +1,25 @@
+config {
+  type: "view",
+  schema: "rd_stage",
+  name: "grants_nongov_core",
+  tags: ["stage"],
+  description: "Domestic non-government-funded grants (funder is_gov_surico=FALSE), derived from rd_stage.grants_domestic_core. Contains FoR fields, linkage fields, Phase-1 fuzzy features, and abstract tokens. Used to construct private-funder analogs of Tier 2/3 funding measures."
+}
+
+SELECT
+  country_code,
+  grant_id,
+  start_dt,
+  funding_usd,
+  grant_for4,
+  grant_for2,
+  researcher_ids,
+  investigators,
+  research_orgs,
+  organisation_details,
+  grant_title,
+  grant_title_tokens,
+  grant_concepts,
+  grant_abstract_tokens
+FROM ${ref("rd_stage", "grants_domestic_core")}
+WHERE NOT is_gov_surico

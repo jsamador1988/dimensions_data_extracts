@@ -1,0 +1,75 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "patent_doc_core",
+  tags: ["stage", "patents"],
+  description: "Slim patent document core used for family-level counting, ownership and funding. Avoids very wide fields to stay under BigQuery row-size limits."
+}
+
+SELECT
+  p.family_id,
+  p.id AS patent_id,
+  p.jurisdiction,
+
+  -- Robust earliest application date (priority vs filing) with year fallbacks.
+  CASE
+    WHEN COALESCE(
+      SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date),
+      CASE WHEN p.priority_year IS NOT NULL THEN DATE(SAFE_CAST(p.priority_year AS INT64), 1, 1) END
+    ) IS NOT NULL
+     AND COALESCE(
+      SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date),
+      CASE WHEN p.filing_year IS NOT NULL THEN DATE(SAFE_CAST(p.filing_year AS INT64), 1, 1) END
+    ) IS NOT NULL
+    THEN LEAST(
+      COALESCE(
+        SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date),
+        CASE WHEN p.priority_year IS NOT NULL THEN DATE(SAFE_CAST(p.priority_year AS INT64), 1, 1) END
+      ),
+      COALESCE(
+        SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date),
+        CASE WHEN p.filing_year IS NOT NULL THEN DATE(SAFE_CAST(p.filing_year AS INT64), 1, 1) END
+      )
+    )
+    ELSE COALESCE(
+      COALESCE(
+        SAFE.PARSE_DATE('%Y-%m-%d', p.priority_date),
+        CASE WHEN p.priority_year IS NOT NULL THEN DATE(SAFE_CAST(p.priority_year AS INT64), 1, 1) END
+      ),
+      COALESCE(
+        SAFE.PARSE_DATE('%Y-%m-%d', p.filing_date),
+        CASE WHEN p.filing_year IS NOT NULL THEN DATE(SAFE_CAST(p.filing_year AS INT64), 1, 1) END
+      )
+    )
+  END AS doc_earliest_app_dt,
+
+  p.inventors,
+  IFNULL(p.assignee_orgs, CAST([] AS ARRAY<STRING>)) AS assignee_orgs,
+
+  -- Direct grant IDs from acknowledgements (funding_details)
+  ARRAY(
+    SELECT DISTINCT f.grant_id
+    FROM UNNEST(IFNULL(p.funding_details, CAST([] AS ARRAY<STRUCT<grid_id STRING, grant_id STRING>>))) AS f
+    WHERE f.grant_id IS NOT NULL
+  ) AS direct_grant_ids,
+
+  -- Additional Dimensions linkages between patents and grants
+  IFNULL(p.associated_grant_ids, CAST([] AS ARRAY<STRING>)) AS associated_grant_ids,
+
+  -- Patent FoR codes (4-digit)
+  ARRAY(
+    SELECT DISTINCT LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0')
+    FROM UNNEST(IFNULL(p.category_for.second_level.codes, [])) AS code
+    WHERE code IS NOT NULL
+      AND REGEXP_EXTRACT(code, r'\d+') IS NOT NULL
+  ) AS for4_codes
+
+FROM `dimensions-ai.data_analytics.patents` p
+WHERE p.family_id IS NOT NULL
+  AND p.id IS NOT NULL
+  -- Exclude Chinese utility models (U, Y) and designs (S, D) for international comparability.
+  -- Invention patents (A, B, C) and their sub-variants are retained.
+  AND NOT (
+    p.jurisdiction = 'CN'
+    AND REGEXP_EXTRACT(p.id, r'-([A-Z])\d?$') IN ('U', 'Y', 'S', 'D')
+  )

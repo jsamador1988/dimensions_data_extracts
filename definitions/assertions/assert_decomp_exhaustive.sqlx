@@ -1,0 +1,54 @@
+config {
+  type: "assertion",
+  schema: "rd_assert",
+  name: "assert_decomp_exhaustive",
+  tags: ["assertion", "decomposition"],
+  description: "Verify all mutually exclusive decompositions sum to their respective totals within tolerance (0.001). Checks pub 6-way, pat 6-way funding, and pat 8-way citation decompositions."
+}
+
+-- Returns rows that FAIL the exhaustiveness check.
+-- Expectation: zero rows returned.
+
+WITH checks AS (
+  SELECT
+    country_code,
+    quarter,
+
+    -- Publication 6-way vs pub_total_ctq
+    ABS(
+      pub_6w_gov_owned_ctq + pub_6w_uni_govfund_ctq + pub_6w_uni_no_govfund_ctq
+      + pub_6w_private_govfund_ctq + pub_6w_private_no_govfund_ctq + pub_6w_unclassified_ctq
+      - pub_total_ctq
+    ) AS pub_6w_residual,
+
+    -- Patent 6-way funding vs pat_total_ctq
+    ABS(
+      pat_6w_gov_owned_ctq + pat_6w_uni_govfund_ctq + pat_6w_uni_no_govfund_ctq
+      + pat_6w_private_govfund_ctq + pat_6w_private_no_govfund_ctq + pat_6w_unclassified_ctq
+      - pat_total_ctq
+    ) AS pat_6w_residual,
+
+    -- Patent 8-way citation (binary) vs pat_total_ctq
+    ABS(
+      pat_8wc_gov_cite_gov_basic_ctq + pat_8wc_gov_cite_gov_nonbasic_ctq
+      + pat_8wc_gov_cite_nongov_ctq + pat_8wc_gov_no_cite_ctq
+      + pat_8wc_priv_cite_gov_basic_ctq + pat_8wc_priv_cite_gov_nonbasic_ctq
+      + pat_8wc_priv_cite_nongov_ctq + pat_8wc_priv_no_cite_ctq
+      - pat_total_ctq
+    ) AS pat_8wc_residual
+
+  FROM ${ref("rd_mart", "panel_country_quarter_wide")}
+  WHERE pat_total_ctq > 0 OR pub_total_ctq > 0
+)
+
+SELECT
+  country_code,
+  quarter,
+  pub_6w_residual,
+  pat_6w_residual,
+  pat_8wc_residual,
+  'decomposition does not sum to total' AS failure_reason
+FROM checks
+WHERE pub_6w_residual > 0.001
+   OR pat_6w_residual > 0.001
+   OR pat_8wc_residual > 0.001

@@ -1,0 +1,346 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_cn_assignee_proxy_measures",
+  tags: ["int", "patents", "china"],
+  description: "CN patent proxy measures using assignee-only attribution. Bypasses the inventor geocoding gap by using w_assg instead of w_inv*w_assg for CN-jurisdiction invention patents. Includes: totals, gov-owned, private, university, basic research, science linkage, and direct grant funding. RID/institution grant linkage set to 0 (would require full pipeline replication). TEMPORARY — for descriptive report use only."
+}
+
+-- ===================================================================
+-- Step 1: CN-jurisdiction invention patent families with assignee data
+-- Uses patent_family_assignee_weights (GRID-based, ~80-97% coverage)
+-- instead of patent_family_inventor_weights (address-based, ~0-10%)
+-- ===================================================================
+WITH cn_families AS (
+  SELECT DISTINCT family_id
+  FROM ${ref("rd_stage", "patent_doc_core")}
+  WHERE jurisdiction = 'CN'
+),
+
+-- Anchor dates (one row per family)
+anchor AS (
+  SELECT a.family_id, a.family_app_dt, a.family_app_qtr AS quarter
+  FROM ${ref("rd_stage", "patent_family_anchor")} a
+  JOIN cn_families cf ON cf.family_id = a.family_id
+),
+
+-- Assignee weights for country_code = 'CN'
+assg AS (
+  SELECT family_id, w_assg, w_assg_gov_surico, w_assg_edu
+  FROM ${ref("rd_stage", "patent_family_assignee_weights")}
+  WHERE country_code = 'CN'
+    AND w_assg > 0
+),
+
+-- Assignee flags for country_code = 'CN'
+flags AS (
+  SELECT family_id, dom_assg_flag, dom_gov_assg_flag, dom_edu_assg_flag
+  FROM ${ref("rd_stage", "patent_family_assignee_flags")}
+  WHERE country_code = 'CN'
+),
+
+-- Build the CN proxy base (analogous to pat_family_country_base but w_assg only)
+cn_base AS (
+  SELECT
+    a.family_id,
+    a.quarter,
+    a.family_app_dt,
+    s.w_assg AS w_proxy,
+    (s.w_assg * COALESCE(s.w_assg_gov_surico, 0.0)) AS w_gov_owned_proxy,
+    (s.w_assg * COALESCE(s.w_assg_edu, 0.0)) AS w_edu_owned_proxy,
+    COALESCE(f.dom_gov_assg_flag, 0) AS dom_gov_assg_flag,
+    COALESCE(f.dom_edu_assg_flag, 0) AS dom_edu_assg_flag
+  FROM anchor a
+  JOIN assg s ON s.family_id = a.family_id
+  LEFT JOIN flags f ON f.family_id = a.family_id
+),
+
+-- ===================================================================
+-- Step 2: Basic research classification (FoR2-based, >50% in basic divisions)
+-- Derive for2_codes from for4_codes in patent_doc_core (same as pat_family_country_base)
+-- ===================================================================
+pat_family_for4 AS (
+  SELECT family_id, for4_codes
+  FROM ${ref("rd_stage", "patent_doc_core")}
+  WHERE jurisdiction = 'CN'
+    AND family_id IN (SELECT family_id FROM cn_base)
+),
+
+pat_family_for2 AS (
+  SELECT
+    family_id,
+    ARRAY(
+      SELECT DISTINCT SUBSTR(code, 1, 2)
+      FROM UNNEST(COALESCE(for4_codes, CAST([] AS ARRAY<STRING>))) AS code
+      WHERE code IS NOT NULL
+    ) AS for2_codes
+  FROM pat_family_for4
+),
+
+pat_family_basic AS (
+  SELECT
+    pf.family_id,
+    IF(
+      SAFE_DIVIDE(
+        COUNTIF(code IS NOT NULL AND bm.is_basic_science),
+        NULLIF(COUNTIF(code IS NOT NULL), 0)
+      ) > 0.5,
+      TRUE, FALSE
+    ) AS is_basic_patent
+  FROM pat_family_for2 pf
+  LEFT JOIN UNNEST(pf.for2_codes) AS code
+  LEFT JOIN ${ref("rd_ref", "for2_basic_research_map")} bm
+    ON bm.for2_code = code
+  GROUP BY pf.family_id
+),
+
+-- ===================================================================
+-- Step 3: Science linkage flags (patents citing publications)
+-- pat_family_citepub_flags already exists and is family-level (no country filter)
+-- ===================================================================
+
+-- ===================================================================
+-- Step 4: Direct grant linkage for CN
+-- Matches patent grant_ids against CN government grants
+-- ===================================================================
+cn_patent_grants AS (
+  SELECT DISTINCT dc.family_id, gid
+  FROM ${ref("rd_stage", "patent_doc_core")} dc,
+    UNNEST(ARRAY_CONCAT(
+      IFNULL(dc.direct_grant_ids, []),
+      IFNULL(dc.associated_grant_ids, [])
+    )) AS gid
+  WHERE dc.jurisdiction = 'CN'
+    AND gid IS NOT NULL
+),
+
+cn_gov_grants AS (
+  SELECT grant_id
+  FROM ${ref("rd_stage", "grants_gov_core")}
+  WHERE country_code = 'CN'
+),
+
+cn_direct_funded AS (
+  SELECT DISTINCT pg.family_id
+  FROM cn_patent_grants pg
+  JOIN cn_gov_grants gg ON gg.grant_id = pg.gid
+),
+
+-- ===================================================================
+-- Step 4b: RID grant linkage for CN
+-- Matches CN families to CN gov grants via shared researcher_id
+-- (researcher_ids are independent of inventor address geocoding)
+-- ===================================================================
+pat_rids AS (
+  SELECT family_id, researcher_id
+  FROM ${ref("rd_stage", "patent_family_rids")}
+  WHERE researcher_id IS NOT NULL
+),
+
+grant_rids AS (
+  SELECT grant_id, researcher_id
+  FROM ${ref("rd_stage", "grant_rids_flat")}
+  WHERE researcher_id IS NOT NULL AND start_dt IS NOT NULL
+    AND is_gov_surico AND country_code = 'CN'
+),
+
+cn_grants_detail AS (
+  SELECT grant_id, start_dt, grant_for4, grant_for2
+  FROM ${ref("rd_stage", "grants_gov_core")}
+  WHERE country_code = 'CN' AND start_dt IS NOT NULL
+),
+
+cn_rid_pairs AS (
+  SELECT DISTINCT b.family_id
+  FROM cn_base b
+  JOIN pat_rids pr ON pr.family_id = b.family_id
+  JOIN grant_rids gr ON gr.researcher_id = pr.researcher_id
+  JOIN cn_grants_detail g ON g.grant_id = gr.grant_id
+  LEFT JOIN pat_family_for2 pf2 ON pf2.family_id = b.family_id
+  WHERE b.family_app_dt >= g.start_dt
+    AND b.family_app_dt < DATE_ADD(g.start_dt,
+        INTERVAL CAST(${(dataform.projectConfig.vars.grant_match_window_years || 10)} AS INT64) YEAR)
+    AND b.dom_gov_assg_flag = 0
+),
+
+-- ===================================================================
+-- Step 4c: Institution grant linkage for CN
+-- Matches CN families to CN gov grants via shared org_id
+-- (assignee orgs are available; no inventor address dependency)
+-- ===================================================================
+pat_assg_orgs AS (
+  SELECT family_id, org_id
+  FROM ${ref("rd_stage", "patent_family_assignee_orgs")}
+  WHERE org_id IS NOT NULL
+),
+
+grant_orgs AS (
+  SELECT grant_id, org_id
+  FROM ${ref("rd_stage", "grant_orgs_flat")}
+  WHERE org_id IS NOT NULL AND start_dt IS NOT NULL
+    AND is_gov_surico AND country_code = 'CN'
+),
+
+cn_inst_pairs AS (
+  SELECT DISTINCT b.family_id
+  FROM cn_base b
+  JOIN pat_assg_orgs ao ON ao.family_id = b.family_id
+  JOIN grant_orgs go2 ON go2.org_id = ao.org_id
+  JOIN cn_grants_detail g ON g.grant_id = go2.grant_id
+  WHERE b.family_app_dt >= g.start_dt
+    AND b.family_app_dt < DATE_ADD(g.start_dt,
+        INTERVAL CAST(${(dataform.projectConfig.vars.grant_match_window_years || 10)} AS INT64) YEAR)
+    AND b.dom_gov_assg_flag = 0
+),
+
+-- Union of all three funding strategies
+cn_any_funded AS (
+  SELECT DISTINCT family_id FROM cn_direct_funded
+  UNION DISTINCT
+  SELECT DISTINCT family_id FROM cn_rid_pairs
+  UNION DISTINCT
+  SELECT DISTINCT family_id FROM cn_inst_pairs
+),
+
+-- Exclusive tiers (direct > RID-only > inst-only)
+cn_rid_only AS (
+  SELECT family_id FROM cn_rid_pairs
+  WHERE family_id NOT IN (SELECT family_id FROM cn_direct_funded)
+),
+
+cn_inst_only AS (
+  SELECT family_id FROM cn_inst_pairs
+  WHERE family_id NOT IN (SELECT family_id FROM cn_direct_funded)
+    AND family_id NOT IN (SELECT family_id FROM cn_rid_pairs)
+),
+
+-- ===================================================================
+-- Step 5: Aggregate to quarterly measures
+-- ===================================================================
+base_agg AS (
+  SELECT
+    b.quarter,
+    SUM(b.w_proxy) AS pat_total_ctq,
+    SUM(b.w_gov_owned_proxy) AS pat_gov_owned_ctq,
+    SUM(IF(b.dom_gov_assg_flag = 0, b.w_proxy, 0.0)) AS pat_private_total_ctq
+  FROM cn_base b
+  GROUP BY b.quarter
+),
+
+uni_basic_cite_agg AS (
+  SELECT
+    b.quarter,
+    -- University
+    SUM(IF(b.dom_edu_assg_flag = 1, b.w_proxy, 0.0)) AS pat_uni_total_ctq,
+    -- Basic research
+    SUM(IF(IFNULL(bf.is_basic_patent, FALSE), b.w_proxy, 0.0)) AS pat_total_basic_ctq,
+    SUM(IF(IFNULL(bf.is_basic_patent, FALSE), b.w_gov_owned_proxy, 0.0)) AS pat_gov_owned_basic_ctq,
+    SUM(IF(IFNULL(bf.is_basic_patent, FALSE) AND b.dom_gov_assg_flag = 0, b.w_proxy, 0.0)) AS pat_private_basic_ctq,
+    SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(bf.is_basic_patent, FALSE), b.w_proxy, 0.0)) AS pat_uni_basic_ctq,
+    -- Science linkage
+    SUM(IF(IFNULL(cf.has_cited_pub, FALSE), b.w_proxy, 0.0)) AS pat_citepub_ctq,
+    SUM(IF(IFNULL(cf.has_cited_basic_pub, FALSE), b.w_proxy, 0.0)) AS pat_citepub_basic_ctq,
+    SUM(IF(IFNULL(cf.has_cited_govfund_pub, FALSE), b.w_proxy, 0.0)) AS pat_citepub_govfund_ctq,
+    SUM(IF(IFNULL(cf.has_cited_govfund_basic_pub, FALSE), b.w_proxy, 0.0)) AS pat_citepub_govfund_basic_ctq,
+    SUM(IF(IFNULL(cf.has_cited_uni_pub, FALSE), b.w_proxy, 0.0)) AS pat_citepub_uni_ctq,
+    -- University x science linkage
+    SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(cf.has_cited_pub, FALSE), b.w_proxy, 0.0)) AS pat_uni_citepub_ctq,
+    SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(cf.has_cited_basic_pub, FALSE), b.w_proxy, 0.0)) AS pat_uni_citepub_basic_ctq,
+    SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(cf.has_cited_govfund_basic_pub, FALSE), b.w_proxy, 0.0)) AS pat_uni_citepub_govfund_basic_ctq
+  FROM cn_base b
+  LEFT JOIN ${ref("rd_int", "pat_family_citepub_flags")} cf ON cf.family_id = b.family_id
+  LEFT JOIN pat_family_basic bf ON bf.family_id = b.family_id
+  GROUP BY b.quarter
+),
+
+-- Gov-funded aggregation (all 3 strategies)
+govfund_agg AS (
+  SELECT
+    b.quarter,
+    -- Overlapping
+    SUM(IF(df.family_id IS NOT NULL AND b.dom_gov_assg_flag = 0, b.w_proxy, 0.0)) AS pat_govfund_direct_ctq,
+    SUM(IF(ri.family_id IS NOT NULL AND b.dom_gov_assg_flag = 0, b.w_proxy, 0.0)) AS pat_govfund_rid_ctq,
+    SUM(IF(ii.family_id IS NOT NULL AND b.dom_gov_assg_flag = 0, b.w_proxy, 0.0)) AS pat_govfund_inst_ctq,
+    -- Mutually exclusive
+    SUM(IF(df.family_id IS NOT NULL AND b.dom_gov_assg_flag = 0, b.w_proxy, 0.0)) AS pat_govfund_direct_excl_ctq,
+    SUM(IF(ro.family_id IS NOT NULL, b.w_proxy, 0.0)) AS pat_govfund_rid_only_excl_ctq,
+    SUM(IF(io.family_id IS NOT NULL, b.w_proxy, 0.0)) AS pat_govfund_inst_only_excl_ctq,
+    SUM(IF(af.family_id IS NOT NULL AND b.dom_gov_assg_flag = 0, b.w_proxy, 0.0)) AS pat_govfund_any_excl_ctq
+  FROM cn_base b
+  LEFT JOIN cn_direct_funded df ON df.family_id = b.family_id
+  LEFT JOIN cn_rid_pairs ri ON ri.family_id = b.family_id
+  LEFT JOIN cn_inst_pairs ii ON ii.family_id = b.family_id
+  LEFT JOIN cn_rid_only ro ON ro.family_id = b.family_id
+  LEFT JOIN cn_inst_only io ON io.family_id = b.family_id
+  LEFT JOIN cn_any_funded af ON af.family_id = b.family_id
+  GROUP BY b.quarter
+),
+
+-- University gov-funded (any strategy)
+uni_govfund_agg AS (
+  SELECT
+    b.quarter,
+    SUM(IF(af.family_id IS NOT NULL AND b.dom_edu_assg_flag = 1, b.w_proxy, 0.0)) AS pat_uni_govfund_ctq,
+    SUM(IF(af.family_id IS NOT NULL AND b.dom_edu_assg_flag = 1
+           AND IFNULL(bf.is_basic_patent, FALSE), b.w_proxy, 0.0)) AS pat_uni_basic_govfund_ctq
+  FROM cn_base b
+  LEFT JOIN cn_any_funded af ON af.family_id = b.family_id
+  LEFT JOIN pat_family_basic bf ON bf.family_id = b.family_id
+  GROUP BY b.quarter
+),
+
+-- Gov-funded science linkage
+govfund_citepub_agg AS (
+  SELECT
+    b.quarter,
+    SUM(IF(af.family_id IS NOT NULL AND IFNULL(cf.has_cited_pub, FALSE), b.w_proxy, 0.0)) AS pat_govfund_citepub_ctq
+  FROM cn_base b
+  LEFT JOIN cn_any_funded af ON af.family_id = b.family_id
+  LEFT JOIN ${ref("rd_int", "pat_family_citepub_flags")} cf ON cf.family_id = b.family_id
+  WHERE b.dom_gov_assg_flag = 0
+  GROUP BY b.quarter
+)
+
+-- ===================================================================
+-- Final output: one row per quarter, mirroring pat_country_quarter_measures columns
+-- ===================================================================
+SELECT
+  ba.quarter,
+  'CN' AS country_code,
+  ba.pat_total_ctq,
+  ba.pat_gov_owned_ctq,
+  ba.pat_private_total_ctq,
+  -- Gov-funded (all 3 strategies)
+  COALESCE(gf.pat_govfund_direct_ctq, 0.0) AS pat_govfund_direct_ctq,
+  COALESCE(gf.pat_govfund_rid_ctq, 0.0) AS pat_govfund_rid_ctq,
+  COALESCE(gf.pat_govfund_inst_ctq, 0.0) AS pat_govfund_inst_ctq,
+  COALESCE(gf.pat_govfund_direct_excl_ctq, 0.0) AS pat_govfund_direct_excl_ctq,
+  COALESCE(gf.pat_govfund_rid_only_excl_ctq, 0.0) AS pat_govfund_rid_only_excl_ctq,
+  COALESCE(gf.pat_govfund_inst_only_excl_ctq, 0.0) AS pat_govfund_inst_only_excl_ctq,
+  COALESCE(gf.pat_govfund_any_excl_ctq, 0.0) AS pat_govfund_any_excl_ctq,
+  -- University
+  COALESCE(uc.pat_uni_total_ctq, 0.0) AS pat_uni_total_ctq,
+  COALESCE(uc.pat_uni_basic_ctq, 0.0) AS pat_uni_basic_ctq,
+  COALESCE(ug.pat_uni_govfund_ctq, 0.0) AS pat_uni_govfund_ctq,
+  COALESCE(ug.pat_uni_basic_govfund_ctq, 0.0) AS pat_uni_basic_govfund_ctq,
+  -- Basic research
+  COALESCE(uc.pat_total_basic_ctq, 0.0) AS pat_total_basic_ctq,
+  COALESCE(uc.pat_gov_owned_basic_ctq, 0.0) AS pat_gov_owned_basic_ctq,
+  COALESCE(uc.pat_private_basic_ctq, 0.0) AS pat_private_basic_ctq,
+  0.0 AS pat_govfund_basic_ctq,
+  -- Science linkage
+  COALESCE(uc.pat_citepub_ctq, 0.0) AS pat_citepub_ctq,
+  COALESCE(uc.pat_citepub_basic_ctq, 0.0) AS pat_citepub_basic_ctq,
+  COALESCE(uc.pat_citepub_govfund_ctq, 0.0) AS pat_citepub_govfund_ctq,
+  COALESCE(uc.pat_citepub_govfund_basic_ctq, 0.0) AS pat_citepub_govfund_basic_ctq,
+  COALESCE(uc.pat_citepub_uni_ctq, 0.0) AS pat_citepub_uni_ctq,
+  COALESCE(uc.pat_uni_citepub_ctq, 0.0) AS pat_uni_citepub_ctq,
+  COALESCE(uc.pat_uni_citepub_basic_ctq, 0.0) AS pat_uni_citepub_basic_ctq,
+  COALESCE(uc.pat_uni_citepub_govfund_basic_ctq, 0.0) AS pat_uni_citepub_govfund_basic_ctq,
+  COALESCE(gc.pat_govfund_citepub_ctq, 0.0) AS pat_govfund_citepub_ctq
+FROM base_agg ba
+LEFT JOIN uni_basic_cite_agg uc ON uc.quarter = ba.quarter
+LEFT JOIN govfund_agg gf ON gf.quarter = ba.quarter
+LEFT JOIN uni_govfund_agg ug ON ug.quarter = ba.quarter
+LEFT JOIN govfund_citepub_agg gc ON gc.quarter = ba.quarter
+ORDER BY ba.quarter

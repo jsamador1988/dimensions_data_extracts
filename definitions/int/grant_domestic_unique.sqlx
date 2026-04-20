@@ -1,0 +1,57 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "grant_domestic_unique",
+  tags: ["int", "grants", "validation"],
+  description: "Deduplicated domestic grant backbone with one row per country_code x grant_id for robust grant-dollar accounting."
+}
+
+WITH base AS (
+  SELECT
+    country_code,
+    is_gov_surico,
+    grant_id,
+    funder_org_id,
+    start_dt,
+    funding_usd,
+    grant_for4,
+    grant_for2,
+    researcher_ids,
+    investigators,
+    research_orgs,
+    organisation_details,
+    grant_title,
+    grant_title_tokens,
+    grant_concepts
+  FROM ${ref("rd_stage", "grants_domestic_core")}
+  WHERE grant_id IS NOT NULL
+),
+
+ranked AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (
+      PARTITION BY country_code, grant_id
+      ORDER BY start_dt DESC, funding_usd DESC, is_gov_surico DESC
+    ) AS rn
+  FROM base
+)
+
+SELECT
+  country_code,
+  is_gov_surico,
+  grant_id,
+  funder_org_id,
+  start_dt,
+  funding_usd,
+  grant_for4,
+  grant_for2,
+  researcher_ids,
+  investigators,
+  research_orgs,
+  organisation_details,
+  grant_title,
+  grant_title_tokens,
+  grant_concepts
+FROM ranked
+WHERE rn = 1

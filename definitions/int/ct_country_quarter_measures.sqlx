@@ -1,0 +1,49 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "ct_country_quarter_measures",
+  tags: ["int", "clinical_trials"],
+  description: "Country x quarter clinical trial measures with fractional attribution. w_aff = 1 / len(research_org_countries) following the pub_pub_country_base pattern. trial_gov_ctq is the subset where is_gov_sponsor is TRUE. trial_basic_ctq is not yet implemented (requires FoR2 classification from sponsor research-area, which is not consistently available on clinical_trials records); emitted as zero for schema completeness and flagged for referee review.",
+  bigquery: {
+    partitionBy: "quarter",
+    clusterBy: ["country_code"]
+  }
+}
+
+WITH expanded AS (
+  SELECT
+    trial_id,
+    trial_qtr AS quarter,
+    is_gov_sponsor,
+    country_code,
+    1.0 / ARRAY_LENGTH(research_org_countries) AS w_aff
+  FROM ${ref("rd_stage", "clinical_trial_core")},
+  UNNEST(research_org_countries) AS country_code
+),
+
+grid AS (
+  SELECT country_code, quarter
+  FROM ${ref("rd_stage", "analysis_country_quarter_grid")}
+),
+
+agg AS (
+  SELECT
+    country_code,
+    quarter,
+    SUM(w_aff)                                AS trial_total_ctq,
+    SUM(IF(is_gov_sponsor, w_aff, 0))         AS trial_gov_ctq,
+    CAST(0 AS FLOAT64)                        AS trial_basic_ctq
+  FROM expanded
+  GROUP BY country_code, quarter
+)
+
+SELECT
+  g.country_code,
+  g.quarter,
+  IFNULL(a.trial_total_ctq, 0) AS trial_total_ctq,
+  IFNULL(a.trial_gov_ctq, 0)   AS trial_gov_ctq,
+  IFNULL(a.trial_basic_ctq, 0) AS trial_basic_ctq
+FROM grid g
+LEFT JOIN agg a
+  ON a.country_code = g.country_code
+ AND a.quarter = g.quarter

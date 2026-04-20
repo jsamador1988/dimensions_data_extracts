@@ -1,0 +1,108 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_6way_decomp_quality_ctq",
+  tags: ["int", "publications"],
+  description: "Quality-filtered variants of the publication 6-way decomposition: _top5j (top 5% journals) and _top01 (top 0.1% breakthrough) for each ownership x funding bucket. Also includes basic x quality cross-variants. Companion to pub_6way_decomp_ctq."
+}
+
+WITH pub_basic_flag AS (
+  SELECT
+    pf.pub_id,
+    COALESCE(
+      SAFE_DIVIDE(
+        COUNTIF(code IS NOT NULL AND bm.is_basic_science),
+        NULLIF(COUNTIF(code IS NOT NULL), 0)
+      ) > 0.5,
+      FALSE
+    ) AS is_basic_pub
+  FROM (
+    SELECT pub_id,
+           COALESCE(ANY_VALUE(for2_codes), CAST([] AS ARRAY<STRING>)) AS for2_codes
+    FROM ${ref("rd_int", "pub_pub_country_base")}
+    GROUP BY pub_id
+  ) pf
+  LEFT JOIN UNNEST(pf.for2_codes) AS code
+  LEFT JOIN ${ref("rd_ref", "for2_basic_research_map")} bm
+    ON bm.for2_code = code
+  GROUP BY pf.pub_id
+),
+
+govfund_pubs AS (
+  SELECT DISTINCT pub_id, country_code
+  FROM ${ref("rd_int", "pub_govfund_direct_pc")}
+  UNION DISTINCT
+  SELECT DISTINCT pub_id, country_code
+  FROM ${ref("rd_int", "pub_govfund_rid_pc")}
+  UNION DISTINCT
+  SELECT DISTINCT pub_id, country_code
+  FROM ${ref("rd_int", "pub_govfund_inst_pc")}
+),
+
+classified AS (
+  SELECT
+    p.country_code,
+    p.quarter,
+    p.w_aff,
+    COALESCE(bf.is_basic_pub, FALSE) AS is_basic,
+    COALESCE(qf.is_top5j, FALSE) AS is_top5j,
+    COALESCE(qf.is_breakthrough, FALSE) AS is_top01,
+    CASE
+      WHEN p.w_public_prod > 0                       THEN 'gov_owned'
+      WHEN p.w_edu_prod > 0 AND gf.pub_id IS NOT NULL THEN 'uni_govfund'
+      WHEN p.w_edu_prod > 0                           THEN 'uni_no_govfund'
+      WHEN gf.pub_id IS NOT NULL                      THEN 'private_govfund'
+      WHEN p.w_public_prod = 0 AND p.w_edu_prod = 0   THEN 'private_no_govfund'
+      ELSE                                             'unclassified'
+    END AS bucket
+  FROM ${ref("rd_int", "pub_pub_country_base")} p
+  LEFT JOIN pub_basic_flag bf ON bf.pub_id = p.pub_id
+  LEFT JOIN ${ref("rd_int", "pub_quality_flags")} qf ON qf.pub_id = p.pub_id
+  LEFT JOIN govfund_pubs gf
+    ON gf.pub_id = p.pub_id AND gf.country_code = p.country_code
+)
+
+SELECT
+  country_code,
+  quarter,
+
+  -- Top 5% journal: 6-way decomposition
+  SUM(IF(is_top5j AND bucket = 'gov_owned',          w_aff, 0.0)) AS pub_6wq_gov_owned_top5j_ctq,
+  SUM(IF(is_top5j AND bucket = 'uni_govfund',        w_aff, 0.0)) AS pub_6wq_uni_govfund_top5j_ctq,
+  SUM(IF(is_top5j AND bucket = 'uni_no_govfund',     w_aff, 0.0)) AS pub_6wq_uni_no_govfund_top5j_ctq,
+  SUM(IF(is_top5j AND bucket = 'private_govfund',    w_aff, 0.0)) AS pub_6wq_private_govfund_top5j_ctq,
+  SUM(IF(is_top5j AND bucket = 'private_no_govfund', w_aff, 0.0)) AS pub_6wq_private_no_govfund_top5j_ctq,
+  SUM(IF(is_top5j AND bucket = 'unclassified',       w_aff, 0.0)) AS pub_6wq_unclassified_top5j_ctq,
+
+  -- Top 0.1% breakthrough: 6-way decomposition
+  SUM(IF(is_top01 AND bucket = 'gov_owned',          w_aff, 0.0)) AS pub_6wq_gov_owned_top01_ctq,
+  SUM(IF(is_top01 AND bucket = 'uni_govfund',        w_aff, 0.0)) AS pub_6wq_uni_govfund_top01_ctq,
+  SUM(IF(is_top01 AND bucket = 'uni_no_govfund',     w_aff, 0.0)) AS pub_6wq_uni_no_govfund_top01_ctq,
+  SUM(IF(is_top01 AND bucket = 'private_govfund',    w_aff, 0.0)) AS pub_6wq_private_govfund_top01_ctq,
+  SUM(IF(is_top01 AND bucket = 'private_no_govfund', w_aff, 0.0)) AS pub_6wq_private_no_govfund_top01_ctq,
+  SUM(IF(is_top01 AND bucket = 'unclassified',       w_aff, 0.0)) AS pub_6wq_unclassified_top01_ctq,
+
+  -- Basic x Top 5%: 6-way
+  SUM(IF(is_top5j AND is_basic AND bucket = 'gov_owned',          w_aff, 0.0)) AS pub_6wq_gov_owned_basic_top5j_ctq,
+  SUM(IF(is_top5j AND is_basic AND bucket = 'uni_govfund',        w_aff, 0.0)) AS pub_6wq_uni_govfund_basic_top5j_ctq,
+  SUM(IF(is_top5j AND is_basic AND bucket = 'uni_no_govfund',     w_aff, 0.0)) AS pub_6wq_uni_no_govfund_basic_top5j_ctq,
+  SUM(IF(is_top5j AND is_basic AND bucket = 'private_govfund',    w_aff, 0.0)) AS pub_6wq_private_govfund_basic_top5j_ctq,
+  SUM(IF(is_top5j AND is_basic AND bucket = 'private_no_govfund', w_aff, 0.0)) AS pub_6wq_private_no_govfund_basic_top5j_ctq,
+  SUM(IF(is_top5j AND is_basic AND bucket = 'unclassified',       w_aff, 0.0)) AS pub_6wq_unclassified_basic_top5j_ctq,
+
+  -- Basic x Top 0.1%: 6-way
+  SUM(IF(is_top01 AND is_basic AND bucket = 'gov_owned',          w_aff, 0.0)) AS pub_6wq_gov_owned_basic_top01_ctq,
+  SUM(IF(is_top01 AND is_basic AND bucket = 'uni_govfund',        w_aff, 0.0)) AS pub_6wq_uni_govfund_basic_top01_ctq,
+  SUM(IF(is_top01 AND is_basic AND bucket = 'uni_no_govfund',     w_aff, 0.0)) AS pub_6wq_uni_no_govfund_basic_top01_ctq,
+  SUM(IF(is_top01 AND is_basic AND bucket = 'private_govfund',    w_aff, 0.0)) AS pub_6wq_private_govfund_basic_top01_ctq,
+  SUM(IF(is_top01 AND is_basic AND bucket = 'private_no_govfund', w_aff, 0.0)) AS pub_6wq_private_no_govfund_basic_top01_ctq,
+  SUM(IF(is_top01 AND is_basic AND bucket = 'unclassified',       w_aff, 0.0)) AS pub_6wq_unclassified_basic_top01_ctq,
+
+  -- Self-contained totals (guarantees exhaustiveness with bucket columns above)
+  SUM(IF(is_top5j, w_aff, 0.0)) AS pub_6wq_total_top5j_ctq,
+  SUM(IF(is_top01, w_aff, 0.0)) AS pub_6wq_total_top01_ctq,
+  SUM(IF(is_top5j AND is_basic, w_aff, 0.0)) AS pub_6wq_total_basic_top5j_ctq,
+  SUM(IF(is_top01 AND is_basic, w_aff, 0.0)) AS pub_6wq_total_basic_top01_ctq
+
+FROM classified
+GROUP BY country_code, quarter

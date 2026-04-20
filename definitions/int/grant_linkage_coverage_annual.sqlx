@@ -1,0 +1,127 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "grant_linkage_coverage_annual",
+  tags: ["int", "grants", "validation"],
+  description: "Country×year grant-dollar coverage diagnostics by funder type and timing-allocation scenario. Grant dollars are deduplicated at grant_id level by construction."
+}
+
+WITH flags AS (
+  SELECT
+    country_code,
+    grant_id,
+    is_gov_surico,
+    start_year,
+    funding_usd,
+    patent_link_direct,
+    patent_link_researcher_id,
+    patent_link_institution,
+    patent_link_any,
+    publication_link_direct,
+    publication_link_researcher_id,
+    publication_link_institution,
+    publication_link_any,
+    any_output_link_any
+  FROM ${ref("rd_int", "grant_output_linkage_flags")}
+),
+
+alloc AS (
+  SELECT
+    country_code,
+    grant_id,
+    is_gov_surico,
+    allocation_scenario,
+    year,
+    allocated_usd
+  FROM ${ref("rd_int", "grant_funding_allocations_annual")}
+),
+
+start_year_counts AS (
+  SELECT
+    country_code,
+    start_year AS year,
+    IF(is_gov_surico, "gov", "nongov") AS funder_type,
+    COUNT(DISTINCT grant_id) AS n_grants_start_year_total,
+    COUNT(DISTINCT IF(funding_usd IS NOT NULL AND funding_usd > 0, grant_id, NULL)) AS n_grants_start_year_with_usd,
+    COUNT(DISTINCT IF(any_output_link_any = 1, grant_id, NULL)) AS n_grants_start_year_linked_any_output,
+    COUNT(DISTINCT IF(patent_link_any = 1, grant_id, NULL)) AS n_grants_start_year_linked_patent,
+    COUNT(DISTINCT IF(publication_link_any = 1, grant_id, NULL)) AS n_grants_start_year_linked_publication
+  FROM flags
+  GROUP BY country_code, year, funder_type
+),
+
+dollar_coverage AS (
+  SELECT
+    a.country_code,
+    a.year,
+    a.allocation_scenario,
+    IF(a.is_gov_surico, "gov", "nongov") AS funder_type,
+
+    COUNT(DISTINCT a.grant_id) AS n_grants_with_usd_active_in_year,
+
+    SUM(a.allocated_usd) AS usd_total_reported,
+
+    SUM(IF(f.patent_link_direct = 1, a.allocated_usd, 0.0)) AS usd_linked_patent_direct,
+    SUM(IF(f.patent_link_researcher_id = 1, a.allocated_usd, 0.0)) AS usd_linked_patent_researcher_id,
+    SUM(IF(f.patent_link_institution = 1, a.allocated_usd, 0.0)) AS usd_linked_patent_institution,
+    SUM(IF(f.patent_link_any = 1, a.allocated_usd, 0.0)) AS usd_linked_patent_any,
+
+    SUM(IF(f.publication_link_direct = 1, a.allocated_usd, 0.0)) AS usd_linked_publication_direct,
+    SUM(IF(f.publication_link_researcher_id = 1, a.allocated_usd, 0.0)) AS usd_linked_publication_researcher_id,
+    SUM(IF(f.publication_link_institution = 1, a.allocated_usd, 0.0)) AS usd_linked_publication_institution,
+    SUM(IF(f.publication_link_any = 1, a.allocated_usd, 0.0)) AS usd_linked_publication_any,
+
+    SUM(IF(f.patent_link_any = 1 AND f.publication_link_any = 0, a.allocated_usd, 0.0)) AS usd_linked_patent_only,
+    SUM(IF(f.patent_link_any = 0 AND f.publication_link_any = 1, a.allocated_usd, 0.0)) AS usd_linked_publication_only,
+    SUM(IF(f.patent_link_any = 1 AND f.publication_link_any = 1, a.allocated_usd, 0.0)) AS usd_linked_both_outputs,
+
+    SUM(IF(f.any_output_link_any = 1, a.allocated_usd, 0.0)) AS usd_linked_any_output
+  FROM alloc a
+  LEFT JOIN flags f
+    ON f.country_code = a.country_code
+   AND f.grant_id = a.grant_id
+  GROUP BY a.country_code, a.year, a.allocation_scenario, funder_type
+)
+
+SELECT
+  d.country_code,
+  d.year,
+  d.allocation_scenario,
+  d.funder_type,
+
+  d.n_grants_with_usd_active_in_year,
+  d.usd_total_reported,
+
+  d.usd_linked_patent_direct,
+  d.usd_linked_patent_researcher_id,
+  d.usd_linked_patent_institution,
+  d.usd_linked_patent_any,
+
+  d.usd_linked_publication_direct,
+  d.usd_linked_publication_researcher_id,
+  d.usd_linked_publication_institution,
+  d.usd_linked_publication_any,
+
+  d.usd_linked_patent_only,
+  d.usd_linked_publication_only,
+  d.usd_linked_both_outputs,
+
+  d.usd_linked_any_output,
+
+  SAFE_DIVIDE(d.usd_linked_any_output, NULLIF(d.usd_total_reported, 0.0)) AS share_usd_linked_any_output,
+  SAFE_DIVIDE(d.usd_linked_patent_any, NULLIF(d.usd_total_reported, 0.0)) AS share_usd_linked_patent_any,
+  SAFE_DIVIDE(d.usd_linked_publication_any, NULLIF(d.usd_total_reported, 0.0)) AS share_usd_linked_publication_any,
+  SAFE_DIVIDE(d.usd_linked_patent_only, NULLIF(d.usd_total_reported, 0.0)) AS share_usd_linked_patent_only,
+  SAFE_DIVIDE(d.usd_linked_publication_only, NULLIF(d.usd_total_reported, 0.0)) AS share_usd_linked_publication_only,
+  SAFE_DIVIDE(d.usd_linked_both_outputs, NULLIF(d.usd_total_reported, 0.0)) AS share_usd_linked_both_outputs,
+
+  sc.n_grants_start_year_total,
+  sc.n_grants_start_year_with_usd,
+  sc.n_grants_start_year_linked_any_output,
+  sc.n_grants_start_year_linked_patent,
+  sc.n_grants_start_year_linked_publication
+FROM dollar_coverage d
+LEFT JOIN start_year_counts sc
+  ON sc.country_code = d.country_code
+ AND sc.year = d.year
+ AND sc.funder_type = d.funder_type

@@ -1,0 +1,23 @@
+config {
+  type: "declaration",
+  schema: "rd_ref",
+  name: "external_no_cristin_linkage",
+  description: "Cristin (Norway) -> Dimensions pub_id crosswalk. Manually uploaded table containing accepted matches from link_cristin_publications.py. Each row links a Cristin result to a Dimensions publication with government funding/ownership flags."
+}
+
+-- This is a declaration pointing to a manually-uploaded BigQuery table.
+-- To create the table, upload the linkage CSV to:
+--   dimensionsdataextracts.rd_ref.external_no_cristin_linkage
+--
+-- Required columns:
+--   dim_pub_id       STRING  (Dimensions publication ID)
+--   source_name      STRING  ('cristin')
+--   source_id        STRING  (Cristin result ID)
+--   country_code     STRING  ('NO')
+--   match_method     STRING  ('doi' or 'title_year')
+--   match_score      FLOAT64 (match confidence score)
+--   is_gov_funded    STRING  ('TRUE' or 'FALSE')
+--   is_gov_owned     STRING  ('TRUE' or 'FALSE')
+--
+-- Source script: Empirics/code/link_cristin_publications.py
+-- Government classification: GOV_FUNDER_CODES and GOV_INSTITUTION_IDS in script

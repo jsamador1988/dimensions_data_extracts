@@ -1,0 +1,99 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_family_citation_quantile_flags",
+  tags: ["int", "patents", "citations"],
+  description: "Top-5% flag per patent family based on forward-citation quantile within (IPC-4 x family-application-year x anchor-jurisdiction) cells. 5-year truncated forward-citation window. Fallback to (IPC-4 x family-app-year) when the primary cell has <20 families (matches the pub_breakthrough_flags fallback pattern). Output column is_top5c is consumed by pat_6way_fund_decomp_ctq and by global_quarter_totals.",
+  bigquery: {
+    partitionBy: "family_app_qtr",
+    clusterBy: ["anchor_jurisdiction", "anchor_ipc4"]
+  }
+}
+
+WITH src AS (
+  SELECT
+    family_id,
+    family_app_qtr,
+    family_app_year,
+    anchor_jurisdiction,
+    anchor_ipc4,
+    fwd_cites_5y
+  FROM ${ref("rd_stage", "pat_family_forward_citations")}
+  WHERE anchor_ipc4 IS NOT NULL
+    AND family_app_year IS NOT NULL
+),
+
+-- Cell counts to drive the fallback rule
+primary_cells AS (
+  SELECT
+    anchor_ipc4,
+    family_app_year,
+    anchor_jurisdiction,
+    COUNT(*) AS cell_n
+  FROM src
+  GROUP BY anchor_ipc4, family_app_year, anchor_jurisdiction
+),
+
+fallback_cells AS (
+  SELECT
+    anchor_ipc4,
+    family_app_year,
+    COUNT(*) AS cell_n_fb
+  FROM src
+  GROUP BY anchor_ipc4, family_app_year
+),
+
+-- Percent-rank within primary cell
+ranked_primary AS (
+  SELECT
+    s.family_id,
+    s.family_app_qtr,
+    s.family_app_year,
+    s.anchor_jurisdiction,
+    s.anchor_ipc4,
+    s.fwd_cites_5y,
+    pc.cell_n,
+    PERCENT_RANK() OVER (
+      PARTITION BY s.anchor_ipc4, s.family_app_year, s.anchor_jurisdiction
+      ORDER BY s.fwd_cites_5y
+    ) AS pr_primary
+  FROM src s
+  JOIN primary_cells pc
+    ON pc.anchor_ipc4 = s.anchor_ipc4
+   AND pc.family_app_year = s.family_app_year
+   AND pc.anchor_jurisdiction = s.anchor_jurisdiction
+),
+
+-- Percent-rank within fallback cell (ignoring jurisdiction)
+ranked_fallback AS (
+  SELECT
+    s.family_id,
+    PERCENT_RANK() OVER (
+      PARTITION BY s.anchor_ipc4, s.family_app_year
+      ORDER BY s.fwd_cites_5y
+    ) AS pr_fallback
+  FROM src s
+)
+
+SELECT
+  rp.family_id,
+  rp.family_app_qtr,
+  rp.family_app_year,
+  rp.anchor_jurisdiction,
+  rp.anchor_ipc4,
+  rp.fwd_cites_5y,
+  rp.cell_n,
+  rp.pr_primary,
+  rf.pr_fallback,
+  -- Use primary cell if >= 20 families; otherwise fallback; else FALSE (tiny populations)
+  CASE
+    WHEN rp.cell_n >= 20 AND rp.pr_primary >= 0.95 THEN TRUE
+    WHEN rp.cell_n <  20 AND rf.pr_fallback >= 0.95 THEN TRUE
+    ELSE FALSE
+  END AS is_top5c,
+  CASE
+    WHEN rp.cell_n >= 20 THEN 'primary'
+    ELSE 'fallback'
+  END AS rank_basis
+FROM ranked_primary rp
+LEFT JOIN ranked_fallback rf ON rf.family_id = rp.family_id

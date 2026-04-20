@@ -1,0 +1,77 @@
+config {
+  type: "assertion",
+  name: "assert_quality_filter_bounds",
+  tags: ["assert", "assertion"],
+  description: "Validates monotone inclusion bounds for quality-filtered publication variants and for basic-research subsets relative to their publication and patent parent series."
+}
+
+WITH p AS (
+  SELECT * FROM ${ref("rd_mart", "panel_country_quarter_wide")}
+)
+
+-- Quality filter subset bounds (top 5% journal)
+SELECT country_code, quarter, 'pub_total_top5j > pub_total' AS violation
+FROM p WHERE pub_total_top5j_ctq > pub_total_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pub_gov_owned_top5j > pub_gov_owned'
+FROM p WHERE pub_gov_owned_top5j_ctq > pub_gov_owned_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pub_govfund_any_excl_top5j > pub_total_top5j'
+FROM p WHERE pub_govfund_any_excl_top5j_ctq > pub_total_top5j_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pub_uni_govfund_top5j > pub_uni_total_top5j'
+FROM p WHERE pub_uni_govfund_top5j_ctq > pub_uni_total_top5j_ctq + 0.001
+
+-- Quality filter subset bounds (top 0.1% breakthrough)
+UNION ALL
+SELECT country_code, quarter, 'pub_total_top01 > pub_total'
+FROM p WHERE pub_total_top01_ctq > pub_total_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pub_gov_owned_top01 > pub_gov_owned'
+FROM p WHERE pub_gov_owned_top01_ctq > pub_gov_owned_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pub_govfund_any_excl_top01 > pub_total_top01'
+FROM p WHERE pub_govfund_any_excl_top01_ctq > pub_total_top01_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pub_uni_govfund_top01 > pub_uni_total_top01'
+FROM p WHERE pub_uni_govfund_top01_ctq > pub_uni_total_top01_ctq + 0.001
+
+-- Basic research bounds (publications)
+UNION ALL
+SELECT country_code, quarter, 'pub_total_basic > pub_total'
+FROM p WHERE pub_total_basic_ctq > pub_total_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pub_gov_owned_basic > pub_gov_owned'
+FROM p WHERE pub_gov_owned_basic_ctq > pub_gov_owned_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pub_gov_owned_basic > pub_total_basic'
+FROM p WHERE pub_gov_owned_basic_ctq > pub_total_basic_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pub_private_basic > pub_private_total'
+FROM p WHERE pub_private_basic_ctq > pub_private_total_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pub_govfund_basic > pub_total_basic'
+FROM p WHERE pub_govfund_basic_ctq > pub_total_basic_ctq + 0.001
+
+-- Basic research bounds (patents)
+UNION ALL
+SELECT country_code, quarter, 'pat_total_basic > pat_total'
+FROM p WHERE pat_total_basic_ctq > pat_total_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pat_gov_owned_basic > pat_gov_owned'
+FROM p WHERE pat_gov_owned_basic_ctq > pat_gov_owned_ctq + 0.001
+
+UNION ALL
+SELECT country_code, quarter, 'pat_govfund_basic > pat_govfund_any_excl'
+FROM p WHERE pat_govfund_basic_ctq > pat_govfund_any_excl_ctq + 0.001

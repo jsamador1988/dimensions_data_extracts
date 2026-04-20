@@ -1,0 +1,21 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_govfund_ntis_fc",
+  tags: ["int", "patents"],
+  description: "Patent families linked to Korean government funding via NTIS external crosswalk (Strategy E: NTIS -> Google Patents -> Dimensions). Subset of pat_family_country_base excluding government-owned families, KR only."
+}
+
+-- Mirrors pat_govfund_direct_fc logic but uses NTIS family_ids
+-- instead of Dimensions grant_id matching.
+SELECT
+  b.family_id,
+  b.country_code,
+  b.quarter,
+  b.w_domestic
+FROM ${ref("rd_int", "pat_family_country_base")} b
+JOIN ${ref("rd_ref", "external_kr_ntis_linkage")} n
+  ON CAST(n.dim_family_id AS STRING) = b.family_id
+WHERE b.dom_gov_assg_flag = 0
+  AND b.country_code = 'KR'
+GROUP BY b.family_id, b.country_code, b.quarter, b.w_domestic

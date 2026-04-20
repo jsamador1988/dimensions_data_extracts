@@ -1,0 +1,133 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_family_citepub_flags",
+  tags: ["int", "patents"],
+  description: "Per-family citation characteristic flags: whether the patent family cites any scientific publication, basic-research publications (FoR 01-06), government-funded publications, university-authored publications, and all pairwise/triple intersections. Uses representative document citations from patent_rep_doc_meta. Publications table is scanned once for all characteristics."
+}
+
+-- For each patent family's cited publications, determine three independent characteristics
+-- in a SINGLE publications-table scan, then compute all combination flags:
+--  - basic research: majority of cited pub's FoR2 codes are in basic science divisions (01-06)
+--  - gov-funded: cited pub lists at least one government funder in its funder_orgs
+--  - university-authored: cited pub has at least one author affiliated with an Education-type org
+
+WITH meta AS (
+  SELECT family_id, cited_pub_ids
+  FROM ${ref("rd_stage", "patent_rep_doc_meta")}
+  WHERE ARRAY_LENGTH(cited_pub_ids) > 0
+),
+
+cited_flat AS (
+  SELECT DISTINCT
+    m.family_id,
+    pub_id
+  FROM meta m
+  CROSS JOIN UNNEST(m.cited_pub_ids) AS pub_id
+  WHERE pub_id IS NOT NULL
+),
+
+-- Map FoR codes to basic/applied
+basic_map AS (
+  SELECT for2_code, is_basic_science
+  FROM ${ref("rd_ref", "for2_basic_research_map")}
+),
+
+org_dim AS (
+  SELECT org_id, is_gov_surico, is_edu
+  FROM ${ref("rd_ref", "org_gov_surico")}
+),
+
+pub_base AS (
+  SELECT
+    cf.family_id,
+    cf.pub_id,
+    pub.category_for.second_level.codes AS for2_codes,
+    pub.funder_orgs,
+    pub.authors
+  FROM cited_flat cf
+  JOIN `dimensions-ai.data_analytics.publications` pub
+    ON pub.id = cf.pub_id
+),
+
+basic_flags AS (
+  SELECT
+    pb.family_id,
+    pb.pub_id,
+    COALESCE(
+      SAFE_DIVIDE(
+        COUNTIF(code IS NOT NULL AND bm.is_basic_science),
+        NULLIF(COUNTIF(code IS NOT NULL), 0)
+      ) > 0.5,
+      FALSE
+    ) AS is_basic
+  FROM pub_base pb
+  LEFT JOIN UNNEST(IFNULL(pb.for2_codes, CAST([] AS ARRAY<STRING>))) AS code
+  LEFT JOIN basic_map bm
+    ON bm.for2_code = SUBSTR(LPAD(REGEXP_EXTRACT(code, r'\d+'), 4, '0'), 1, 2)
+  GROUP BY pb.family_id, pb.pub_id
+),
+
+govfund_flags AS (
+  SELECT
+    pb.family_id,
+    pb.pub_id,
+    COUNTIF(od.is_gov_surico) > 0 AS is_govfund
+  FROM pub_base pb
+  LEFT JOIN UNNEST(IFNULL(pb.funder_orgs, CAST([] AS ARRAY<STRING>))) AS funder_org_id
+  LEFT JOIN org_dim od
+    ON od.org_id = funder_org_id
+  GROUP BY pb.family_id, pb.pub_id
+),
+
+uni_flags AS (
+  SELECT
+    pb.family_id,
+    pb.pub_id,
+    COUNTIF(od.is_edu) > 0 AS is_uni
+  FROM pub_base pb
+  LEFT JOIN UNNEST(IFNULL(pb.authors, [])) AS a
+  LEFT JOIN UNNEST(IFNULL(a.affiliations_address, [])) AS aff
+  LEFT JOIN org_dim od
+    ON od.org_id = aff.grid_id
+  GROUP BY pb.family_id, pb.pub_id
+),
+
+-- Pre-aggregate each repeated field separately so BigQuery can plan this
+-- without unsupported correlated subqueries.
+cited_pub_features AS (
+  SELECT
+    pb.family_id,
+    pb.pub_id,
+    COALESCE(bf.is_basic, FALSE) AS is_basic,
+    COALESCE(gf.is_govfund, FALSE) AS is_govfund,
+    COALESCE(uf.is_uni, FALSE) AS is_uni
+  FROM pub_base pb
+  LEFT JOIN basic_flags bf
+    USING (family_id, pub_id)
+  LEFT JOIN govfund_flags gf
+    USING (family_id, pub_id)
+  LEFT JOIN uni_flags uf
+    USING (family_id, pub_id)
+)
+
+-- Aggregate to family level: all single, pairwise, and triple combination flags
+SELECT
+  family_id,
+  TRUE AS has_cited_pub,
+
+  -- Single characteristics
+  MAX(CASE WHEN is_basic THEN 1 ELSE 0 END) = 1 AS has_cited_basic_pub,
+  MAX(CASE WHEN is_govfund THEN 1 ELSE 0 END) = 1 AS has_cited_govfund_pub,
+  MAX(CASE WHEN is_uni THEN 1 ELSE 0 END) = 1 AS has_cited_uni_pub,
+
+  -- Pairwise intersections (cited pub satisfies BOTH conditions)
+  MAX(CASE WHEN is_basic AND is_govfund THEN 1 ELSE 0 END) = 1 AS has_cited_govfund_basic_pub,
+  MAX(CASE WHEN is_basic AND is_uni THEN 1 ELSE 0 END) = 1 AS has_cited_uni_basic_pub,
+  MAX(CASE WHEN is_govfund AND is_uni THEN 1 ELSE 0 END) = 1 AS has_cited_govfund_uni_pub,
+
+  -- Triple intersection (cited pub satisfies ALL three)
+  MAX(CASE WHEN is_basic AND is_govfund AND is_uni THEN 1 ELSE 0 END) = 1 AS has_cited_govfund_uni_basic_pub
+
+FROM cited_pub_features
+GROUP BY family_id

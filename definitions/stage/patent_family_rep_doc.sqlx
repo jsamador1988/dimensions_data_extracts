@@ -1,0 +1,16 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "patent_family_rep_doc",
+  tags: ["stage", "patents"],
+  description: "Representative patent document per family: earliest doc_earliest_app_dt (ties broken by patent_id). Used to fetch citations and IPC codes."
+}
+
+SELECT
+  family_id,
+  patent_id AS rep_patent_id
+FROM ${ref("rd_stage", "patent_doc_core")}
+WHERE family_id IS NOT NULL
+  AND patent_id IS NOT NULL
+  AND doc_earliest_app_dt IS NOT NULL
+QUALIFY ROW_NUMBER() OVER (PARTITION BY family_id ORDER BY doc_earliest_app_dt, patent_id) = 1

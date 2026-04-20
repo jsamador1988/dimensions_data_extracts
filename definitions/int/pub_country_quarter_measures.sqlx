@@ -1,0 +1,280 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_country_quarter_measures",
+  tags: ["int", "publications"],
+  description: "Country x quarter publication innovation time series: domestic totals, government-produced component, overlapping and mutually-exclusive government-funding proxies, non-government domestic-funder analogs, private->government citation spillover, university affiliation total, and university x gov-funded cross-combination."
+}
+
+-- Classify publications as basic research based on their own FoR codes
+-- (>50% of FoR2 codes in divisions 01-06). One row per pub_id.
+WITH pub_for2 AS (
+  SELECT
+    pub_id,
+    COALESCE(ANY_VALUE(for2_codes), CAST([] AS ARRAY<STRING>)) AS for2_codes
+  FROM ${ref("rd_int", "pub_pub_country_base")}
+  GROUP BY pub_id
+),
+
+pub_basic_flag AS (
+  SELECT
+    pf.pub_id,
+    COALESCE(
+      SAFE_DIVIDE(
+        COUNTIF(code IS NOT NULL AND bm.is_basic_science),
+        NULLIF(COUNTIF(code IS NOT NULL), 0)
+      ) > 0.5,
+      FALSE
+    ) AS is_basic_pub
+  FROM pub_for2 pf
+  LEFT JOIN UNNEST(pf.for2_codes) AS code
+  LEFT JOIN ${ref("rd_ref", "for2_basic_research_map")} bm
+    ON bm.for2_code = code
+  GROUP BY pf.pub_id
+),
+
+base AS (
+  SELECT
+    p.country_code,
+    p.quarter,
+    SUM(p.w_aff) AS pub_total_ctq,
+    SUM(p.w_public_prod) AS pub_gov_owned_ctq,
+    -- Private-only denominator (no gov affiliation for that country on that publication)
+    SUM(IF(p.w_public_prod = 0, p.w_aff, 0.0)) AS pub_private_total_ctq,
+    -- University (Education-type) affiliation total
+    SUM(p.w_edu_prod) AS pub_uni_total_ctq,
+    -- Basic research by org category
+    SUM(IF(IFNULL(bf.is_basic_pub, FALSE), p.w_aff, 0.0)) AS pub_total_basic_ctq,
+    SUM(IF(IFNULL(bf.is_basic_pub, FALSE), p.w_public_prod, 0.0)) AS pub_gov_owned_basic_ctq,
+    SUM(IF(IFNULL(bf.is_basic_pub, FALSE) AND p.w_public_prod = 0, p.w_aff, 0.0)) AS pub_private_basic_ctq,
+    SUM(IF(IFNULL(bf.is_basic_pub, FALSE), p.w_edu_prod, 0.0)) AS pub_uni_basic_ctq,
+    -- International collaboration
+    SUM(IF(p.w_aff < 1.0 - 0.001, p.w_aff, 0.0)) AS pub_intl_collab_ctq
+  FROM ${ref("rd_int", "pub_pub_country_base")} p
+  LEFT JOIN pub_basic_flag bf
+    ON bf.pub_id = p.pub_id
+  GROUP BY p.country_code, p.quarter
+),
+
+-- Overlapping government funder proxies (subset of private-only)
+gov_direct AS (
+  SELECT country_code, quarter, SUM(w_aff) AS pub_govfund_direct_ctq
+  FROM ${ref("rd_int", "pub_govfund_direct_pc")}
+  GROUP BY country_code, quarter
+),
+
+gov_rid AS (
+  SELECT country_code, quarter, SUM(w_aff) AS pub_govfund_rid_ctq
+  FROM ${ref("rd_int", "pub_govfund_rid_pc")}
+  GROUP BY country_code, quarter
+),
+
+gov_inst AS (
+  SELECT country_code, quarter, SUM(w_aff) AS pub_govfund_inst_ctq
+  FROM ${ref("rd_int", "pub_govfund_inst_pc")}
+  GROUP BY country_code, quarter
+),
+
+-- Mutually-exclusive government funder tiers (subset of private-only)
+gov_direct_excl AS (
+  SELECT country_code, quarter, SUM(w_aff) AS pub_govfund_direct_excl_ctq
+  FROM ${ref("rd_int", "pub_govfund_direct_pc")}
+  GROUP BY country_code, quarter
+),
+
+gov_rid_only_excl AS (
+  SELECT country_code, quarter, SUM(w_aff) AS pub_govfund_rid_only_excl_ctq
+  FROM ${ref("rd_int", "pub_govfund_rid_only_pc")}
+  GROUP BY country_code, quarter
+),
+
+gov_inst_only_excl AS (
+  SELECT country_code, quarter, SUM(w_aff) AS pub_govfund_inst_only_excl_ctq
+  FROM ${ref("rd_int", "pub_govfund_inst_only_pc")}
+  GROUP BY country_code, quarter
+),
+
+-- Non-government domestic funder analogs (subset of private-only)
+priv_direct AS (
+  SELECT country_code, quarter, SUM(w_aff) AS pub_privfund_direct_ctq
+  FROM ${ref("rd_int", "pub_privfund_direct_pc")}
+  GROUP BY country_code, quarter
+),
+
+priv_rid AS (
+  SELECT country_code, quarter, SUM(w_aff) AS pub_privfund_rid_ctq
+  FROM ${ref("rd_int", "pub_privfund_rid_pc")}
+  GROUP BY country_code, quarter
+),
+
+priv_inst AS (
+  SELECT country_code, quarter, SUM(w_aff) AS pub_privfund_inst_ctq
+  FROM ${ref("rd_int", "pub_privfund_inst_pc")}
+  GROUP BY country_code, quarter
+),
+
+-- Private documents citing government-produced research
+cite AS (
+  SELECT
+    country_code,
+    quarter,
+    pub_private_with_cites_ctq,
+    pub_private_cite_gov_raw_ctq,
+    pub_private_cite_gov_norm_ctq
+  FROM ${ref("rd_int", "pub_private_cite_gov_ctq")}
+),
+
+-- External national source: government-funded publications (Cristin, KAKEN, NWO)
+gov_ext AS (
+  SELECT country_code, quarter, SUM(w_aff) AS pub_govfund_external_ctq
+  FROM ${ref("rd_int", "pub_govfund_external_pc")}
+  GROUP BY country_code, quarter
+),
+
+-- External national source: government-owned publications (Cristin only)
+gov_owned_ext AS (
+  SELECT country_code, quarter, SUM(w_aff) AS pub_gov_owned_external_ctq
+  FROM ${ref("rd_int", "pub_gov_owned_external_pc")}
+  GROUP BY country_code, quarter
+),
+
+-- Publications with any government funding (union of all tiers)
+pub_govfund_any_pubs AS (
+  SELECT DISTINCT pub_id, country_code
+  FROM ${ref("rd_int", "pub_govfund_direct_pc")}
+  UNION DISTINCT
+  SELECT DISTINCT pub_id, country_code
+  FROM ${ref("rd_int", "pub_govfund_rid_pc")}
+  UNION DISTINCT
+  SELECT DISTINCT pub_id, country_code
+  FROM ${ref("rd_int", "pub_govfund_inst_pc")}
+),
+
+-- Government-funded publications that are basic research (any tier, all org types)
+pub_govfund_basic AS (
+  SELECT
+    p.country_code,
+    p.quarter,
+    SUM(p.w_aff) AS pub_govfund_basic_ctq
+  FROM ${ref("rd_int", "pub_pub_country_base")} p
+  JOIN pub_govfund_any_pubs gf
+    ON gf.pub_id = p.pub_id AND gf.country_code = p.country_code
+  LEFT JOIN pub_basic_flag bf
+    ON bf.pub_id = p.pub_id
+  WHERE IFNULL(bf.is_basic_pub, FALSE)
+  GROUP BY p.country_code, p.quarter
+),
+
+-- University publications that are government-funded (any tier)
+pub_uni_govfund AS (
+  SELECT
+    p.country_code,
+    p.quarter,
+    SUM(p.w_edu_prod) AS pub_uni_govfund_ctq,
+    -- University basic-research publications that are government-funded
+    SUM(IF(IFNULL(bf.is_basic_pub, FALSE), p.w_edu_prod, 0.0)) AS pub_uni_basic_govfund_ctq
+  FROM ${ref("rd_int", "pub_pub_country_base")} p
+  JOIN pub_govfund_any_pubs gf
+    ON gf.pub_id = p.pub_id AND gf.country_code = p.country_code
+  LEFT JOIN pub_basic_flag bf
+    ON bf.pub_id = p.pub_id
+  WHERE p.w_edu_prod > 0
+  GROUP BY p.country_code, p.quarter
+)
+
+SELECT
+  b.country_code,
+  b.quarter,
+
+  -- 2a
+  b.pub_total_ctq,
+
+  -- 2b
+  b.pub_gov_owned_ctq,
+
+  -- Private-only denominator
+  b.pub_private_total_ctq,
+
+  -- University (Education-type) affiliation total
+  b.pub_uni_total_ctq,
+
+  -- Basic research by org category
+  b.pub_total_basic_ctq,
+  b.pub_gov_owned_basic_ctq,
+  b.pub_private_basic_ctq,
+  b.pub_uni_basic_ctq,
+
+  -- International collaboration
+  b.pub_intl_collab_ctq,
+
+  -- 2c/2d/2e overlapping proxies
+  COALESCE(gd.pub_govfund_direct_ctq, 0.0) AS pub_govfund_direct_ctq,
+  COALESCE(gr.pub_govfund_rid_ctq, 0.0) AS pub_govfund_rid_ctq,
+  COALESCE(gi.pub_govfund_inst_ctq, 0.0) AS pub_govfund_inst_ctq,
+
+  -- Mutually-exclusive tiers (no double counting by construction)
+  COALESCE(gde.pub_govfund_direct_excl_ctq, 0.0) AS pub_govfund_direct_excl_ctq,
+  COALESCE(gre.pub_govfund_rid_only_excl_ctq, 0.0) AS pub_govfund_rid_only_excl_ctq,
+  COALESCE(gie.pub_govfund_inst_only_excl_ctq, 0.0) AS pub_govfund_inst_only_excl_ctq,
+  (
+    COALESCE(gde.pub_govfund_direct_excl_ctq, 0.0)
+    + COALESCE(gre.pub_govfund_rid_only_excl_ctq, 0.0)
+    + COALESCE(gie.pub_govfund_inst_only_excl_ctq, 0.0)
+  ) AS pub_govfund_any_excl_ctq,
+
+  -- Non-government domestic funder analogs
+  COALESCE(pd.pub_privfund_direct_ctq, 0.0) AS pub_privfund_direct_ctq,
+  COALESCE(pr.pub_privfund_rid_ctq, 0.0) AS pub_privfund_rid_ctq,
+  COALESCE(pi.pub_privfund_inst_ctq, 0.0) AS pub_privfund_inst_ctq,
+
+  -- 2f
+  COALESCE(c.pub_private_with_cites_ctq, 0.0) AS pub_private_with_cites_ctq,
+  COALESCE(c.pub_private_cite_gov_raw_ctq, 0.0) AS pub_private_cite_gov_raw_ctq,
+  COALESCE(c.pub_private_cite_gov_norm_ctq, 0.0) AS pub_private_cite_gov_norm_ctq,
+
+  -- External national sources (non-zero for NO, JP, NL only)
+  COALESCE(ge.pub_govfund_external_ctq, 0.0) AS pub_govfund_external_ctq,
+  COALESCE(goe.pub_gov_owned_external_ctq, 0.0) AS pub_gov_owned_external_ctq,
+
+  -- Government-funded basic research publications
+  COALESCE(pgb.pub_govfund_basic_ctq, 0.0) AS pub_govfund_basic_ctq,
+
+  -- University publications with government funding
+  COALESCE(pug.pub_uni_govfund_ctq, 0.0) AS pub_uni_govfund_ctq,
+  COALESCE(pug.pub_uni_basic_govfund_ctq, 0.0) AS pub_uni_basic_govfund_ctq
+
+FROM base b
+LEFT JOIN gov_direct gd
+  ON gd.country_code = b.country_code AND gd.quarter = b.quarter
+LEFT JOIN gov_rid gr
+  ON gr.country_code = b.country_code AND gr.quarter = b.quarter
+LEFT JOIN gov_inst gi
+  ON gi.country_code = b.country_code AND gi.quarter = b.quarter
+
+LEFT JOIN gov_direct_excl gde
+  ON gde.country_code = b.country_code AND gde.quarter = b.quarter
+LEFT JOIN gov_rid_only_excl gre
+  ON gre.country_code = b.country_code AND gre.quarter = b.quarter
+LEFT JOIN gov_inst_only_excl gie
+  ON gie.country_code = b.country_code AND gie.quarter = b.quarter
+
+LEFT JOIN priv_direct pd
+  ON pd.country_code = b.country_code AND pd.quarter = b.quarter
+LEFT JOIN priv_rid pr
+  ON pr.country_code = b.country_code AND pr.quarter = b.quarter
+LEFT JOIN priv_inst pi
+  ON pi.country_code = b.country_code AND pi.quarter = b.quarter
+
+LEFT JOIN cite c
+  ON c.country_code = b.country_code AND c.quarter = b.quarter
+
+LEFT JOIN gov_ext ge
+  ON ge.country_code = b.country_code AND ge.quarter = b.quarter
+LEFT JOIN gov_owned_ext goe
+  ON goe.country_code = b.country_code AND goe.quarter = b.quarter
+
+LEFT JOIN pub_govfund_basic pgb
+  ON pgb.country_code = b.country_code AND pgb.quarter = b.quarter
+
+LEFT JOIN pub_uni_govfund pug
+  ON pug.country_code = b.country_code AND pug.quarter = b.quarter

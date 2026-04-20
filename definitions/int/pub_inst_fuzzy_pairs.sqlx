@@ -1,0 +1,19 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pub_inst_fuzzy_pairs",
+  tags: ["int", "publications", "grants", "performance"],
+  bigquery: {
+    partitionBy: "quarter",
+    clusterBy: ["country_code", "is_gov_surico", "pub_id", "grant_id"]
+  },
+  description: "Shared publication-country to grant pair scores for institution-based fuzzy linkage. UNION ALL of 4 country batches (b1-b4) to avoid BQ shuffle limits."
+}
+
+SELECT * FROM ${ref("rd_int", "pub_inst_fuzzy_pairs_b1")}
+UNION ALL
+SELECT * FROM ${ref("rd_int", "pub_inst_fuzzy_pairs_b2")}
+UNION ALL
+SELECT * FROM ${ref("rd_int", "pub_inst_fuzzy_pairs_b3")}
+UNION ALL
+SELECT * FROM ${ref("rd_int", "pub_inst_fuzzy_pairs_b4")}

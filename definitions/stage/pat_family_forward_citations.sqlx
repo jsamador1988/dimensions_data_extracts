@@ -1,0 +1,101 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "pat_family_forward_citations",
+  tags: ["stage", "patents", "citations"],
+  description: "Forward-citation counts per patent family with a 5-year truncated window and a lifetime count. Anchor jurisdiction and IPC-4 are taken from the family rep-document so each family has exactly one (jurisdiction, ipc4) cell for quantile normalization (Fleming 2019; Hall-Jaffe-Trajtenberg 2001). Uses `cited_by_ids` on `dimensions-ai.data_analytics.patents` -- each row's cited_by_ids is the list of patent IDs that cite IT (i.e. inbound/forward citations). Joins back to patents to fetch the citing patent's filing_date for the 5y truncation.",
+  bigquery: {
+    partitionBy: "family_app_qtr",
+    clusterBy: ["anchor_jurisdiction", "anchor_ipc4"]
+  }
+}
+
+WITH anchor AS (
+  SELECT
+    family_id,
+    family_app_qtr,
+    EXTRACT(YEAR FROM family_app_qtr) AS family_app_year
+  FROM ${ref("rd_stage", "patent_family_anchor")}
+),
+
+rep_doc AS (
+  SELECT family_id, rep_patent_id
+  FROM ${ref("rd_stage", "patent_family_rep_doc")}
+),
+
+-- Pull jurisdiction and first IPC from the rep patent in the source table
+rep_meta AS (
+  SELECT
+    r.family_id,
+    p.jurisdiction AS anchor_jurisdiction,
+    SUBSTR(IF(ARRAY_LENGTH(p.ipcr) > 0, p.ipcr[OFFSET(0)], NULL), 1, 4) AS anchor_ipc4
+  FROM rep_doc r
+  JOIN `dimensions-ai.data_analytics.patents` p
+    ON p.id = r.rep_patent_id
+),
+
+-- Expand cited_by_ids: each row's cited_by_ids lists the patent IDs that cite it (inbound).
+-- So cited_family_id is the FAMILY of the cited patent; citing_id is the id of the citing patent.
+cited_by_expanded AS (
+  SELECT
+    p.family_id AS cited_family_id,
+    citing_id
+  FROM `dimensions-ai.data_analytics.patents` p,
+  UNNEST(p.cited_by_ids) AS citing_id
+  WHERE p.family_id IS NOT NULL
+    AND citing_id IS NOT NULL
+),
+
+-- Filing dates of citing patents (needed for 5y truncation)
+citing_dates AS (
+  SELECT
+    id,
+    COALESCE(
+      SAFE.PARSE_DATE('%Y-%m-%d', filing_date),
+      SAFE.PARSE_DATE('%Y-%m-%d', priority_date),
+      IF(filing_year IS NOT NULL, DATE(filing_year, 1, 1), NULL)
+    ) AS citing_filing_dt
+  FROM `dimensions-ai.data_analytics.patents`
+),
+
+-- One row per citation edge, with cited family and citing filing date
+citations AS (
+  SELECT
+    ce.cited_family_id,
+    cd.citing_filing_dt,
+    ce.citing_id
+  FROM cited_by_expanded ce
+  LEFT JOIN citing_dates cd ON cd.id = ce.citing_id
+),
+
+-- Aggregate truncated + lifetime per cited family.
+-- 5y window: citing filing date within [0, 1825] days after family anchor.
+-- Lifetime: distinct citing_id count, irrespective of whether the citing date was found.
+agg AS (
+  SELECT
+    fam.family_id,
+    COUNT(DISTINCT
+      CASE
+        WHEN c.citing_filing_dt IS NOT NULL
+         AND DATE_DIFF(c.citing_filing_dt, fam.family_app_qtr, DAY) BETWEEN 0 AND 1825
+        THEN c.citing_id
+      END
+    ) AS fwd_cites_5y,
+    COUNT(DISTINCT c.citing_id) AS fwd_cites_lifetime
+  FROM anchor fam
+  LEFT JOIN citations c
+    ON c.cited_family_id = fam.family_id
+  GROUP BY fam.family_id
+)
+
+SELECT
+  a.family_id,
+  a.family_app_qtr,
+  a.family_app_year,
+  rm.anchor_jurisdiction,
+  rm.anchor_ipc4,
+  IFNULL(ag.fwd_cites_5y, 0)       AS fwd_cites_5y,
+  IFNULL(ag.fwd_cites_lifetime, 0) AS fwd_cites_lifetime
+FROM anchor a
+LEFT JOIN rep_meta rm ON rm.family_id = a.family_id
+LEFT JOIN agg ag      ON ag.family_id = a.family_id

@@ -1,0 +1,352 @@
+config {
+  type: "table",
+  schema: "rd_int",
+  name: "pat_country_quarter_measures",
+  tags: ["int", "patents"],
+  description: "Country x quarter patent innovation time series: domestic totals, government-owned component, overlapping and mutually-exclusive government-funding proxies, non-government domestic-funder analogs, private->government and private->university citation spillover, university decomposition (total, basic research, gov-funded), science linkage (patents citing pubs, basic research, gov-funded), and cross-combinations."
+}
+
+WITH base AS (
+  SELECT
+    country_code,
+    quarter,
+    -- Binary assignee-based counts (primary)
+    SUM(w_domestic) AS pat_total_ctq,
+    SUM(w_gov_owned) AS pat_gov_owned_ctq,
+    SUM(IF(dom_gov_assg_flag = 0, w_domestic, 0.0)) AS pat_private_total_ctq,
+    -- Inventor-weighted counts (secondary)
+    SUM(w_dom_with_inv) AS pat_total_inv_ctq,
+    SUM(IF(dom_gov_assg_flag = 1, w_dom_with_inv, 0.0)) AS pat_gov_owned_inv_ctq,
+    SUM(IF(dom_gov_assg_flag = 0, w_dom_with_inv, 0.0)) AS pat_private_total_inv_ctq
+  FROM ${ref("rd_int", "pat_family_country_base")}
+  GROUP BY country_code, quarter
+),
+
+-- Overlapping government funder proxies (subset of private-only)
+gov_direct AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_direct_ctq
+  FROM ${ref("rd_int", "pat_govfund_direct_fc")}
+  GROUP BY country_code, quarter
+),
+
+gov_rid AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_rid_ctq
+  FROM ${ref("rd_int", "pat_govfund_rid_fc")}
+  GROUP BY country_code, quarter
+),
+
+gov_inst AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_inst_ctq
+  FROM ${ref("rd_int", "pat_govfund_inst_fc")}
+  GROUP BY country_code, quarter
+),
+
+-- Mutually-exclusive government funder tiers (subset of private-only)
+gov_direct_excl AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_direct_excl_ctq
+  FROM ${ref("rd_int", "pat_govfund_direct_fc")}
+  GROUP BY country_code, quarter
+),
+
+gov_rid_only_excl AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_rid_only_excl_ctq
+  FROM ${ref("rd_int", "pat_govfund_rid_only_fc")}
+  GROUP BY country_code, quarter
+),
+
+gov_inst_only_excl AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_inst_only_excl_ctq
+  FROM ${ref("rd_int", "pat_govfund_inst_only_fc")}
+  GROUP BY country_code, quarter
+),
+
+-- Non-government domestic funder analogs (subset of private-only)
+priv_direct AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_privfund_direct_ctq
+  FROM ${ref("rd_int", "pat_privfund_direct_fc")}
+  GROUP BY country_code, quarter
+),
+
+priv_rid AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_privfund_rid_ctq
+  FROM ${ref("rd_int", "pat_privfund_rid_fc")}
+  GROUP BY country_code, quarter
+),
+
+priv_inst AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_privfund_inst_ctq
+  FROM ${ref("rd_int", "pat_privfund_inst_fc")}
+  GROUP BY country_code, quarter
+),
+
+-- NTIS external linkage (Korea only)
+gov_ntis AS (
+  SELECT country_code, quarter, SUM(w_domestic) AS pat_govfund_ntis_ctq
+  FROM ${ref("rd_int", "pat_govfund_ntis_fc")}
+  GROUP BY country_code, quarter
+),
+
+-- Private patents citing government-produced research
+cite AS (
+  SELECT
+    country_code,
+    quarter,
+    pat_private_cite_gov_raw_ctq,
+    pat_private_cite_gov_norm_ctq,
+    pat_private_with_cites_ctq
+  FROM ${ref("rd_int", "pat_private_cite_gov_ctq")}
+),
+
+-- Classify patent families as basic research based on their own FoR codes
+-- (>50% of FoR2 codes in divisions 01-06). One row per family_id.
+pat_family_for2 AS (
+  SELECT
+    family_id,
+    COALESCE(ANY_VALUE(for2_codes), CAST([] AS ARRAY<STRING>)) AS for2_codes
+  FROM ${ref("rd_int", "pat_family_country_base")}
+  GROUP BY family_id
+),
+
+pat_family_basic AS (
+  SELECT
+    pf.family_id,
+    COALESCE(
+      SAFE_DIVIDE(
+        COUNTIF(code IS NOT NULL AND bm.is_basic_science),
+        NULLIF(COUNTIF(code IS NOT NULL), 0)
+      ) > 0.5,
+      FALSE
+    ) AS is_basic_patent
+  FROM pat_family_for2 pf
+  LEFT JOIN UNNEST(pf.for2_codes) AS code
+  LEFT JOIN ${ref("rd_ref", "for2_basic_research_map")} bm
+    ON bm.for2_code = code
+  GROUP BY pf.family_id
+),
+
+-- University totals, own-FoR basic research, and science linkage flags
+uni_and_cite AS (
+  SELECT
+    b.country_code,
+    b.quarter,
+    -- University patent total
+    SUM(IF(b.dom_edu_assg_flag = 1, b.w_domestic, 0.0)) AS pat_uni_total_ctq,
+
+    -- Patent's own basic research classification (by FoR codes)
+    -- Uses w_gov_owned (fractional) to match base CTE's pat_gov_owned_ctq definition
+    SUM(IF(IFNULL(bf.is_basic_patent, FALSE), b.w_domestic, 0.0)) AS pat_total_basic_ctq,
+    SUM(IF(IFNULL(bf.is_basic_patent, FALSE), b.w_gov_owned, 0.0)) AS pat_gov_owned_basic_ctq,
+    SUM(IF(IFNULL(bf.is_basic_patent, FALSE) AND b.dom_gov_assg_flag = 0, b.w_domestic, 0.0)) AS pat_private_basic_ctq,
+    SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(bf.is_basic_patent, FALSE), b.w_domestic, 0.0)) AS pat_uni_basic_ctq,
+
+    -- Science linkage: patents citing publications
+    SUM(IF(IFNULL(cf.has_cited_pub, FALSE), b.w_domestic, 0.0)) AS pat_citepub_ctq,
+    SUM(IF(IFNULL(cf.has_cited_basic_pub, FALSE), b.w_domestic, 0.0)) AS pat_citepub_basic_ctq,
+    SUM(IF(IFNULL(cf.has_cited_govfund_pub, FALSE), b.w_domestic, 0.0)) AS pat_citepub_govfund_ctq,
+    SUM(IF(IFNULL(cf.has_cited_govfund_basic_pub, FALSE), b.w_domestic, 0.0)) AS pat_citepub_govfund_basic_ctq,
+    SUM(IF(IFNULL(cf.has_cited_uni_pub, FALSE), b.w_domestic, 0.0)) AS pat_citepub_uni_ctq,
+
+    -- University x science linkage cross-combinations
+    SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(cf.has_cited_pub, FALSE), b.w_domestic, 0.0)) AS pat_uni_citepub_ctq,
+    SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(cf.has_cited_basic_pub, FALSE), b.w_domestic, 0.0)) AS pat_uni_citepub_basic_ctq,
+    SUM(IF(b.dom_edu_assg_flag = 1 AND IFNULL(cf.has_cited_govfund_basic_pub, FALSE), b.w_domestic, 0.0)) AS pat_uni_citepub_govfund_basic_ctq,
+
+    -- Inventor-weighted secondary variants
+    SUM(IF(b.dom_edu_assg_flag = 1, b.w_dom_with_inv, 0.0)) AS pat_uni_total_inv_ctq,
+    SUM(IF(IFNULL(bf.is_basic_patent, FALSE), b.w_dom_with_inv, 0.0)) AS pat_total_basic_inv_ctq
+
+  FROM ${ref("rd_int", "pat_family_country_base")} b
+  LEFT JOIN ${ref("rd_int", "pat_family_citepub_flags")} cf
+    ON cf.family_id = b.family_id
+  LEFT JOIN pat_family_basic bf
+    ON bf.family_id = b.family_id
+  GROUP BY b.country_code, b.quarter
+),
+
+-- Families with any government funding (union of all tiers)
+govfund_any_families AS (
+  SELECT DISTINCT family_id, country_code
+  FROM ${ref("rd_int", "pat_govfund_direct_fc")}
+  UNION DISTINCT
+  SELECT DISTINCT family_id, country_code
+  FROM ${ref("rd_int", "pat_govfund_rid_fc")}
+  UNION DISTINCT
+  SELECT DISTINCT family_id, country_code
+  FROM ${ref("rd_int", "pat_govfund_inst_fc")}
+),
+
+-- University patents that are government-funded (any tier, private-only by construction)
+uni_govfund AS (
+  SELECT
+    b.country_code,
+    b.quarter,
+    SUM(b.w_domestic) AS pat_uni_govfund_ctq,
+    -- University basic-research patents that are government-funded
+    SUM(IF(IFNULL(bf.is_basic_patent, FALSE), b.w_domestic, 0.0)) AS pat_uni_basic_govfund_ctq
+  FROM ${ref("rd_int", "pat_family_country_base")} b
+  JOIN govfund_any_families gf
+    ON gf.family_id = b.family_id AND gf.country_code = b.country_code
+  LEFT JOIN pat_family_basic bf
+    ON bf.family_id = b.family_id
+  WHERE b.dom_edu_assg_flag = 1
+  GROUP BY b.country_code, b.quarter
+),
+
+-- Government-funded patents that are basic research (any tier, private-only by construction)
+govfund_basic AS (
+  SELECT
+    b.country_code,
+    b.quarter,
+    SUM(b.w_domestic) AS pat_govfund_basic_ctq
+  FROM ${ref("rd_int", "pat_family_country_base")} b
+  JOIN govfund_any_families gf
+    ON gf.family_id = b.family_id AND gf.country_code = b.country_code
+  LEFT JOIN pat_family_basic bf
+    ON bf.family_id = b.family_id
+  WHERE IFNULL(bf.is_basic_patent, FALSE)
+  GROUP BY b.country_code, b.quarter
+),
+
+-- Government-funded patents citing science (private-only by construction)
+govfund_citepub AS (
+  SELECT
+    b.country_code,
+    b.quarter,
+    SUM(IF(IFNULL(cf.has_cited_pub, FALSE), b.w_domestic, 0.0)) AS pat_govfund_citepub_ctq
+  FROM ${ref("rd_int", "pat_family_country_base")} b
+  JOIN govfund_any_families gf
+    ON gf.family_id = b.family_id AND gf.country_code = b.country_code
+  LEFT JOIN ${ref("rd_int", "pat_family_citepub_flags")} cf
+    ON cf.family_id = b.family_id
+  GROUP BY b.country_code, b.quarter
+),
+
+-- Private patents citing university-produced research
+cite_uni AS (
+  SELECT
+    country_code,
+    quarter,
+    pat_private_cite_uni_raw_ctq,
+    pat_private_cite_uni_norm_ctq
+  FROM ${ref("rd_int", "pat_private_cite_uni_ctq")}
+)
+
+SELECT
+  b.country_code,
+  b.quarter,
+
+  -- 1a
+  b.pat_total_ctq,
+
+  -- 1b
+  b.pat_gov_owned_ctq,
+
+  -- Private-only denominator
+  b.pat_private_total_ctq,
+
+  -- 1c/1d/1e overlapping proxies
+  COALESCE(gd.pat_govfund_direct_ctq, 0.0) AS pat_govfund_direct_ctq,
+  COALESCE(gr.pat_govfund_rid_ctq, 0.0) AS pat_govfund_rid_ctq,
+  COALESCE(gi.pat_govfund_inst_ctq, 0.0) AS pat_govfund_inst_ctq,
+
+  -- Mutually-exclusive tiers (no double counting by construction)
+  COALESCE(gde.pat_govfund_direct_excl_ctq, 0.0) AS pat_govfund_direct_excl_ctq,
+  COALESCE(gre.pat_govfund_rid_only_excl_ctq, 0.0) AS pat_govfund_rid_only_excl_ctq,
+  COALESCE(gie.pat_govfund_inst_only_excl_ctq, 0.0) AS pat_govfund_inst_only_excl_ctq,
+  (
+    COALESCE(gde.pat_govfund_direct_excl_ctq, 0.0)
+    + COALESCE(gre.pat_govfund_rid_only_excl_ctq, 0.0)
+    + COALESCE(gie.pat_govfund_inst_only_excl_ctq, 0.0)
+  ) AS pat_govfund_any_excl_ctq,
+
+  -- Non-government domestic funder analogs
+  COALESCE(pd.pat_privfund_direct_ctq, 0.0) AS pat_privfund_direct_ctq,
+  COALESCE(pr.pat_privfund_rid_ctq, 0.0) AS pat_privfund_rid_ctq,
+  COALESCE(pi.pat_privfund_inst_ctq, 0.0) AS pat_privfund_inst_ctq,
+
+  -- 1f
+  COALESCE(c.pat_private_with_cites_ctq, 0.0) AS pat_private_with_cites_ctq,
+  COALESCE(c.pat_private_cite_gov_raw_ctq, 0.0) AS pat_private_cite_gov_raw_ctq,
+  COALESCE(c.pat_private_cite_gov_norm_ctq, 0.0) AS pat_private_cite_gov_norm_ctq,
+
+  -- NTIS external linkage (Korea only, zero for all other countries)
+  COALESCE(gn.pat_govfund_ntis_ctq, 0.0) AS pat_govfund_ntis_ctq,
+
+  -- Basic research by org category
+  COALESCE(uc.pat_total_basic_ctq, 0.0) AS pat_total_basic_ctq,
+  COALESCE(uc.pat_gov_owned_basic_ctq, 0.0) AS pat_gov_owned_basic_ctq,
+  COALESCE(uc.pat_private_basic_ctq, 0.0) AS pat_private_basic_ctq,
+  COALESCE(gb.pat_govfund_basic_ctq, 0.0) AS pat_govfund_basic_ctq,
+
+  -- University decomposition
+  COALESCE(uc.pat_uni_total_ctq, 0.0) AS pat_uni_total_ctq,
+  COALESCE(uc.pat_uni_basic_ctq, 0.0) AS pat_uni_basic_ctq,
+  COALESCE(ug.pat_uni_govfund_ctq, 0.0) AS pat_uni_govfund_ctq,
+  COALESCE(ug.pat_uni_basic_govfund_ctq, 0.0) AS pat_uni_basic_govfund_ctq,
+
+  -- Science linkage
+  COALESCE(uc.pat_citepub_ctq, 0.0) AS pat_citepub_ctq,
+  COALESCE(uc.pat_citepub_basic_ctq, 0.0) AS pat_citepub_basic_ctq,
+  COALESCE(uc.pat_citepub_govfund_ctq, 0.0) AS pat_citepub_govfund_ctq,
+  COALESCE(uc.pat_citepub_govfund_basic_ctq, 0.0) AS pat_citepub_govfund_basic_ctq,
+  COALESCE(uc.pat_citepub_uni_ctq, 0.0) AS pat_citepub_uni_ctq,
+
+  -- Cross-combinations
+  COALESCE(uc.pat_uni_citepub_ctq, 0.0) AS pat_uni_citepub_ctq,
+  COALESCE(uc.pat_uni_citepub_basic_ctq, 0.0) AS pat_uni_citepub_basic_ctq,
+  COALESCE(uc.pat_uni_citepub_govfund_basic_ctq, 0.0) AS pat_uni_citepub_govfund_basic_ctq,
+  COALESCE(gc.pat_govfund_citepub_ctq, 0.0) AS pat_govfund_citepub_ctq,
+
+  -- Private->university citation spillover
+  COALESCE(cu.pat_private_cite_uni_raw_ctq, 0.0) AS pat_private_cite_uni_raw_ctq,
+  COALESCE(cu.pat_private_cite_uni_norm_ctq, 0.0) AS pat_private_cite_uni_norm_ctq,
+
+  -- Inventor-weighted secondary variants
+  b.pat_total_inv_ctq,
+  b.pat_gov_owned_inv_ctq,
+  b.pat_private_total_inv_ctq,
+  COALESCE(uc.pat_uni_total_inv_ctq, 0.0) AS pat_uni_total_inv_ctq,
+  COALESCE(uc.pat_total_basic_inv_ctq, 0.0) AS pat_total_basic_inv_ctq
+
+FROM base b
+LEFT JOIN gov_direct gd
+  ON gd.country_code = b.country_code AND gd.quarter = b.quarter
+LEFT JOIN gov_rid gr
+  ON gr.country_code = b.country_code AND gr.quarter = b.quarter
+LEFT JOIN gov_inst gi
+  ON gi.country_code = b.country_code AND gi.quarter = b.quarter
+
+LEFT JOIN gov_direct_excl gde
+  ON gde.country_code = b.country_code AND gde.quarter = b.quarter
+LEFT JOIN gov_rid_only_excl gre
+  ON gre.country_code = b.country_code AND gre.quarter = b.quarter
+LEFT JOIN gov_inst_only_excl gie
+  ON gie.country_code = b.country_code AND gie.quarter = b.quarter
+
+LEFT JOIN priv_direct pd
+  ON pd.country_code = b.country_code AND pd.quarter = b.quarter
+LEFT JOIN priv_rid pr
+  ON pr.country_code = b.country_code AND pr.quarter = b.quarter
+LEFT JOIN priv_inst pi
+  ON pi.country_code = b.country_code AND pi.quarter = b.quarter
+
+LEFT JOIN cite c
+  ON c.country_code = b.country_code AND c.quarter = b.quarter
+
+LEFT JOIN gov_ntis gn
+  ON gn.country_code = b.country_code AND gn.quarter = b.quarter
+
+LEFT JOIN uni_and_cite uc
+  ON uc.country_code = b.country_code AND uc.quarter = b.quarter
+
+LEFT JOIN uni_govfund ug
+  ON ug.country_code = b.country_code AND ug.quarter = b.quarter
+
+LEFT JOIN govfund_basic gb
+  ON gb.country_code = b.country_code AND gb.quarter = b.quarter
+
+LEFT JOIN govfund_citepub gc
+  ON gc.country_code = b.country_code AND gc.quarter = b.quarter
+
+LEFT JOIN cite_uni cu
+  ON cu.country_code = b.country_code AND cu.quarter = b.quarter

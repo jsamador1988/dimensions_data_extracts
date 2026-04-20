@@ -1,0 +1,11 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "analysis_country_universe",
+  description: "Country universe for analysis and plotting, maintained directly in-pipeline.",
+  tags: ["analysis", "phase1"]
+}
+
+SELECT
+  c.country_code
+FROM ${ref("rd_ref", "analysis_country_map")} c

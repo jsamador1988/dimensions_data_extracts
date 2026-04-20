@@ -1,0 +1,69 @@
+config {
+  type: "table",
+  schema: "rd_stage",
+  name: "patent_rep_doc_meta",
+  tags: ["stage", "patents"],
+  description: "Rep-doc metadata used for citation-based series: IPCR codes and outgoing citation IDs (patents + publications) from the representative patent per family."
+}
+
+WITH rep AS (
+  SELECT family_id, rep_patent_id
+  FROM ${ref("rd_stage", "patent_family_rep_doc")}
+),
+
+pat AS (
+  SELECT
+    p.id AS rep_patent_id,
+    IFNULL(p.ipcr, CAST([] AS ARRAY<STRING>)) AS ipcr_raw,
+    IFNULL(p.reference_ids, CAST([] AS ARRAY<STRING>)) AS cited_patent_ids_raw,
+    -- Publications cited by patents: use npc_references (best coverage) plus publication_ids (front-page)
+    ARRAY(
+      SELECT DISTINCT pub_id
+      FROM (
+        SELECT npc.publication_id AS pub_id
+        FROM UNNEST(p.npc_references) AS npc
+        WHERE npc.publication_id IS NOT NULL
+        UNION ALL
+        SELECT pub_id
+        FROM UNNEST(IFNULL(p.publication_ids, CAST([] AS ARRAY<STRING>))) AS pub_id
+        WHERE pub_id IS NOT NULL
+      )
+    ) AS cited_pub_ids_raw
+  FROM `dimensions-ai.data_analytics.patents` p
+  JOIN rep r
+    ON r.rep_patent_id = p.id
+)
+
+SELECT
+  r.family_id,
+  r.rep_patent_id,
+
+  ARRAY(
+    SELECT DISTINCT code
+    FROM UNNEST(p.ipcr_raw) AS code
+    WHERE code IS NOT NULL
+  ) AS ipcr_codes,
+
+  ARRAY(
+    SELECT DISTINCT
+      CASE
+        WHEN SAFE_CAST(${(dataform.projectConfig.vars.ipcr_prefix_len || 0)} AS INT64) IS NULL
+          OR SAFE_CAST(${(dataform.projectConfig.vars.ipcr_prefix_len || 0)} AS INT64) <= 0
+        THEN code
+        ELSE SUBSTR(code, 1, SAFE_CAST(${(dataform.projectConfig.vars.ipcr_prefix_len || 0)} AS INT64))
+      END
+    FROM UNNEST(p.ipcr_raw) AS code
+    WHERE code IS NOT NULL
+  ) AS ipcr_norm_codes,
+
+  ARRAY(
+    SELECT DISTINCT cid
+    FROM UNNEST(p.cited_patent_ids_raw) AS cid
+    WHERE cid IS NOT NULL
+  ) AS cited_patent_ids,
+
+  p.cited_pub_ids_raw AS cited_pub_ids
+
+FROM rep r
+JOIN pat p
+  ON p.rep_patent_id = r.rep_patent_id
